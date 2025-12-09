@@ -27,25 +27,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
-    useEffect(() => {
-        // Load from localStorage on mount
-        const storedToken = localStorage.getItem('token');
-        const storedUser = localStorage.getItem('user');
-
-        if (storedToken && storedUser) {
-            setToken(storedToken);
-            setUser(JSON.parse(storedUser));
-        }
-        setLoading(false);
-    }, []);
-
     const login = (newToken: string, newUser: User) => {
         setToken(newToken);
         setUser(newUser);
         localStorage.setItem('token', newToken);
         localStorage.setItem('user', JSON.stringify(newUser));
 
-        // Setup API header default? (Already handled in api.ts interceptor)
         router.push('/');
     };
 
@@ -56,6 +43,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem('user');
         router.push('/login');
     };
+
+    useEffect(() => {
+        const initAuth = async () => {
+            const storedToken = localStorage.getItem('token');
+            const storedUser = localStorage.getItem('user');
+
+            if (storedToken && storedUser) {
+                try {
+                    // Verify session with server
+                    // We manually attach header here to be safe, though api interceptor does it too if token is in localStorage
+                    // But here token might not be in state yet, but it IS in localStorage.
+                    await api.get('/me');
+
+                    setToken(storedToken);
+                    setUser(JSON.parse(storedUser));
+                } catch (error) {
+                    console.warn('Session invalid, logging out:', error);
+                    logout();
+                }
+            }
+            setLoading(false);
+        };
+
+        initAuth();
+    }, []);
 
     return (
         <AuthContext.Provider value={{ user, token, login, logout, loading }}>

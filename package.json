@@ -1,0 +1,13 @@
+{
+    "name": "plyt-mvp-root",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\" -c \"blue,green\" --names \"SERVER,CLIENT\"",
+        "install:all": "npm install && npm install --prefix server && npm install --prefix client",
+        "build:all": "npm run build --prefix server && npm run build --prefix client"
+    },
+    "devDependencies": {
+        "concurrently": "^9.0.0"
+    }
+}

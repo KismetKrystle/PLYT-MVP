@@ -1,4 +1,38 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import api from '../../lib/api';
+
+interface GrowSystem {
+    id: number;
+    name: string;
+    description: string;
+    price_plyt: string;
+    image_url: string;
+    type: string;
+    features: string[];
+}
+
 export default function GrowPage() {
+    const [systems, setSystems] = useState<GrowSystem[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchSystems = async () => {
+            try {
+                // For now, we fetch all. In real app, might filter or search.
+                const res = await api.get('/grow/systems/search');
+                setSystems(res.data);
+            } catch (error) {
+                console.error('Failed to fetch grow systems', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchSystems();
+    }, []);
+
     return (
         <div className="flex h-[calc(100vh-4rem)]">
             {/* Left Interface: Chat */}
@@ -28,16 +62,32 @@ export default function GrowPage() {
                 </div>
                 <div className="flex-1 p-4 overflow-y-auto">
                     <h3 className="font-medium text-gray-900 mb-4">Recommended Systems</h3>
-                    {/* Mock System Card */}
-                    <div className="border border-gray-200 rounded-lg p-4 mb-4 hover:shadow-md transition">
-                        <div className="h-32 bg-gray-200 rounded-md mb-3"></div>
-                        <h4 className="font-semibold text-gray-800">Vertical Hydro Kit</h4>
-                        <p className="text-sm text-gray-500 mb-2">Perfect for apartments. Grow 10+ plants.</p>
-                        <div className="flex justify-between items-center">
-                            <span className="font-bold text-emerald-600">50 PLYT</span>
-                            <button className="px-3 py-1 bg-emerald-600 text-white rounded text-sm hover:bg-emerald-700">Add</button>
+
+                    {loading ? (
+                        <div className="text-gray-500 text-sm">Loading systems...</div>
+                    ) : (
+                        <div className="space-y-4">
+                            {systems.map((system) => (
+                                <div key={system.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition bg-white">
+                                    <div className="h-40 bg-gray-100 rounded-md mb-3 overflow-hidden">
+                                        {system.image_url ? (
+                                            <img src={system.image_url} alt={system.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="flex items-center justify-center h-full text-gray-400">No Image</div>
+                                        )}
+                                    </div>
+                                    <h4 className="font-semibold text-gray-800">{system.name}</h4>
+                                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">{system.type}</p>
+                                    <p className="text-sm text-gray-500 mb-3 line-clamp-2">{system.description}</p>
+
+                                    <div className="flex justify-between items-center mt-2">
+                                        <span className="font-bold text-emerald-600">{Math.floor(parseFloat(system.price_plyt))} PLYT</span>
+                                        <button className="px-3 py-1 bg-emerald-600 text-white rounded text-sm hover:bg-emerald-700 transition">View</button>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
-                    </div>
+                    )}
                 </div>
             </div>
         </div>

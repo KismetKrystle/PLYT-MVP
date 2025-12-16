@@ -20,14 +20,8 @@ export default function RootLayout({
     <html lang="en">
       <body className="flex flex-col min-h-screen">
         <AuthProvider>
-          <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-            <NavBar />
-          </header>
-
           <main className="flex-1">
-            <ProtectedRoute>
-              {children}
-            </ProtectedRoute>
+            {children}
           </main>
         </AuthProvider>
       </body>

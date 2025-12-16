@@ -14,7 +14,7 @@ interface User {
 interface AuthContextType {
     user: User | null;
     token: string | null;
-    login: (token: string, user: User) => void;
+    login: (token: string, user: User, redirectPath?: string) => void;
     logout: () => void;
     loading: boolean;
 }
@@ -27,13 +27,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
-    const login = (newToken: string, newUser: User) => {
+    const login = (newToken: string, newUser: User, redirectPath: string = '/') => {
         setToken(newToken);
         setUser(newUser);
         localStorage.setItem('token', newToken);
         localStorage.setItem('user', JSON.stringify(newUser));
 
-        router.push('/');
+        router.push(redirectPath);
     };
 
     const logout = () => {

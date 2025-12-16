@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../lib/auth';
+import { useLessons } from '../context/LessonContext';
 import Logo from './Logo';
 import { useState } from 'react';
 import RightSidebar from './RightSidebar';
@@ -11,7 +12,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const { logout, user } = useAuth();
     const [leftSidebarOpen, setLeftSidebarOpen] = useState(false);
-    const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+    const [isLessonsOpen, setIsLessonsOpen] = useState(false);
 
     // Updated Navigation Items per User Request
     const NAV_ITEMS = [
@@ -43,10 +44,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="flex h-screen bg-gray-50 overflow-hidden relative">
 
             {/* Mobile Overlay (Backdrop) */}
-            {(leftSidebarOpen || rightSidebarOpen) && (
+            {leftSidebarOpen && (
                 <div
                     className="fixed inset-0 bg-black/20 z-20 md:hidden backdrop-blur-sm"
-                    onClick={() => { setLeftSidebarOpen(false); setRightSidebarOpen(false); }}
+                    onClick={() => setLeftSidebarOpen(false)}
                 />
             )}
 
@@ -55,37 +56,99 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         fixed inset-y-0 left-0 z-30 w-64 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out md:static md:translate-x-0 flex flex-col shadow-xl md:shadow-none
         ${leftSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-                <div className="p-6 flex justify-between items-center">
+                <div className="p-6 flex justify-between items-center shrink-0">
                     <Logo variant="dark" width={100} />
                     <button onClick={() => setLeftSidebarOpen(false)} className="md:hidden text-gray-400">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
 
-                <nav className="flex-1 px-4 space-y-2 mt-2">
-                    {NAV_ITEMS.map((item) => {
-                        const isActive = pathname === item.href;
-                        return (
-                            <Link
-                                key={item.name}
-                                href={item.href}
-                                onClick={() => setLeftSidebarOpen(false)}
-                                className={`flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 group ${isActive
-                                    ? 'bg-green-50 text-green-700 shadow-sm border border-green-100'
-                                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 border border-transparent'
-                                    }`}
-                            >
-                                <div className={`mr-3 transition-colors ${isActive ? 'text-green-600' : 'text-gray-400 group-hover:text-gray-500'}`}>
-                                    {item.icon}
-                                </div>
-                                {item.name}
-                            </Link>
-                        );
-                    })}
-                </nav>
+                {/* Scrollable Navigation + Resources */}
+                <div className="flex-1 overflow-y-auto no-scrollbar">
+                    <nav className="px-4 space-y-2 mt-2">
+                        {NAV_ITEMS.map((item) => {
+                            const isActive = pathname === item.href;
+                            const isLessons = item.name === 'Lessons';
 
-                {/* User Profile Snippet */}
-                <div className="p-4 border-t border-gray-100">
+                            // Get saved lessons and active state
+                            const { savedLessons, activeLesson, setActiveLesson } = useLessons();
+
+                            if (isLessons) {
+                                return (
+                                    <div key={item.name} className="flex flex-col">
+                                        <button
+                                            onClick={() => setIsLessonsOpen(!isLessonsOpen)}
+                                            className={`flex items-center justify-between w-full px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 group ${isActive || isLessonsOpen
+                                                ? 'bg-green-50 text-green-700 shadow-sm border border-green-100'
+                                                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 border border-transparent'
+                                                }`}
+                                        >
+                                            <div className="flex items-center">
+                                                <div className={`mr-3 transition-colors ${isActive || isLessonsOpen ? 'text-green-600' : 'text-gray-400 group-hover:text-gray-500'}`}>
+                                                    {item.icon}
+                                                </div>
+                                                {item.name}
+                                            </div>
+                                            <svg
+                                                className={`w-4 h-4 transition-transform duration-200 ${isLessonsOpen ? 'rotate-180' : ''}`}
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </button>
+
+                                        {/* Collapsible Content */}
+                                        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isLessonsOpen ? 'max-h-48 opacity-100 mt-1' : 'max-h-0 opacity-0'}`}>
+                                            <div className="pl-11 pr-2 space-y-1">
+                                                {savedLessons.map((lesson) => (
+                                                    <div
+                                                        key={lesson.id}
+                                                        className={`px-3 py-2 text-xs font-medium rounded-lg hover:bg-gray-50 hover:text-green-600 cursor-pointer truncate transition-colors border border-transparent hover:border-gray-100 ${activeLesson?.id === lesson.id ? 'text-green-600 bg-green-50 shadow-sm' : 'text-gray-500'
+                                                            }`}
+                                                        onClick={() => {
+                                                            setActiveLesson(lesson);
+                                                            setLeftSidebarOpen(false);
+                                                        }}
+                                                    >
+                                                        {lesson.title}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <Link
+                                    key={item.name}
+                                    href={item.href}
+                                    onClick={() => setLeftSidebarOpen(false)}
+                                    className={`flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 group ${isActive
+                                        ? 'bg-green-50 text-green-700 shadow-sm border border-green-100'
+                                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 border border-transparent'
+                                        }`}
+                                >
+                                    <div className={`mr-3 transition-colors ${isActive ? 'text-green-600' : 'text-gray-400 group-hover:text-gray-500'}`}>
+                                        {item.icon}
+                                    </div>
+                                    {item.name}
+                                </Link>
+                            );
+                        })}
+                    </nav>
+
+                    {/* Separator */}
+                    <div className="mx-4 my-2 border-t border-gray-100"></div>
+
+                    {/* Resources Panel (Formerly Right Sidebar) */}
+                    <RightSidebar />
+                </div>
+
+                {/* User Profile Snippet - Fixed at Bottom */}
+                <div className="p-4 border-t border-gray-100 shrink-0 bg-white z-10">
                     <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition cursor-pointer border border-transparent hover:border-gray-200">
                         <div className="w-9 h-9 rounded-full bg-gradient-to-br from-green-100 to-emerald-200 flex items-center justify-center text-green-800 font-bold text-sm shadow-inner">
                             {user?.email?.[0].toUpperCase() || 'U'}
@@ -131,7 +194,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         />
                     </div>
 
-                    {/* Wallet Widget & Mobile Right Toggle */}
+                    {/* Wallet Widget */}
                     <div className="flex items-center gap-3 md:gap-6">
                         <div className="hidden sm:flex flex-col items-end">
                             <div className="flex items-baseline gap-2">
@@ -142,30 +205,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 Wallet
                             </button>
                         </div>
-
-                        {/* Right Panel Toggle (Mobile Only) */}
-                        <button
-                            onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
-                            className="md:hidden text-gray-500 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"
-                        >
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
-                        </button>
                     </div>
                 </header>
 
-                {/* Scrollable Main Content + Right Sidebar Layout */}
+                {/* Scrollable Main Content Layout */}
                 <main className="flex-1 overflow-hidden relative flex flex-row">
                     {/* Child Page Content */}
                     <div className="flex-1 overflow-y-auto bg-gray-50 relative">
                         {children}
-                    </div>
-
-                    {/* RIGHT SIDEBAR - Desktop (Static) & Mobile (Drawer) */}
-                    <div className={`
-                fixed inset-y-0 right-0 z-30 h-full bg-white shadow-xl md:shadow-none transform transition-transform duration-300 md:relative md:transform-none md:flex
-                ${rightSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}
-            `}>
-                        <RightSidebar isOpen={true} onClose={() => setRightSidebarOpen(false)} />
                     </div>
                 </main>
             </div>

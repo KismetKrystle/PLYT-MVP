@@ -11,6 +11,8 @@ export const metadata: Metadata = {
 
 import NavBar from '../components/NavBar';
 
+import { LessonProvider } from '../context/LessonContext';
+
 export default function RootLayout({
   children,
 }: {
@@ -20,9 +22,11 @@ export default function RootLayout({
     <html lang="en">
       <body className="flex flex-col min-h-screen">
         <AuthProvider>
-          <main className="flex-1">
-            {children}
-          </main>
+          <LessonProvider>
+            <main className="flex-1">
+              {children}
+            </main>
+          </LessonProvider>
         </AuthProvider>
       </body>
     </html>

@@ -71,8 +71,8 @@ export default function LandingChatInterface() {
         console.log('Submitting prompt:', fullPromptPayload);
 
         // Redirect logic:
-        // We navigate to login with a special flag
-        router.push('/login?redirect=/chat');
+        // We navigate to login. The Dashboard will pick up the 'pendingChatPrompt' from localStorage after auth.
+        router.push('/login');
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -204,33 +204,39 @@ export default function LandingChatInterface() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.4 }}
-                    className="flex flex-wrap justify-center gap-3"
+                    className="flex flex-wrap justify-center gap-3 mb-8"
                 >
                     {PRESET_TAGS.map((tag) => (
                         <button
                             key={tag}
                             onClick={() => handleTagClick(tag)}
                             className={`px-4 py-2 rounded-full border text-sm font-medium transition-all duration-300 ${selectedTags.includes(tag)
-                                    ? 'bg-green-600 text-white border-green-600'
-                                    : 'bg-white text-gray-600 border-gray-200 hover:border-green-400 hover:text-green-600 hover:bg-green-50'
+                                ? 'bg-green-600 text-white border-green-600'
+                                : 'bg-white text-gray-600 border-gray-200 hover:border-green-400 hover:text-green-600 hover:bg-green-50'
                                 }`}
                         >
                             {tag}
                         </button>
                     ))}
                 </motion.div>
+
+                {/* Market Ticker (Moved Closer) */}
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.5 }}
+                    className="w-full max-w-5xl"
+                >
+                    <div className="text-center mb-2 text-xs text-gray-300 font-medium uppercase tracking-widest">
+                        Live Market
+                    </div>
+                    <MarketTicker onItemClick={handleTickerItemClick} />
+                </motion.div>
             </main>
 
-            {/* Footer Area with Ticker */}
-            <footer className="w-full mt-auto relative z-10">
-                <div className="text-center mb-4 text-sm text-gray-400 font-medium uppercase tracking-widest">
-                    Live Market
-                </div>
-                <MarketTicker onItemClick={handleTickerItemClick} />
-
-                <div className="text-center py-4 text-xs text-gray-300">
-                    © 2025 PLYT Network. All rights reserved.
-                </div>
+            {/* Simple Footer */}
+            <footer className="w-full py-4 text-center text-xs text-gray-300 relative z-10">
+                © 2025 PLYT Network. All rights reserved.
             </footer>
         </div>
     );

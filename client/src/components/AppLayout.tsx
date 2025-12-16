@@ -10,9 +10,16 @@ import RightSidebar from './RightSidebar';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
-    const { logout, user } = useAuth();
+    const { logout, user, loading } = useAuth();
     const [leftSidebarOpen, setLeftSidebarOpen] = useState(false);
+    const [isDesktopOpen, setIsDesktopOpen] = useState(true);
     const [isLessonsOpen, setIsLessonsOpen] = useState(false);
+
+    // 1. Auth & Loading Guard
+    // If loading, show nothing (or spinner)
+    if (loading) return <div className="min-h-screen bg-white"></div>;
+    // If not authenticated, render children without layout (Login, Landing)
+    if (!user) return <>{children}</>;
 
     // Updated Navigation Items per User Request
     const NAV_ITEMS = [
@@ -38,6 +45,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
             )
         },
+        {
+            name: 'Store', href: '/store', icon: (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
+            )
+        },
+        {
+            name: 'Orders', href: '/orders', icon: (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+            )
+        },
     ];
 
     return (
@@ -53,24 +70,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
             {/* LEFT SIDEBAR - Desktop & Mobile Drawer */}
             <aside className={`
-        fixed inset-y-0 left-0 z-30 w-64 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out md:static md:translate-x-0 flex flex-col shadow-xl md:shadow-none
-        ${leftSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
-                <div className="p-6 flex justify-between items-center shrink-0">
-                    <Logo variant="dark" width={100} />
+                fixed inset-y-0 left-0 z-30 bg-white border-r border-gray-200 transform transition-all duration-300 ease-in-out flex flex-col shadow-xl md:shadow-none
+                ${leftSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+                md:translate-x-0 md:static
+                ${isDesktopOpen ? 'md:w-64' : 'md:w-0 md:overflow-hidden'}
+            `}>
+                <div className={`p-6 flex justify-between items-center shrink-0 ${!isDesktopOpen && 'hidden md:flex'}`}>
+                    {/* Logo - Hide if desktop closed (handled by overflow:hidden, but extra safety) */}
+                    <div className="min-w-[100px]">
+                        <Logo variant="dark" width={100} />
+                    </div>
                     <button onClick={() => setLeftSidebarOpen(false)} className="md:hidden text-gray-400">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
 
                 {/* Scrollable Navigation + Resources */}
-                <div className="flex-1 overflow-y-auto no-scrollbar">
+                <div className="flex-1 overflow-y-auto no-scrollbar w-64">
+                    {/* Width fixed to 64px internally to prevent content squishing during transition */}
                     <nav className="px-4 space-y-2 mt-2">
                         {NAV_ITEMS.map((item) => {
                             const isActive = pathname === item.href;
                             const isLessons = item.name === 'Lessons';
-
-                            // Get saved lessons and active state
                             const { savedLessons, activeLesson, setActiveLesson } = useLessons();
 
                             if (isLessons) {
@@ -98,8 +119,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                             </svg>
                                         </button>
-
-                                        {/* Collapsible Content */}
                                         <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isLessonsOpen ? 'max-h-48 opacity-100 mt-1' : 'max-h-0 opacity-0'}`}>
                                             <div className="pl-11 pr-2 space-y-1">
                                                 {savedLessons.map((lesson) => (
@@ -148,7 +167,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </div>
 
                 {/* User Profile Snippet - Fixed at Bottom */}
-                <div className="p-4 border-t border-gray-100 shrink-0 bg-white z-10">
+                <div className="p-4 border-t border-gray-100 shrink-0 bg-white z-10 w-64">
                     <div className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition cursor-pointer border border-transparent hover:border-gray-200">
                         <div className="w-9 h-9 rounded-full bg-gradient-to-br from-green-100 to-emerald-200 flex items-center justify-center text-green-800 font-bold text-sm shadow-inner">
                             {user?.email?.[0].toUpperCase() || 'U'}
@@ -176,13 +195,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {/* Top Header */}
                 <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-6 z-10 shrink-0 gap-4">
 
-                    {/* Mobile Menu Button */}
-                    <button
-                        onClick={() => setLeftSidebarOpen(true)}
-                        className="md:hidden text-gray-500 hover:bg-gray-100 p-2 rounded-lg"
-                    >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
-                    </button>
+                    {/* Left: Mobile Menu + Desktop Toggle */}
+                    <div className="flex items-center gap-2">
+                        {/* Mobile Menu Button */}
+                        <button
+                            onClick={() => setLeftSidebarOpen(true)}
+                            className="md:hidden text-gray-500 hover:bg-gray-100 p-2 rounded-lg"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                        </button>
+
+                        {/* Desktop Toggle Button */}
+                        <button
+                            onClick={() => setIsDesktopOpen(!isDesktopOpen)}
+                            className="hidden md:block text-gray-500 hover:bg-gray-100 p-2 rounded-lg transition-colors"
+                            title={isDesktopOpen ? "Collapse Sidebar" : "Expand Sidebar"}
+                        >
+                            {isDesktopOpen ? (
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" /></svg>
+                            ) : (
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                            )}
+                        </button>
+                    </div>
 
                     {/* Search Bar */}
                     <div className="flex-1 max-w-md bg-gray-100 rounded-lg px-3 py-2 focus-within:ring-2 focus-within:ring-green-500/20 transition-all flex items-center">

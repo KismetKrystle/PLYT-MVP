@@ -14,9 +14,7 @@ export default function Home() {
   // Authenticated View: Main Chat Dashboard inside App Shell
   if (user) {
     return (
-      <AppLayout>
-        <AgriDashboard />
-      </AppLayout>
+      <AgriDashboard />
     );
   }
 

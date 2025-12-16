@@ -119,7 +119,7 @@ export default function LandingChatInterface() {
                     >
                         What do you want to <br />
                         <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-600 to-emerald-600">
-                            eat, grow, or trade?
+                            eat, grow, or sell?
                         </span>
                     </motion.h1>
                     <motion.p
@@ -128,7 +128,7 @@ export default function LandingChatInterface() {
                         transition={{ delay: 0.2 }}
                         className="text-lg text-gray-500 font-light max-w-xl mx-auto"
                     >
-                        The decentralized food network for Bali.
+                        Your intelligent network for local food independence.
                     </motion.p>
                 </div>
 

@@ -4,7 +4,7 @@ import { useAuth } from './auth';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 
-const PROTECTED_ROUTES = ['/wallet', '/orders', '/grow', '/eat', '/systems', '/impact', '/store'];
+const PROTECTED_ROUTES = ['/wallet', '/orders', '/grow', '/eat', '/systems', '/impact', '/store', '/admin'];
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { user, loading } = useAuth();

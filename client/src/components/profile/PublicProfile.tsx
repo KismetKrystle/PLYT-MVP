@@ -61,10 +61,12 @@ export default function PublicProfile({ user }: ProfileProps) {
                 {/* Profile Info Overlay */}
                 <div className="absolute bottom-0 left-0 w-full p-6 md:p-8 flex items-end gap-6">
                     <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-white shadow-xl overflow-hidden bg-white shrink-0 relative">
-                        {/* Avatar Placeholder */}
-                        <div className="w-full h-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center text-white text-4xl font-bold">
-                            {user?.email?.[0].toUpperCase() || 'U'}
-                        </div>
+                        <Image
+                            src="/assets/images/gallery/user_avatar.png"
+                            alt="Profile Avatar"
+                            fill
+                            className="object-cover"
+                        />
                     </div>
                     <div className="mb-2 text-white">
                         <h1 className="text-3xl md:text-4xl font-bold">{user?.email?.split('@')[0] || 'Urban Gardener'}</h1>

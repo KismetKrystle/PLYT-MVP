@@ -13,7 +13,8 @@ type Tab = 'home' | 'find_produce' | 'pick_system' | 'learn';
 
 import { useSearchParams } from 'next/navigation';
 
-import PublicProfile from './profile/PublicProfile';
+// import PublicProfile from './profile/PublicProfile'; // Deprecated
+import PublicProfileV2 from './profile/PublicProfileV2';
 import { useAuth } from '../lib/auth';
 
 export default function AgriDashboard() {
@@ -283,9 +284,9 @@ export default function AgriDashboard() {
                     {/* Dashboard Content */}
                     <div className="flex-1 overflow-y-auto no-scrollbar relative z-0">
 
-                        {/* HOME TAB - PUBLIC PROFILE */}
+                        {/* HOME TAB - PUBLIC PROFILE V2 (Bento Grid) */}
                         {activeTab === 'home' && (
-                            <PublicProfile user={user} />
+                            <PublicProfileV2 user={user} />
                         )}
 
                         {/* OTHER TABS */}

@@ -8,6 +8,8 @@ import Logo from './Logo';
 import { useState } from 'react';
 import RightSidebar from './RightSidebar';
 
+import { formatCurrency, Currency } from '../lib/currency';
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const { logout, user, loading } = useAuth();
@@ -15,6 +17,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [isDesktopOpen, setIsDesktopOpen] = useState(true);
     const [isLessonsOpen, setIsLessonsOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
+    const [currency, setCurrency] = useState<Currency>('IDR');
     const { savedLessons, activeLesson, setActiveLesson } = useLessons(); // Moved to top level
 
     // 1. Auth & Loading Guard
@@ -242,20 +245,41 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                     </div>
 
                                     {/* Wallet Section (New) */}
-                                    <Link
-                                        href="/wallet"
-                                        onClick={() => setIsProfileOpen(false)}
-                                        className="block px-5 py-3 hover:bg-green-50 transition-colors group"
-                                    >
+                                    {/* Wallet Section (New) */}
+                                    <div className="px-5 py-3 hover:bg-green-50 transition-colors group cursor-default">
                                         <div className="flex justify-between items-center mb-1">
-                                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide group-hover:text-green-600">Wallet Balance</span>
-                                            <svg className="w-4 h-4 text-gray-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                            <Link
+                                                href="/wallet"
+                                                onClick={() => setIsProfileOpen(false)}
+                                                className="text-xs font-semibold text-gray-500 uppercase tracking-wide group-hover:text-green-600 flex items-center gap-1"
+                                            >
+                                                Wallet Balance
+                                                <svg className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                            </Link>
+
+                                            {/* Currency Toggler */}
+                                            <div className="flex bg-gray-100 rounded-lg p-0.5 text-[10px] font-bold" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    onClick={() => setCurrency('IDR')}
+                                                    className={`px-2 py-0.5 rounded-md transition-all ${currency === 'IDR' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                                >
+                                                    IDR
+                                                </button>
+                                                <button
+                                                    onClick={() => setCurrency('USD')}
+                                                    className={`px-2 py-0.5 rounded-md transition-all ${currency === 'USD' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                                >
+                                                    USD
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div className="flex items-baseline gap-2">
-                                            <span className="font-bold text-gray-900 text-lg group-hover:text-green-700">1,250 PLYT</span>
-                                            <span className="text-gray-400 text-xs font-medium">≈ $12.50</span>
-                                        </div>
-                                    </Link>
+                                        <Link href="/wallet" onClick={() => setIsProfileOpen(false)}>
+                                            <div className="flex items-baseline gap-2">
+                                                <span className="font-bold text-gray-900 text-lg group-hover:text-green-700">1,250 PLYT</span>
+                                                <span className="text-gray-400 text-xs font-medium">≈ {formatCurrency(12.50, currency)}</span>
+                                            </div>
+                                        </Link>
+                                    </div>
 
                                     <div className="py-2">
                                         <Link

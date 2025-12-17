@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 
 export default function SystemsPage() {
     const [activeTab, setActiveTab] = useState('overview');
@@ -9,7 +10,7 @@ export default function SystemsPage() {
     const system = {
         name: "VertiGrow Tower V2",
         status: "Healthy",
-        image: "/assets/images/systems/tower.jpg", // Placeholder
+        image: "/assets/images/systems/tower.jpg",
         lastMaintainence: "Oct 20, 2024",
         nextMaintainence: "Nov 03, 2024",
         stats: {
@@ -19,7 +20,12 @@ export default function SystemsPage() {
             nutrientLevel: "Good (1.8 EC)",
             phLevel: "6.2"
         },
-        gallery: [1, 2, 3, 4], // Placeholders
+        gallery: [
+            "/assets/images/systems/gallery_seedlings.png",
+            "/assets/images/systems/gallery_growth.png",
+            "/assets/images/systems/gallery_blooming.png",
+            "/assets/images/systems/gallery_harvest.png"
+        ],
         team: [
             { role: "Maintenance", name: "Budi Santoso", contact: "+62 812..." },
             { role: "Artisan Creator", name: "Wayan Sudra", contact: "View Profile" }
@@ -61,8 +67,12 @@ export default function SystemsPage() {
                     {/* System Image Card */}
                     <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
                         <div className="aspect-[4/5] bg-gray-100 rounded-xl flex items-center justify-center relative overflow-hidden">
-                            {/* Placeholder for real image */}
-                            <svg className="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                            <Image
+                                src={system.image}
+                                alt={system.name}
+                                fill
+                                className="object-cover"
+                            />
                         </div>
                     </div>
 
@@ -97,9 +107,14 @@ export default function SystemsPage() {
                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                         <h3 className="font-bold text-gray-900 mb-4">Growth Gallery</h3>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            {system.gallery.map((i) => (
-                                <div key={i} className="aspect-square bg-gray-50 rounded-lg hover:bg-gray-100 transition cursor-pointer flex items-center justify-center">
-                                    <span className="text-xs text-gray-400">Photo {i}</span>
+                            {system.gallery.map((img, i) => (
+                                <div key={i} className="aspect-square bg-gray-50 rounded-lg hover:bg-gray-100 transition cursor-pointer flex items-center justify-center relative overflow-hidden">
+                                    <Image
+                                        src={img}
+                                        alt={`Growth stage ${i + 1}`}
+                                        fill
+                                        className="object-cover"
+                                    />
                                 </div>
                             ))}
                             <div className="aspect-square border-2 border-dashed border-gray-200 rounded-lg flex flex-col items-center justify-center text-gray-400 hover:border-green-400 hover:text-green-500 transition cursor-pointer">

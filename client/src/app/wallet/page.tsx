@@ -25,6 +25,7 @@ export default function WalletPage() {
     const fetchWallet = async () => {
         try {
             const res = await api.get('/wallet');
+            console.log('Wallet Data:', res.data); // Debug
             setWallet(res.data);
         } catch (error) {
             console.error('Failed to fetch wallet', error);
@@ -77,7 +78,7 @@ export default function WalletPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-6 text-white shadow-lg">
                     <p className="text-indigo-100 text-sm font-medium mb-1">Total Balance</p>
-                    <h2 className="text-4xl font-bold mb-4">{Number(wallet.plyt.spendable).toFixed(2)} PLYT</h2>
+                    <h2 className="text-4xl font-bold mb-4">{Number(wallet?.plyt?.spendable || 0).toFixed(2)} PLYT</h2>
                     <div className="flex gap-3">
                         <button onClick={handleTopUp} className="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 py-2 rounded-lg text-sm font-medium transition">
                             Top Up
@@ -90,8 +91,8 @@ export default function WalletPage() {
 
                 <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
                     <p className="text-gray-500 text-sm font-medium mb-1">Staking Rewards</p>
-                    <h2 className="text-4xl font-bold text-gray-900 mb-2">{wallet.apy} <span className="text-lg font-normal text-gray-400">APY</span></h2>
-                    <p className="text-gray-600 text-sm mb-4">Staked: {Number(wallet.plyt.staked).toFixed(2)} PLYT</p>
+                    <h2 className="text-4xl font-bold text-gray-900 mb-2">{wallet?.apy || '0%'} <span className="text-lg font-normal text-gray-400">APY</span></h2>
+                    <p className="text-gray-600 text-sm mb-4">Staked: {Number(wallet?.plyt?.staked || 0).toFixed(2)} PLYT</p>
                     <button onClick={handleStake} className="w-full border border-gray-300 hover:bg-gray-50 text-gray-700 py-2 rounded-lg text-sm font-medium transition">
                         Manage Staking
                     </button>

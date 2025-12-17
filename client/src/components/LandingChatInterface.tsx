@@ -89,18 +89,18 @@ export default function LandingChatInterface() {
             <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-emerald-100/30 rounded-full blur-3xl translate-y-1/2 -translate-x-1/4 pointer-events-none" />
 
             {/* Header / Nav Area */}
-            <header className="p-6 flex justify-between items-center z-10 relative">
-                <Logo variant="dark" width={100} />
-                <div className="flex gap-4">
+            <header className="p-4 md:p-6 flex justify-between items-center z-10 relative shrink-0">
+                <Logo variant="dark" width={90} />
+                <div className="flex gap-3 md:gap-4">
                     <button
                         onClick={() => router.push('/login')}
-                        className="text-gray-600 font-medium hover:text-green-700 transition-colors"
+                        className="text-gray-600 font-medium hover:text-green-700 transition-colors text-sm md:text-base"
                     >
                         Sign In
                     </button>
                     <button
                         onClick={() => router.push('/signup')}
-                        className="px-5 py-2 bg-green-600 text-white rounded-full font-medium shadow-lg shadow-green-600/20 hover:bg-green-700 hover:shadow-xl hover:-translate-y-0.5 transition-all text-sm"
+                        className="px-4 py-1.5 md:px-5 md:py-2 bg-green-600 text-white rounded-full font-medium shadow-lg shadow-green-600/20 hover:bg-green-700 hover:shadow-xl hover:-translate-y-0.5 transition-all text-xs md:text-sm"
                     >
                         Join Network
                     </button>
@@ -108,14 +108,14 @@ export default function LandingChatInterface() {
             </header>
 
             {/* Main Content Area */}
-            <main className="flex-1 flex flex-col items-center justify-center w-full max-w-4xl mx-auto px-4 z-10 relative space-y-8">
+            <main className="flex-1 flex flex-col items-center justify-center w-full max-w-4xl mx-auto px-4 z-10 relative space-y-4 md:space-y-8 min-h-0">
 
                 {/* Hero Text */}
-                <div className="text-center space-y-4 mb-2">
+                <div className="text-center space-y-2 md:space-y-4 mb-0 md:mb-2 shrink-0">
                     <motion.h1
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="text-4xl md:text-6xl font-extrabold text-gray-900 tracking-tight leading-tight"
+                        className="text-3xl md:text-6xl font-extrabold text-gray-900 tracking-tight leading-tight"
                     >
                         What do you want to <br />
                         <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-600 to-emerald-600">
@@ -126,9 +126,17 @@ export default function LandingChatInterface() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 0.2 }}
-                        className="text-lg text-gray-500 font-light max-w-xl mx-auto"
+                        className="text-sm md:text-lg text-gray-500 font-light max-w-xl mx-auto hidden md:block" // Hide subtitle on small mobile to save space? Or just make it smaller.
                     >
                         Your intelligent network for local food independence.
+                    </motion.p>
+                    <motion.p // Mobile subtitle
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.2 }}
+                        className="text-sm text-gray-500 font-light max-w-xs mx-auto md:hidden"
+                    >
+                        Your network for food independence.
                     </motion.p>
                 </div>
 
@@ -137,7 +145,7 @@ export default function LandingChatInterface() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.3 }}
-                    className="w-full bg-white rounded-3xl shadow-2xl shadow-green-900/5 ring-1 ring-gray-100 overflow-hidden p-2"
+                    className="w-full bg-white rounded-3xl shadow-2xl shadow-green-900/5 ring-1 ring-gray-100 overflow-hidden p-1 md:p-2 shrink-0"
                 >
                     {/* Active Tags Area */}
                     <AnimatePresence>
@@ -146,7 +154,7 @@ export default function LandingChatInterface() {
                                 initial={{ height: 0, opacity: 0 }}
                                 animate={{ height: 'auto', opacity: 1 }}
                                 exit={{ height: 0, opacity: 0 }}
-                                className="flex flex-wrap gap-2 px-4 pt-4 pb-2"
+                                className="flex flex-wrap gap-2 px-3 pt-3 pb-1 md:px-4 md:pt-4 md:pb-2"
                             >
                                 {selectedTags.map((tag) => (
                                     <motion.span
@@ -154,7 +162,7 @@ export default function LandingChatInterface() {
                                         initial={{ scale: 0.8, opacity: 0 }}
                                         animate={{ scale: 1, opacity: 1 }}
                                         exit={{ scale: 0.8, opacity: 0 }}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-700 text-sm font-semibold rounded-full border border-green-100"
+                                        className="inline-flex items-center gap-1 px-2 py-1 md:px-3 bg-green-50 text-green-700 text-xs md:text-sm font-semibold rounded-full border border-green-100"
                                     >
                                         {tag}
                                         <button
@@ -176,22 +184,23 @@ export default function LandingChatInterface() {
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            placeholder="Ask me anything... (e.g. 'I need 5kg of organic kale delivered tomorrow')"
-                            className="w-full text-lg text-gray-800 placeholder:text-gray-300 bg-transparent border-0 focus:ring-0 resize-none max-h-60 py-3 px-4 leading-relaxed"
+                            placeholder="Ask me anything..."
+                            className="w-full text-base md:text-lg text-gray-800 placeholder:text-gray-300 bg-transparent border-0 focus:ring-0 resize-none max-h-40 md:max-h-60 py-2 md:py-3 px-2 md:px-4 leading-relaxed"
                             rows={1}
                         />
 
                         {/* Action Bar */}
-                        <div className="flex justify-between items-center px-4 pb-2 pt-2">
-                            <div className="text-xs text-gray-400 font-medium">
+                        <div className="flex justify-between items-center px-2 md:px-4 pb-1 pt-1 md:pb-2 md:pt-2">
+                            <div className="text-[10px] md:text-xs text-gray-400 font-medium hidden xs:block">
                                 {prompt.length > 0 || selectedTags.length > 0 ? 'Press Enter' : ''}
                             </div>
+                            <div className="flex-1" /> {/* Spacer */}
                             <button
                                 onClick={() => handleSubmit()}
                                 disabled={prompt.length === 0 && selectedTags.length === 0}
-                                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white p-3 rounded-xl transition-all shadow-md disabled:shadow-none"
+                                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white p-2 md:p-3 rounded-xl transition-all shadow-md disabled:shadow-none"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 md:w-5 md:h-5">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
                                 </svg>
                             </button>
@@ -204,13 +213,13 @@ export default function LandingChatInterface() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.4 }}
-                    className="flex flex-wrap justify-center gap-3 mb-8"
+                    className="flex flex-wrap justify-center gap-2 md:gap-3 mb-2 md:mb-8 shrink-0"
                 >
                     {PRESET_TAGS.map((tag) => (
                         <button
                             key={tag}
                             onClick={() => handleTagClick(tag)}
-                            className={`px-4 py-2 rounded-full border text-sm font-medium transition-all duration-300 ${selectedTags.includes(tag)
+                            className={`px-3 py-1.5 md:px-4 md:py-2 rounded-full border text-xs md:text-sm font-medium transition-all duration-300 ${selectedTags.includes(tag)
                                 ? 'bg-green-600 text-white border-green-600'
                                 : 'bg-white text-gray-600 border-gray-200 hover:border-green-400 hover:text-green-600 hover:bg-green-50'
                                 }`}
@@ -225,9 +234,9 @@ export default function LandingChatInterface() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.5 }}
-                    className="w-full max-w-5xl"
+                    className="w-full max-w-5xl shrink-0"
                 >
-                    <div className="text-center mb-2 text-xs text-gray-300 font-medium uppercase tracking-widest">
+                    <div className="text-center mb-1 md:mb-2 text-[10px] md:text-xs text-gray-300 font-medium uppercase tracking-widest">
                         Live Market
                     </div>
                     <MarketTicker onItemClick={handleTickerItemClick} />

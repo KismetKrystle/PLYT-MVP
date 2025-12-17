@@ -15,6 +15,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [isDesktopOpen, setIsDesktopOpen] = useState(true);
     const [isLessonsOpen, setIsLessonsOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
+    const { savedLessons, activeLesson, setActiveLesson } = useLessons(); // Moved to top level
 
     // 1. Auth & Loading Guard
     // If loading, show nothing (or spinner)
@@ -25,8 +26,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // Updated Navigation Items per User Request
     const NAV_ITEMS = [
         {
-            name: 'Home', href: '/', icon: (
+            name: 'Home', href: '/?tab=home', icon: (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+            )
+        },
+        {
+            name: 'Chats', href: '/?tab=find_produce', icon: (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
             )
         },
         {
@@ -93,7 +99,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         {NAV_ITEMS.map((item) => {
                             const isActive = pathname === item.href;
                             const isLessons = item.name === 'Lessons';
-                            const { savedLessons, activeLesson, setActiveLesson } = useLessons();
 
                             if (isLessons) {
                                 return (
@@ -213,66 +218,71 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         />
                     </div>
 
-                    {/* Wallet Widget & Profile */}
-                    <div className="flex items-center gap-3 md:gap-6">
-                        <div className="hidden sm:flex flex-col items-end">
-                            <div className="flex items-baseline gap-2">
-                                <span className="font-bold text-gray-900 text-sm md:text-lg">1,250</span>
-                                <span className="text-gray-400 text-xs font-medium hidden md:inline">≈ $12.50</span>
-                            </div>
-                            <button className="text-green-600 text-[10px] font-bold uppercase tracking-wide hover:underline hover:text-green-700 transition">
-                                Wallet
-                            </button>
-                        </div>
+                    {/* Profile Dropdown (With Wallet) */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setIsProfileOpen(!isProfileOpen)}
+                            className="w-10 h-10 rounded-full bg-gradient-to-br from-green-100 to-emerald-200 flex items-center justify-center text-green-800 font-bold text-sm shadow-inner hover:ring-2 hover:ring-green-500/20 transition-all border border-green-100"
+                        >
+                            {user?.email?.[0].toUpperCase() || 'U'}
+                        </button>
 
-                        {/* Profile Dropdown */}
-                        <div className="relative">
-                            <button
-                                onClick={() => setIsProfileOpen(!isProfileOpen)}
-                                className="w-10 h-10 rounded-full bg-gradient-to-br from-green-100 to-emerald-200 flex items-center justify-center text-green-800 font-bold text-sm shadow-inner hover:ring-2 hover:ring-green-500/20 transition-all border border-green-100"
-                            >
-                                {user?.email?.[0].toUpperCase() || 'U'}
-                            </button>
-
-                            {/* Dropdown Menu */}
-                            {isProfileOpen && (
-                                <>
-                                    <div
-                                        className="fixed inset-0 z-30"
-                                        onClick={() => setIsProfileOpen(false)}
-                                    />
-                                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-100 divide-y divide-gray-100 z-40 overflow-hidden text-sm animate-in fade-in slide-in-from-top-2 duration-200">
-                                        <div className="px-4 py-3 bg-gray-50/50">
-                                            <p className="text-sm font-medium text-gray-900 truncate">Kismet</p>
-                                            <p className="text-xs text-gray-500 truncate">{user?.email}</p>
-                                        </div>
-                                        <div className="py-1">
-                                            <Link
-                                                href="/admin"
-                                                onClick={() => setIsProfileOpen(false)}
-                                                className="flex items-center gap-2 px-4 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
-                                            >
-                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                Admin Dashboard
-                                            </Link>
-                                            <a href="#" className="flex items-center gap-2 px-4 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors">
-                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                Settings
-                                            </a>
-                                        </div>
-                                        <div className="py-1 bg-red-50/30">
-                                            <button
-                                                onClick={logout}
-                                                className="w-full text-left flex items-center gap-2 px-4 py-2.5 text-red-600 hover:bg-red-50 transition-colors"
-                                            >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                                                Sign Out
-                                            </button>
-                                        </div>
+                        {/* Dropdown Menu */}
+                        {isProfileOpen && (
+                            <>
+                                <div
+                                    className="fixed inset-0 z-30"
+                                    onClick={() => setIsProfileOpen(false)}
+                                />
+                                <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 divide-y divide-gray-100 z-40 overflow-hidden text-sm animate-in fade-in slide-in-from-top-2 duration-200">
+                                    {/* User Info */}
+                                    <div className="px-5 py-4 bg-gray-50/50">
+                                        <p className="text-sm font-semibold text-gray-900 truncate">Kismet</p>
+                                        <p className="text-xs text-gray-500 truncate">{user?.email}</p>
                                     </div>
-                                </>
-                            )}
-                        </div>
+
+                                    {/* Wallet Section (New) */}
+                                    <Link
+                                        href="/wallet"
+                                        onClick={() => setIsProfileOpen(false)}
+                                        className="block px-5 py-3 hover:bg-green-50 transition-colors group"
+                                    >
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide group-hover:text-green-600">Wallet Balance</span>
+                                            <svg className="w-4 h-4 text-gray-400 group-hover:text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                        </div>
+                                        <div className="flex items-baseline gap-2">
+                                            <span className="font-bold text-gray-900 text-lg group-hover:text-green-700">1,250 PLYT</span>
+                                            <span className="text-gray-400 text-xs font-medium">≈ $12.50</span>
+                                        </div>
+                                    </Link>
+
+                                    <div className="py-2">
+                                        <Link
+                                            href="/admin"
+                                            onClick={() => setIsProfileOpen(false)}
+                                            className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
+                                        >
+                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                            Admin Dashboard
+                                        </Link>
+                                        <a href="#" className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors">
+                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                            Settings
+                                        </a>
+                                    </div>
+                                    <div className="py-2 bg-red-50/30">
+                                        <button
+                                            onClick={logout}
+                                            className="w-full text-left flex items-center gap-3 px-5 py-2.5 text-red-600 hover:bg-red-50 transition-colors"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                                            Sign Out
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </header>
 

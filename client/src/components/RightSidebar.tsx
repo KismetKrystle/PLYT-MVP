@@ -3,7 +3,11 @@
 
 import Image from 'next/image';
 
+import { useRouter } from 'next/navigation';
+
 export default function ResourcesPanel() {
+    const router = useRouter();
+
     // Hardcoded history data for demo
     const HISTORY_ITEMS = [
         { id: 1, title: 'Hydroponics for beginners', date: '2h ago' },
@@ -43,7 +47,11 @@ export default function ResourcesPanel() {
                 {/* List Items */}
                 <div className="space-y-1">
                     {HISTORY_ITEMS.map(item => (
-                        <div key={item.id} className="p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-100 transition group">
+                        <div
+                            key={item.id}
+                            onClick={() => router.push(`/?historyId=${item.id}`)}
+                            className="p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-100 transition group"
+                        >
                             <p className="text-xs font-medium text-gray-800 line-clamp-1 group-hover:text-green-700">{item.title}</p>
                             <p className="text-[10px] text-gray-400">{item.date}</p>
                         </div>

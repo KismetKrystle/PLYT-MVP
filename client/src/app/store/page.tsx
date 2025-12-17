@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 
 export default function StorePage() {
     const [category, setCategory] = useState('All');
@@ -8,12 +9,12 @@ export default function StorePage() {
     const CATEGORIES = ['All', 'Systems', 'Produce', 'Seeds', 'Nutrients'];
 
     const PRODUCTS = [
-        { id: 1, name: "Hydro-Starter Kit", price: 1200000, category: "Systems", image: "" },
-        { id: 2, name: "Organic Kale", price: 35000, category: "Produce", image: "" },
-        { id: 3, name: "Liquid Gold Nutrient A+B", price: 150000, category: "Nutrients", image: "" },
-        { id: 4, name: "Thai Basil Seeds", price: 25000, category: "Seeds", image: "" },
-        { id: 5, name: "Vertical Tower V2", price: 3500000, category: "Systems", image: "" },
-        { id: 6, name: "Cherry Tomatoes", price: 28000, category: "Produce", image: "" },
+        { id: 1, name: "Hydro-Starter Kit", price: 1200000, category: "Systems", image: "/assets/images/store/hydro_starter_kit.png" },
+        { id: 2, name: "Organic Kale", price: 35000, category: "Produce", image: "/assets/images/store/organic_kale.png" },
+        { id: 3, name: "Liquid Gold Nutrient A+B", price: 150000, category: "Nutrients", image: "/assets/images/store/nutrient_ab.png" },
+        { id: 4, name: "Thai Basil Seeds", price: 25000, category: "Seeds", image: "/assets/images/store/thai_basil_seeds.png" },
+        { id: 5, name: "Vertical Tower V2", price: 3500000, category: "Systems", image: "/assets/images/store/vertical_tower_v2.png" },
+        { id: 6, name: "Cherry Tomatoes", price: 28000, category: "Produce", image: "/assets/images/store/cherry_tomatoes.png" },
     ];
 
     const filtered = category === 'All' ? PRODUCTS : PRODUCTS.filter(p => p.category === category);
@@ -42,11 +43,13 @@ export default function StorePage() {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                 {filtered.map(product => (
                     <div key={product.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition group overflow-hidden">
-                        <div className="aspect-square bg-gray-100 relative">
-                            {/* Image Placeholder */}
-                            <div className="absolute inset-0 flex items-center justify-center text-gray-300">
-                                <span className="text-xs uppercase">{product.category}</span>
-                            </div>
+                        <div className="aspect-square bg-white relative">
+                            <Image
+                                src={product.image}
+                                alt={product.name}
+                                fill
+                                className="object-cover group-hover:scale-105 transition duration-300"
+                            />
                         </div>
                         <div className="p-4">
                             <div className="flex justify-between items-start mb-2">

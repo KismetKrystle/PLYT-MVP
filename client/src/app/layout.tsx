@@ -24,11 +24,13 @@ export default function RootLayout({
       <body className="flex flex-col min-h-screen">
         <AuthProvider>
           <LessonProvider>
-            <AppLayout>
-              <main className="flex-1 h-full">
-                {children}
-              </main>
-            </AppLayout>
+            <ProtectedRoute>
+              <AppLayout>
+                <main className="flex-1 h-full">
+                  {children}
+                </main>
+              </AppLayout>
+            </ProtectedRoute>
           </LessonProvider>
         </AuthProvider>
       </body>

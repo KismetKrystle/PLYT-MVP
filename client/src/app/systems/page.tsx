@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 
 export default function SystemsPage() {
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState('overview');
 
     // Mock Data for a Specific System
@@ -41,6 +43,13 @@ export default function SystemsPage() {
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                 <div>
+                    <button
+                        onClick={() => router.back()}
+                        className="flex items-center text-gray-500 hover:text-green-600 mb-2 transition-colors"
+                    >
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                        Back
+                    </button>
                     <h1 className="text-3xl font-bold text-gray-900">{system.name}</h1>
                     <div className="flex items-center gap-2 mt-2">
                         <span className="w-3 h-3 rounded-full bg-green-500"></span>

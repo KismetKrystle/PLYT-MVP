@@ -42,7 +42,9 @@ export default function AgriDashboard() {
         }
     }, [searchParams]);
 
-    // ... (rest of state items are unchanged) ...
+
+    // Mobile Panel State
+    const [isPanelOpen, setIsPanelOpen] = useState(false);
 
     // Notes for Learn Mode
     const [notes, setNotes] = useState<string[]>([]);
@@ -191,13 +193,13 @@ export default function AgriDashboard() {
 
             if (targetTab === 'learn') {
                 if (currentPrompt.toLowerCase().includes('grow tomatoes')) {
-                    responseContent = "Great choice! Tomatoes are rewarding to grow. Here is how you can get started:";
+                    responseContent = "Great choice! Tomatoes are rewarding to grow indoors. Here is how you can get started:";
                     responseSteps = [
-                        "Start seeds indoors 6-8 weeks before the last frost.",
-                        "Keep soil moist and warm (70-80°F) for germination.",
-                        "Provide strong light once seedlings emerge."
+                        "Choose a compact variety like 'Tiny Tim' suitable for containers.",
+                        "Use a grow light to provide 12-16 hours of light daily.",
+                        "Pollinate flowers by gently shaking the stems daily."
                     ];
-                    responseImage = '/assets/images/systems/gallery_seedlings.png';
+                    responseImage = '/assets/images/gallery/indoor_garden.png';
                 }
             }
 
@@ -215,33 +217,47 @@ export default function AgriDashboard() {
             // If in Find Produce, simulate finding an item
             if (targetTab === 'find_produce') {
                 const MOCK_DB: Omit<ProduceItem, 'quantity'>[] = [
-                    { id: '1', name: 'Organic Red Tomatoes', price: 25000, unit: 'kg', plyt: '25', image: '', description: 'Sweet, vine-ripened tomatoes grown in pesticide-free soil.', specs: ['Vitamin C Rich', 'Vine Ripened'], farm: 'Sunrise Farm', growMethod: 'Soil' },
-                    { id: '2', name: 'Fresh Thai Basil', price: 15000, unit: 'bundle', plyt: '15', image: '', description: 'Aromatic basil perfect for cooking.', specs: ['Rich Aroma', 'Hydroponic'], farm: 'GreenTech', growMethod: 'Hydroponics' },
-                    { id: '3', name: 'Curly Kale', price: 35000, unit: 'kg', plyt: '35', image: '', description: 'Crunchy, nutrient-dense kale leaves.', specs: ['Superfood', 'Organic'], farm: 'Ubud Organics', growMethod: 'Organic' },
-                    { id: '4', name: 'Sweet Potatoes', price: 18000, unit: 'kg', plyt: '18', image: '', description: 'Purple sweet potatoes, high in antioxidants.', specs: ['High Fiber', 'Local'], farm: 'Bali Root', growMethod: 'Traditional' }
+                    { id: '1', name: 'Organic Red Tomatoes', price: 25000, unit: 'kg', plyt: '25', image: '/assets/images/store/cherry_tomatoes.png', description: 'Sweet, vine-ripened tomatoes grown in pesticide-free soil.', specs: ['Vitamin C Rich', 'Vine Ripened'], farm: 'Sunrise Farm', growMethod: 'Soil' },
+                    { id: '2', name: 'Fresh Thai Basil', price: 15000, unit: 'bundle', plyt: '15', image: '/assets/images/store/thai_basil_seeds.png', description: 'Aromatic basil perfect for cooking.', specs: ['Rich Aroma', 'Hydroponic'], farm: 'GreenTech', growMethod: 'Hydroponics' },
+                    { id: '3', name: 'Curly Kale', price: 35000, unit: 'kg', plyt: '35', image: '/assets/images/store/organic_kale.png', description: 'Crunchy, nutrient-dense kale leaves.', specs: ['Superfood', 'Organic'], farm: 'Ubud Organics', growMethod: 'Organic' },
+                    { id: '4', name: 'Sweet Potatoes', price: 18000, unit: 'kg', plyt: '18', image: '/assets/images/systems/gallery_harvest.png', description: 'Purple sweet potatoes, high in antioxidants.', specs: ['High Fiber', 'Local'], farm: 'Bali Root', growMethod: 'Traditional' }
                 ];
 
-                // Pick random item or based on prompt (naive)
-                const mockItem = MOCK_DB[Math.floor(Math.random() * MOCK_DB.length)];
+                // Filter items based on prompt or pick random if no match
+                const promptLower = currentPrompt.toLowerCase();
+                const matchedItems = MOCK_DB.filter(item =>
+                    item.name.toLowerCase().includes(promptLower) ||
+                    item.description.toLowerCase().includes(promptLower)
+                );
+
+                // If match found, use the first match, otherwise random
+                const itemToAdd = matchedItems.length > 0
+                    ? matchedItems[0]
+                    : MOCK_DB[Math.floor(Math.random() * MOCK_DB.length)];
 
                 setProduceItems(prev => {
-                    const existing = prev.find(p => p.id === mockItem.id);
+                    const existing = prev.find(p => p.id === itemToAdd.id);
                     if (existing) {
-                        return prev.map(p => p.id === mockItem.id ? { ...p, quantity: p.quantity + 1 } : p);
+                        return prev.map(p => p.id === itemToAdd.id ? { ...p, quantity: p.quantity + 1 } : p);
                     }
-                    return [...prev, { ...mockItem, quantity: 1 }];
+                    return [...prev, { ...itemToAdd, quantity: 1 }];
                 });
+                setIsPanelOpen(true); // Auto-open panel on mobile
             }
 
             // If in Pick System, simulate adding System OR Container
             if (targetTab === 'pick_system') {
-                // Randomly maintain variety or just add one of each for demo
-                const isSystem = Math.random() > 0.5;
+                const promptLower = currentPrompt.toLowerCase();
+                const isSystemPrompt = promptLower.includes('system') || promptLower.includes('hydro') || promptLower.includes('tower');
+                const isContainerPrompt = promptLower.includes('pot') || promptLower.includes('planter') || promptLower.includes('container');
+
+                // Determine category based on prompt, default to random mix logic if ambiguous
+                const isSystem = (isSystemPrompt && !isContainerPrompt) || (!isSystemPrompt && !isContainerPrompt && Math.random() > 0.5);
 
                 if (isSystem) {
                     const MOCK_SYSTEMS: Omit<ProduceItem, 'quantity'>[] = [
-                        { id: 's1', name: 'Hydro-Starter Kit', price: 1200000, unit: 'unit', plyt: '1200', image: '', description: 'Perfect for beginners. Includes 10 net pots.', specs: ['10 Pots', 'Air Pump'], farm: 'HydroBasics', growMethod: 'NFT' },
-                        { id: 's2', name: 'Vertical Tower V2', price: 3500000, unit: 'unit', plyt: '3500', image: '', description: 'Space-saving vertical tower for leafy greens.', specs: ['36 Pots', 'Vertical'], farm: 'VertiGrow', growMethod: 'Aeroponics' },
+                        { id: 's1', name: 'Hydro-Starter Kit', price: 1200000, unit: 'unit', plyt: '1200', image: '/assets/images/store/hydro_starter_kit.png', description: 'Perfect for beginners. Includes 10 net pots.', specs: ['10 Pots', 'Air Pump'], farm: 'HydroBasics', growMethod: 'NFT' },
+                        { id: 's2', name: 'Vertical Tower V2', price: 3500000, unit: 'unit', plyt: '3500', image: '/assets/images/store/vertical_tower_v2.png', description: 'Space-saving vertical tower for leafy greens.', specs: ['36 Pots', 'Vertical'], farm: 'VertiGrow', growMethod: 'Aeroponics' },
                     ];
                     const item = MOCK_SYSTEMS[Math.floor(Math.random() * MOCK_SYSTEMS.length)];
                     setSystemItems(prev => {
@@ -251,8 +267,8 @@ export default function AgriDashboard() {
                     });
                 } else {
                     const MOCK_CONTAINERS: Omit<ProduceItem, 'quantity'>[] = [
-                        { id: 'c1', name: 'Terracotta Pot (L)', price: 150000, unit: 'unit', plyt: '150', image: '', description: 'Handcrafted clay pot.', specs: ['Breathable', 'Natural'], farm: 'Bali Clay', artisan: 'Wayan Sudra', material: 'Red Clay', impactScore: 850, growMethod: 'Handmade' },
-                        { id: 'c2', name: 'Recycled Planter', price: 75000, unit: 'unit', plyt: '75', image: '', description: 'Made from upcycled ocean plastic.', specs: ['Durable', 'Eco-friendly'], farm: 'OceanClean', artisan: 'EcoMakers', material: 'Recycled HDPE', impactScore: 920, growMethod: 'Upcycled' },
+                        { id: 'c1', name: 'Terracotta Pot (L)', price: 150000, unit: 'unit', plyt: '150', image: '/assets/images/gallery/soil_garden.png', description: 'Handcrafted clay pot.', specs: ['Breathable', 'Natural'], farm: 'Bali Clay', artisan: 'Wayan Sudra', material: 'Red Clay', impactScore: 850, growMethod: 'Handmade' },
+                        { id: 'c2', name: 'Recycled Planter', price: 75000, unit: 'unit', plyt: '75', image: '/assets/images/systems/gallery_growth.png', description: 'Made from upcycled ocean plastic.', specs: ['Durable', 'Eco-friendly'], farm: 'OceanClean', artisan: 'EcoMakers', material: 'Recycled HDPE', impactScore: 920, growMethod: 'Upcycled' },
                     ];
                     const item = MOCK_CONTAINERS[Math.floor(Math.random() * MOCK_CONTAINERS.length)];
                     setContainerItems(prev => {
@@ -261,12 +277,14 @@ export default function AgriDashboard() {
                         return [...prev, { ...item, quantity: 1 }];
                     });
                 }
+                setIsPanelOpen(true); // Auto-open panel on mobile
             }
 
             // If in Learn Mode, generate a note
             if (targetTab === 'learn') {
                 const newNote = `Key Insight: ${currentPrompt.substring(0, 20)}... details about growing.`;
                 setNotes(prev => [...prev, newNote]);
+                setIsPanelOpen(true); // Auto-open panel on mobile
             }
         }, 800);
     };
@@ -291,9 +309,9 @@ export default function AgriDashboard() {
             {/* Middle Column: Main Content (Dashboard OR Chat) */}
             <div className="flex-1 flex flex-col min-w-0 bg-white relative">
 
-                {/* Tab Navigation (Hidden on Home) */}
+                {/* Tab Navigation (Produce / Grow / Learn) */}
                 {activeTab !== 'home' && (
-                    <div className="border-b border-gray-100 flex items-center justify-center px-4 pt-2 shrink-0">
+                    <div className="flex border-b border-gray-100 items-center justify-center px-4 pt-2 shrink-0">
                         <div className="flex space-x-1 overflow-x-auto no-scrollbar w-full max-w-2xl justify-center">
                             {['find_produce', 'pick_system', 'learn'].map((tab) => (
                                 <button
@@ -304,8 +322,8 @@ export default function AgriDashboard() {
                                         : 'border-transparent text-gray-500 hover:text-gray-800'
                                         }`}
                                 >
-                                    {tab === 'find_produce' && 'Buy Produce'}
-                                    {tab === 'pick_system' && 'Pick a System'}
+                                    {tab === 'find_produce' && 'Produce'}
+                                    {tab === 'pick_system' && 'Grow System'}
                                     {tab === 'learn' && 'Learn'}
                                 </button>
                             ))}
@@ -328,7 +346,7 @@ export default function AgriDashboard() {
                             // --- FIND PRODUCE MODE (Split with Side Panel) ---
                             <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full h-full">
                                 {/* Chat Area (Left/Top) */}
-                                <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 w-full relative">
+                                <div className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8 space-y-6 w-full relative">
                                     <div className="max-w-3xl mx-auto pb-4">
                                         {(chatHistory['find_produce'] || []).map((msg, idx) => (
                                             <motion.div
@@ -351,13 +369,19 @@ export default function AgriDashboard() {
                                 </div>
 
                                 {/* Produce Panel (Right/Bottom) */}
-                                <div className="w-full md:w-96 shrink-0 border-t md:border-t-0 md:border-l border-gray-100 bg-gray-50/50 flex flex-col h-72 md:h-auto overflow-hidden relative">
-                                    <div className="p-4 border-b border-gray-100 bg-white/50 backdrop-blur-sm flex justify-between items-center">
-                                        <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Selected Produce</h3>
+                                <div className={`w-full md:w-96 shrink-0 border-t md:border-t-0 md:border-l border-gray-100 bg-gray-50/50 flex flex-col transition-all duration-300 overflow-hidden relative ${isPanelOpen ? 'h-80' : 'h-14'} md:h-auto`}>
+                                    <div
+                                        className="p-4 border-b border-gray-100 bg-white/50 backdrop-blur-sm flex justify-between items-center cursor-pointer md:cursor-default"
+                                        onClick={() => setIsPanelOpen(!isPanelOpen)}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Selected Produce</h3>
+                                            <svg className={`w-4 h-4 text-gray-400 transition-transform md:hidden ${isPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                                        </div>
                                         <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">{produceItems.length} Items</span>
                                     </div>
 
-                                    <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-20">
+                                    <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3 pb-20">
                                         {produceItems.length === 0 ? (
                                             <div className="text-center py-10 opacity-40">
                                                 <svg className="w-10 h-10 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
@@ -376,10 +400,13 @@ export default function AgriDashboard() {
                                                         className="w-16 h-16 rounded-lg bg-gray-100 shrink-0 overflow-hidden relative cursor-pointer"
                                                         onClick={() => setSelectedProduct(item)}
                                                     >
-                                                        {/* Real app would use item.image */}
-                                                        <div className="absolute inset-0 flex items-center justify-center text-gray-300">
-                                                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                                        </div>
+                                                        {item.image ? (
+                                                            <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <div className="absolute inset-0 flex items-center justify-center text-gray-300">
+                                                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                                            </div>
+                                                        )}
                                                     </div>
 
                                                     <div className="flex-1 min-w-0 flex flex-col justify-between">
@@ -460,8 +487,12 @@ export default function AgriDashboard() {
                                                     </div>
                                                     <div className="p-6 overflow-y-auto h-[calc(100%-73px)]"> {/* Adjust height based on header */}
                                                         {/* Product Image/Placeholder */}
-                                                        <div className="w-full h-40 bg-gray-100 rounded-xl mb-4 flex items-center justify-center text-gray-300">
-                                                            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                                        <div className="w-full h-40 bg-gray-100 rounded-xl mb-4 flex items-center justify-center text-gray-300 overflow-hidden">
+                                                            {selectedProduct.image ? (
+                                                                <img src={selectedProduct.image} alt={selectedProduct.name} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                                            )}
                                                         </div>
                                                         <p className="text-gray-600 text-sm mb-4">{selectedProduct.description}</p>
                                                         <div className="space-y-2 mb-4">
@@ -499,7 +530,7 @@ export default function AgriDashboard() {
                             // --- PICK SYSTEM MODE (Split with Side Panel) ---
                             <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full h-full">
                                 {/* Chat Area (Left/Top) */}
-                                <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 w-full relative">
+                                <div className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8 space-y-6 w-full relative">
                                     <div className="max-w-3xl mx-auto pb-4">
                                         {(chatHistory['pick_system'] || []).map((msg, idx) => (
                                             <motion.div
@@ -521,13 +552,19 @@ export default function AgriDashboard() {
                                 </div>
 
                                 {/* System/Container Panel (Right/Bottom) */}
-                                <div className="w-full md:w-96 shrink-0 border-t md:border-t-0 md:border-l border-gray-100 bg-gray-50/50 flex flex-col h-72 md:h-auto overflow-hidden relative">
-                                    <div className="p-4 border-b border-gray-100 bg-white/50 backdrop-blur-sm flex justify-between items-center">
-                                        <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Selected Systems & Containers</h3>
+                                <div className={`w-full md:w-96 shrink-0 border-t md:border-t-0 md:border-l border-gray-100 bg-gray-50/50 flex flex-col transition-all duration-300 overflow-hidden relative ${isPanelOpen ? 'h-80' : 'h-14'} md:h-auto`}>
+                                    <div
+                                        className="p-4 border-b border-gray-100 bg-white/50 backdrop-blur-sm flex justify-between items-center cursor-pointer md:cursor-default"
+                                        onClick={() => setIsPanelOpen(!isPanelOpen)}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Selected Systems</h3>
+                                            <svg className={`w-4 h-4 text-gray-400 transition-transform md:hidden ${isPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                                        </div>
                                         <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">{systemItems.length + containerItems.length} Items</span>
                                     </div>
 
-                                    <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-20">
+                                    <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3 pb-20">
                                         {systemItems.length === 0 && containerItems.length === 0 ? (
                                             <div className="text-center py-10 opacity-40">
                                                 <svg className="w-10 h-10 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
@@ -547,9 +584,13 @@ export default function AgriDashboard() {
                                                             className="w-16 h-16 rounded-lg bg-gray-100 shrink-0 overflow-hidden relative cursor-pointer"
                                                             onClick={() => setSelectedProduct(item)}
                                                         >
-                                                            <div className="absolute inset-0 flex items-center justify-center text-gray-300">
-                                                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                                                            </div>
+                                                            {item.image ? (
+                                                                <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <div className="absolute inset-0 flex items-center justify-center text-gray-300">
+                                                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                                                                </div>
+                                                            )}
                                                         </div>
 
                                                         <div className="flex-1 min-w-0 flex flex-col justify-between">
@@ -744,7 +785,7 @@ export default function AgriDashboard() {
                                     <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full h-full">
                                         {/* Left: Chat Area */}
                                         <div className="flex-1 flex flex-col relative border-b md:border-b-0 md:border-r border-gray-100 bg-gray-50/30 min-h-0">
-                                            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
+                                            <div className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-6 space-y-4">
                                                 {chatHistory['learn'].map((msg, idx) => (
                                                     <motion.div
                                                         key={idx}
@@ -809,20 +850,26 @@ export default function AgriDashboard() {
                                         </div>
 
                                         {/* Right: Notes Panel */}
-                                        <div className="w-full md:w-80 h-1/3 md:h-auto shrink-0 bg-white border-l border-gray-100 flex flex-col shadow-[0_0_15px_rgba(0,0,0,0.03)] z-10 md:static">
-                                            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                                                <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Start Notes</h3>
+                                        <div className={`w-full md:w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col shadow-[0_0_15px_rgba(0,0,0,0.03)] z-10 md:static transition-all duration-300 overflow-hidden ${isPanelOpen ? 'h-80' : 'h-14'} md:h-auto`}>
+                                            <div
+                                                className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 cursor-pointer md:cursor-default"
+                                                onClick={() => setIsPanelOpen(!isPanelOpen)}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Start Notes</h3>
+                                                    <svg className={`w-4 h-4 text-gray-400 transition-transform md:hidden ${isPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                                                </div>
                                                 <button
-                                                    onClick={handleSaveLesson}
+                                                    onClick={(e) => { e.stopPropagation(); handleSaveLesson(); }}
                                                     title="Save to Lessons"
                                                     className="w-8 h-8 flex items-center justify-center bg-green-100 text-green-700 rounded-full hover:bg-green-600 hover:text-white transition-all shadow-sm"
                                                 >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} className="w-5 h-5">
                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                                                     </svg>
                                                 </button>
                                             </div>
-                                            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                            <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3">
                                                 {notes.length === 0 ? (
                                                     <div className="text-center py-10 opacity-40">
                                                         <svg className="w-12 h-12 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>

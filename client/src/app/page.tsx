@@ -5,6 +5,8 @@ import LandingChatInterface from '../components/LandingChatInterface';
 import AppLayout from '../components/AppLayout';
 import AgriDashboard from '../components/AgriDashboard';
 
+import { Suspense } from 'react';
+
 export default function Home() {
   const { user, loading } = useAuth();
 
@@ -14,7 +16,9 @@ export default function Home() {
   // Authenticated View: Main Chat Dashboard inside App Shell
   if (user) {
     return (
-      <AgriDashboard />
+      <Suspense fallback={<div className="min-h-screen bg-white" />}>
+        <AgriDashboard />
+      </Suspense>
     );
   }
 

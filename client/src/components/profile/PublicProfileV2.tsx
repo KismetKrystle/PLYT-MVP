@@ -19,8 +19,8 @@ const FOOD_GALLERY = [
 ];
 
 const GROW_GALLERY = [
-    { id: 1, title: 'Vertical Hydro 2.0', image: '/assets/images/gallery/hydro_system.png', type: 'Hydroponic' },
-    { id: 2, title: 'Patio Planter', image: '/assets/images/gallery/soil_garden.png', type: 'Soil' },
+    { id: 1, title: 'Vertical Hydro Tower', image: '/assets/images/systems/tower.jpg', type: 'Hydroponic', link: '/systems' },
+    { id: 2, title: 'NFT System', image: '/assets/images/gallery/hydro_system.png', type: 'Hydroponic', link: '/systems' },
 ];
 
 const LEARN_GALLERY = [
@@ -201,7 +201,11 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 </div>
 
                 {/* -- Box 6: What I've Learned (Row 3, Col 3-4) -- */}
-                <div className="col-span-2 md:col-span-2 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300">
+                <div
+                    onClick={() => setActiveModal('learn')}
+                    className="col-span-2 md:col-span-2 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group"
+                >
+                    <ActionButton type={isOwner ? 'edit' : 'like'} />
                     <h3 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
                         <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
                         What I've Learned
@@ -334,8 +338,9 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             <div className="p-6 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white z-10">
                                 <h2 className="text-2xl font-bold text-gray-900">
                                     {activeModal === 'food' && 'Food I Eat'}
-                                    {activeModal === 'grow' && 'How I Grow'}
+                                    {activeModal === 'grow' && 'My Systems'}
                                     {activeModal === 'recipes' && 'Shared Recipes'}
+                                    {activeModal === 'learn' && 'Learning & Resources'}
                                 </h2>
                                 <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-gray-100 rounded-full transition">
                                     <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -362,13 +367,16 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                 {activeModal === 'grow' && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {GROW_GALLERY.map(item => (
-                                            <div key={item.id} className="relative aspect-video rounded-2xl overflow-hidden group shadow-md cursor-pointer">
+                                            <Link href={item.link} key={item.id} className="block relative aspect-video rounded-2xl overflow-hidden group shadow-md cursor-pointer hover:ring-4 hover:ring-green-500/30 transition-all">
                                                 <Image src={item.image} alt={item.title} fill className="object-cover group-hover:scale-105 transition duration-500" />
                                                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-6">
-                                                    <h3 className="text-white text-xl font-bold">{item.title}</h3>
+                                                    <h3 className="text-white text-xl font-bold flex items-center gap-2">
+                                                        {item.title}
+                                                        <svg className="w-5 h-5 text-green-400 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                                    </h3>
                                                     <p className="text-white/80">{item.type}</p>
                                                 </div>
-                                            </div>
+                                            </Link>
                                         ))}
                                     </div>
                                 )}
@@ -389,6 +397,57 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                         ))}
                                     </div>
                                 )}
+
+                                {activeModal === 'learn' && (
+                                    <div className="space-y-8">
+                                        {/* Certifications / Progress */}
+                                        <div>
+                                            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                                <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
+                                                Active Learning
+                                            </h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {LEARN_GALLERY.map(item => (
+                                                    <div key={item.id} className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50">
+                                                        <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 font-bold">
+                                                            {item.progress === 'Completed' ? '✓' : '%'}
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="font-bold text-gray-900">{item.title}</h4>
+                                                            <p className="text-sm text-gray-500">{item.progress}</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Resources Section */}
+                                        <div>
+                                            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                                                My Resources
+                                            </h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {RESOURCES.map(item => (
+                                                    <Link href={item.link} key={item.id} className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-200 transition group">
+                                                        <div className="w-10 h-10 rounded-lg bg-white text-blue-500 flex items-center justify-center shrink-0 shadow-sm group-hover:scale-110 transition">
+                                                            {item.type === 'Link' ? (
+                                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                                                            ) : (
+                                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                            )}
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="font-bold text-gray-900 group-hover:text-blue-700 transition">{item.title}</h4>
+                                                            <p className="text-xs text-blue-400 font-medium uppercase tracking-wide">{item.type}</p>
+                                                        </div>
+                                                    </Link>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                             </div>
                         </motion.div>
                     </motion.div>

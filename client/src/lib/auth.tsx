@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 interface User {
     id: number;
     email: string;
-    role: 'consumer' | 'farmer';
+    role: 'consumer' | 'farmer' | 'distributor' | 'servicer';
     wallet_address?: string;
 }
 
@@ -27,13 +27,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
-    const login = (newToken: string, newUser: User, redirectPath: string = '/') => {
+    const login = (newToken: string, newUser: User, redirectPath?: string) => {
         setToken(newToken);
         setUser(newUser);
         localStorage.setItem('token', newToken);
         localStorage.setItem('user', JSON.stringify(newUser));
 
-        router.push(redirectPath);
+        if (redirectPath) {
+            router.push(redirectPath);
+        }
     };
 
     const logout = () => {

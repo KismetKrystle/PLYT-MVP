@@ -6,6 +6,13 @@ CREATE TABLE IF NOT EXISTS users (
   wallet_address VARCHAR(255),
   plyt_balance DECIMAL(20, 8) DEFAULT 0,
   staked_balance DECIMAL(20, 8) DEFAULT 0,
+  staked_balance DECIMAL(20, 8) DEFAULT 0,
+  full_name VARCHAR(255),
+  phone_number VARCHAR(50),
+  location_city VARCHAR(100),
+  location_address TEXT,
+  bio TEXT,
+  avatar_url TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

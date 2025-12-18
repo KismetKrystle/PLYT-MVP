@@ -24,7 +24,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // If loading, show nothing (or spinner)
     if (loading) return <div className="min-h-screen bg-white"></div>;
     // If not authenticated, render children without layout (Login, Landing)
-    if (!user) return <>{children}</>;
+    // If not authenticated, or if we are on the signup/onboarding page (even if logged in via mock), 
+    // render children without the full dashboard layout.
+    // This prevents the SignupPage from remounting (and triggering its logout effect) when we internally login but haven't finished KYC.
+    if (!user || pathname === '/signup') return <>{children}</>;
 
     // Updated Navigation Items per User Request
     const NAV_ITEMS = [

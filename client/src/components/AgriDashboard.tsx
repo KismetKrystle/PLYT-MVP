@@ -16,12 +16,19 @@ import { useSearchParams } from 'next/navigation';
 // import PublicProfile from './profile/PublicProfile'; // Deprecated
 import PublicProfileV2 from './profile/PublicProfileV2';
 import { useAuth } from '../lib/auth';
+import FarmerDashboard from './dashboards/FarmerDashboard';
+import DistributorDashboard from './dashboards/DistributorDashboard';
+import ServicerDashboard from './dashboards/ServicerDashboard';
 
 export default function AgriDashboard() {
     const searchParams = useSearchParams();
     const historyId = searchParams.get('historyId');
 
     const { user } = useAuth(); // Get user for profile
+
+    if (user?.role === 'farmer') return <FarmerDashboard />;
+    if (user?.role === 'distributor') return <DistributorDashboard />;
+    if (user?.role === 'servicer') return <ServicerDashboard />;
 
     const [activeTab, setActiveTab] = useState<Tab>('home');
     const [prompt, setPrompt] = useState('');
@@ -88,7 +95,13 @@ export default function AgriDashboard() {
     // -- Copied Logic from MainChat (History Simulation) --
     // -- Chat History per Tab --
     const [chatHistory, setChatHistory] = useState<{
-        [key in 'find_produce' | 'pick_system' | 'learn']: { role: 'user' | 'assistant'; content: string; tags?: string[] }[]
+        [key in 'find_produce' | 'pick_system' | 'learn']: {
+            role: 'user' | 'assistant';
+            content: string;
+            tags?: string[];
+            steps?: string[];
+            image?: string;
+        }[]
     }>({
         find_produce: [{ role: 'assistant', content: 'Welcome back! Looking for fresh produce?' }],
         pick_system: [{ role: 'assistant', content: 'Ready to find your perfect growing system?' }],
@@ -172,9 +185,30 @@ export default function AgriDashboard() {
         }
 
         setTimeout(() => {
+            let responseContent = 'Processing your request...';
+            let responseSteps: string[] | undefined;
+            let responseImage: string | undefined;
+
+            if (targetTab === 'learn') {
+                if (currentPrompt.toLowerCase().includes('grow tomatoes')) {
+                    responseContent = "Great choice! Tomatoes are rewarding to grow. Here is how you can get started:";
+                    responseSteps = [
+                        "Start seeds indoors 6-8 weeks before the last frost.",
+                        "Keep soil moist and warm (70-80°F) for germination.",
+                        "Provide strong light once seedlings emerge."
+                    ];
+                    responseImage = '/assets/images/systems/gallery_seedlings.png';
+                }
+            }
+
             setChatHistory(prev => ({
                 ...prev,
-                [targetTab]: [...prev[targetTab], { role: 'assistant', content: 'Processing your request...' }]
+                [targetTab]: [...prev[targetTab], {
+                    role: 'assistant',
+                    content: responseContent,
+                    steps: responseSteps,
+                    image: responseImage
+                }]
             }));
             setShowPreview(true);
 
@@ -723,6 +757,27 @@ export default function AgriDashboard() {
                                                             : 'bg-white border border-gray-100 text-gray-800 rounded-bl-none'
                                                             }`}>
                                                             <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
+
+                                                            {/* Render Steps if available */}
+                                                            {msg.steps && (
+                                                                <ul className="mt-3 space-y-2">
+                                                                    {msg.steps.map((step, sIdx) => (
+                                                                        <li key={sIdx} className="flex items-start text-sm bg-green-50/50 p-2 rounded-lg">
+                                                                            <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-green-100 text-green-700 text-xs font-bold rounded-full mr-2">
+                                                                                {sIdx + 1}
+                                                                            </span>
+                                                                            <span>{step}</span>
+                                                                        </li>
+                                                                    ))}
+                                                                </ul>
+                                                            )}
+
+                                                            {/* Render Image if available */}
+                                                            {msg.image && (
+                                                                <div className="mt-3 rounded-xl overflow-hidden border border-gray-100 shadow-sm">
+                                                                    <img src={msg.image} alt="Response visual" className="w-full h-auto object-cover max-h-48" />
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </motion.div>
                                                 ))}

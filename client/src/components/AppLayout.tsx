@@ -328,7 +328,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </main>
 
                 {/* Mobile Navigation Footer (Fixed Bottom) */}
-                <div className="fixed bottom-0 left-0 right-0 h-20 bg-white border-t border-gray-100 md:hidden z-50 flex items-center justify-around pb-4 px-2">
+                <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-100 md:hidden z-50 flex items-center justify-around px-2">
                     {/* 1. Systems (Was Home) */}
                     <Link href="/systems" className={`flex flex-col items-center p-2 ${pathname === '/systems' ? 'text-green-600' : 'text-gray-400'}`}>
                         <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m8-10a2 2 0 11-4 0 2 2 0 014 0zm0 6a2 2 0 11-4 0 2 2 0 014 0z" /></svg>

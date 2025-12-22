@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '../lib/auth';
 import { useLessons } from '../context/LessonContext';
+import { useCart } from '../context/CartContext';
 import Logo from './Logo';
 import { useState } from 'react';
 import RightSidebar from './RightSidebar';
@@ -16,24 +17,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const { logout, user, loading, openLoginModal } = useAuth();
+    const { totalItems } = useCart();
+
     const [leftSidebarOpen, setLeftSidebarOpen] = useState(false);
     const [isDesktopOpen, setIsDesktopOpen] = useState(true);
     const [isLessonsOpen, setIsLessonsOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [currency, setCurrency] = useState<Currency>('IDR');
-    const { savedLessons, activeLesson, setActiveLesson } = useLessons(); // Moved to top level
+    const { savedLessons, activeLesson, setActiveLesson } = useLessons();
 
     // 1. Auth & Loading Guard
-    // If loading, show nothing (or spinner)
     if (loading) return <div className="min-h-screen bg-white"></div>;
 
     // Only completely hide layout for specific "standalone" pages like Signup
     if (pathname === '/signup') return <>{children}</>;
 
-    // For Guest Users (!user), we DO want to render the AppLayout (Sidebar etc)
-    // so they can use "Experience the App" features.
-
-    // Updated Navigation Items per User Request
     const NAV_ITEMS = [
         {
             name: 'Home', href: '/?tab=home', icon: (
@@ -101,7 +99,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 ${isDesktopOpen ? 'md:w-64' : 'md:w-0 md:overflow-hidden'}
             `}>
                 <div className={`p-6 flex justify-between items-center shrink-0 ${!isDesktopOpen && 'hidden md:flex'}`}>
-                    {/* Logo - Hide if desktop closed (handled by overflow:hidden, but extra safety) */}
                     <div className="min-w-[100px]">
                         <Link href="/?tab=landing">
                             <Logo variant="dark" width={100} />
@@ -112,9 +109,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     </button>
                 </div>
 
-                {/* Scrollable Navigation + Resources */}
                 <div className="flex-1 overflow-y-auto no-scrollbar w-64">
-                    {/* Width fixed to 64px internally to prevent content squishing during transition */}
                     <nav className="px-4 space-y-2 mt-2">
                         {NAV_ITEMS.map((item) => {
                             const isActive = pathname === item.href;
@@ -187,14 +182,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         })}
                     </nav>
 
-                    {/* Separator */}
                     <div className="mx-4 my-2 border-t border-gray-100"></div>
-
-                    {/* Resources Panel (Formerly Right Sidebar) */}
                     <RightSidebar />
                 </div>
 
-                {/* Bottom Spacer/Footer (Optional) */}
                 <div className="p-4 border-t border-gray-100 shrink-0 bg-white z-10 w-64 text-center text-xs text-gray-300">
                     <p>PLYT v0.1.0 Beta</p>
                 </div>
@@ -218,13 +209,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         </div>
                         <Link href="/cart" className="text-gray-600 relative">
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
-                            {/* Badge could go here */}
+                            {totalItems > 0 && (
+                                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{totalItems}</span>
+                            )}
                         </Link>
                     </div>
 
                     {/* Desktop: Sidebar Toggle & Search (Hidden on Mobile) */}
                     <div className="hidden md:flex items-center gap-4 w-full">
-                        {/* Desktop Toggle Button */}
                         <button
                             onClick={() => setIsDesktopOpen(!isDesktopOpen)}
                             className="text-gray-500 hover:bg-gray-100 p-2 rounded-lg transition-colors"
@@ -237,7 +229,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             )}
                         </button>
 
-                        {/* Search Bar */}
                         <div className="flex-1 max-w-md bg-gray-100 rounded-lg px-3 py-2 focus-within:ring-2 focus-within:ring-green-500/20 transition-all flex items-center">
                             <svg className="w-5 h-5 text-gray-400 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                             <input
@@ -247,9 +238,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             />
                         </div>
 
-                        {/* Header Stats & Actions */}
                         <div className="flex items-center gap-4 ml-auto">
-                            {/* Wallet Balance */}
                             {user && (
                                 <div className="hidden lg:flex items-center gap-2 bg-green-50 px-3 py-1.5 rounded-full border border-green-100">
                                     <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-[10px] text-white font-bold">P</div>
@@ -260,14 +249,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 </div>
                             )}
 
-                            {/* Message Icon */}
-                            <button className="relative p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-                                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
-                            </button>
+                            {/* --- DESKTOP SHOPPING CART ICON --- */}
+                            <Link href="/cart" className="relative p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
+                                {totalItems > 0 && (
+                                    <span className="absolute top-1 right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold border-2 border-white">{totalItems}</span>
+                                )}
+                            </Link>
+                            {/* ---------------------------------- */}
                         </div>
 
-                        {/* Profile Dropdown (With Wallet) */}
                         <div className="relative ml-2">
                             <button
                                 onClick={() => setIsProfileOpen(!isProfileOpen)}
@@ -278,7 +269,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 {user ? (user.email?.[0].toUpperCase() || 'U') : 'G'}
                             </button>
 
-                            {/* Dropdown Menu */}
                             {isProfileOpen && (
                                 <>
                                     <div
@@ -286,7 +276,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                         onClick={() => setIsProfileOpen(false)}
                                     />
                                     <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 divide-y divide-gray-100 z-40 overflow-hidden text-sm animate-in fade-in slide-in-from-top-2 duration-200">
-                                        {/* User Info */}
                                         <div className="px-5 py-4 bg-gray-50/50">
                                             <p className="text-sm font-semibold text-gray-900 truncate">
                                                 {user ? 'Kismet' : 'Guest User'}
@@ -296,7 +285,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                             </p>
                                         </div>
 
-                                        {/* Wallet Section (New) */}
                                         <div className="px-5 py-3 hover:bg-green-50 transition-colors group cursor-default">
                                             <div className="flex justify-between items-center mb-1">
                                                 <Link
@@ -308,7 +296,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                     <svg className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                                                 </Link>
 
-                                                {/* Currency Toggler */}
                                                 <div className="flex bg-gray-100 rounded-lg p-0.5 text-[10px] font-bold" onClick={(e) => e.stopPropagation()}>
                                                     <button
                                                         onClick={() => setCurrency('IDR')}
@@ -381,7 +368,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
                 {/* Scrollable Main Content Layout & Padding for Mobile Header/Footer */}
                 <main className="flex-1 overflow-hidden relative flex flex-row pt-16 md:pt-0 pb-20 md:pb-0">
-                    {/* Child Page Content */}
                     <div className="flex-1 overflow-y-auto bg-gray-50 relative">
                         {children}
                     </div>
@@ -389,29 +375,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
                 {/* Mobile Navigation Footer (Fixed Bottom) */}
                 <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-100 md:hidden z-50 flex items-center justify-around px-2">
-                    {/* 1. Systems (Was Home) */}
                     <Link href="/systems" className={`flex flex-col items-center p-2 ${pathname === '/systems' ? 'text-green-600' : 'text-gray-400'}`}>
                         <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m8-10a2 2 0 11-4 0 2 2 0 014 0zm0 6a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                     </Link>
 
-                    {/* 2. Chat / Learn */}
                     <Link href="/?tab=learn" className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'learn' ? 'text-green-600' : 'text-gray-400'}`}>
                         <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
                     </Link>
 
-                    {/* 3. Home (Was Systems) - Central Elevated */}
                     <div className="relative -top-5">
                         <Link href="/?tab=home" className="w-14 h-14 bg-green-600 rounded-full flex items-center justify-center text-white shadow-lg border-4 border-gray-50">
                             <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
                         </Link>
                     </div>
 
-                    {/* 4. Store / Produce */}
                     <Link href="/?tab=find_produce" className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'find_produce' ? 'text-green-600' : 'text-gray-400'}`}>
                         <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
                     </Link>
 
-                    {/* 5. Menu / Hamburger */}
                     <button onClick={() => setLeftSidebarOpen(true)} className="flex flex-col items-center p-2 text-gray-400">
                         <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
                     </button>

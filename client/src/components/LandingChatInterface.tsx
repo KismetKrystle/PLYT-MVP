@@ -74,7 +74,7 @@ export default function LandingChatInterface() {
         // We navigate to the Dashboard (Find Produce tab) where the prompt will be processed.
         // Guest mode is now supported there.
         // router.push('/login'); 
-        router.push('/?tab=find_produce');
+        router.push('/?tab=chat');
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {

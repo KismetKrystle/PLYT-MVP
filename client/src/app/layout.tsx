@@ -13,6 +13,7 @@ import NavBar from '../components/NavBar';
 import AppLayout from '../components/AppLayout';
 
 import { LessonProvider } from '../context/LessonContext';
+import { CartProvider } from '../context/CartContext';
 
 export default function RootLayout({
   children,
@@ -24,13 +25,15 @@ export default function RootLayout({
       <body className="flex flex-col min-h-screen">
         <AuthProvider>
           <LessonProvider>
-            <ProtectedRoute>
-              <AppLayout>
-                <main className="flex-1 h-full">
-                  {children}
-                </main>
-              </AppLayout>
-            </ProtectedRoute>
+            <CartProvider>
+              <ProtectedRoute>
+                <AppLayout>
+                  <main className="flex-1 h-full">
+                    {children}
+                  </main>
+                </AppLayout>
+              </ProtectedRoute>
+            </CartProvider>
           </LessonProvider>
         </AuthProvider>
       </body>

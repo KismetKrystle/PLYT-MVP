@@ -9,7 +9,7 @@ interface ProduceItem extends ProductDetail {
     quantity: number;
 }
 
-type Tab = 'home' | 'find_produce' | 'pick_system' | 'learn' | 'impact';
+type Tab = 'home' | 'find_produce' | 'pick_system' | 'learn' | 'impact' | 'guide';
 
 import { useSearchParams } from 'next/navigation';
 
@@ -38,7 +38,7 @@ export default function AgriDashboard() {
     // Sync Tab with URL query param
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['home', 'find_produce', 'pick_system', 'learn', 'impact'].includes(tab)) {
+        if (tab && ['home', 'find_produce', 'pick_system', 'learn', 'impact', 'guide'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
@@ -351,44 +351,174 @@ export default function AgriDashboard() {
                             <ImpactMetrics />
                         )}
 
-                        {/* OTHER TABS */}
-                        {activeTab === 'find_produce' && (
-                            // --- FIND PRODUCE MODE (Split with Side Panel) ---
-                            <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full h-full">
-                                {/* Chat Area (Left/Top) */}
-                                <div className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8 space-y-6 w-full relative">
-                                    <div className="max-w-3xl mx-auto pb-4">
-                                        {(chatHistory['find_produce'] || []).map((msg, idx) => (
-                                            <motion.div
-                                                key={idx}
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                className={`flex w-full mb-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                                            >
-                                                <div className={`max-w-[90%] md:max-w-[85%] rounded-2xl px-5 py-3 shadow-sm ${msg.role === 'user'
-                                                    ? 'bg-green-600 text-white rounded-br-none'
-                                                    : 'bg-white border border-gray-100 text-gray-800 rounded-bl-none'
-                                                    }`}>
-                                                    {msg.tags && <div className="text-xs opacity-70 mb-1">{msg.tags.join(', ')}</div>}
-                                                    <p className="leading-relaxed whitespace-pre-wrap text-sm md:text-base">{msg.content}</p>
-                                                </div>
-                                            </motion.div>
-                                        ))}
-                                        <div ref={messagesEndRef} />
+                        {/* GUIDE TAB */}
+                        {activeTab === 'guide' && (
+                            <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-10 animate-in fade-in duration-500">
+                                {/* Header */}
+                                <div className="text-center space-y-2">
+                                    <h1 className="text-3xl font-bold text-gray-900">Welcome to PLYT</h1>
+                                    <p className="text-gray-500">Your guide to growing, earning, and impacting.</p>
+                                </div>
+
+                                {/* Video Section */}
+                                <div className="rounded-2xl overflow-hidden shadow-xl bg-black aspect-video relative group">
+                                    {/* Placeholder Video Overlay */}
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/30 transition-colors cursor-pointer">
+                                        <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center pl-1 group-hover:scale-110 transition-transform duration-300">
+                                            <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                        </div>
+                                    </div>
+                                    <img src="/assets/images/gallery/indoor_garden.png" alt="Tutorial Video Thumbnail" className="w-full h-full object-cover opacity-80" />
+                                </div>
+
+                                {/* Features Grid */}
+                                <div className="grid md:grid-cols-2 gap-6">
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                                        <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-4">
+                                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                                        </div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-2">Manage Your Systems</h3>
+                                        <p className="text-gray-600 leading-relaxed text-sm">Monitor your hydroponic systems, track pH levels, and log your harvests. Keep your plants healthy and productive with AI-driven insights.</p>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 mb-4">
+                                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        </div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-2">Earn & Spend Credits</h3>
+                                        <p className="text-gray-600 leading-relaxed text-sm">Generate PLYT credits by harvesting produce and reducing carbon. Spend them in the marketplace for seeds, nutrients, and new systems.</p>
                                     </div>
                                 </div>
 
-                                {/* Produce Panel (Right/Bottom) */}
-                                <div className={`w-full md:w-96 shrink-0 border-t md:border-t-0 md:border-l border-gray-100 bg-gray-50/50 flex flex-col transition-all duration-300 overflow-hidden relative ${isPanelOpen ? 'h-80' : 'h-14'} md:h-auto`}>
+                                {/* How to Generate Credits */}
+                                <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-8 rounded-3xl border border-green-100">
+                                    <h3 className="text-xl font-bold text-green-900 mb-6 flex items-center gap-2">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                        How to Generate Credits
+                                    </h3>
+                                    <div className="space-y-4">
+                                        <div className="flex items-start gap-4">
+                                            <span className="flex-shrink-0 w-6 h-6 bg-green-200 text-green-800 rounded-full flex items-center justify-center font-bold text-sm">1</span>
+                                            <div>
+                                                <h4 className="font-bold text-green-900">Log Your Harvests</h4>
+                                                <p className="text-sm text-green-800/80">Every gram of produce you grow earns you credits based on market value.</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-start gap-4">
+                                            <span className="flex-shrink-0 w-6 h-6 bg-green-200 text-green-800 rounded-full flex items-center justify-center font-bold text-sm">2</span>
+                                            <div>
+                                                <h4 className="font-bold text-green-900">Maintain High Impact</h4>
+                                                <p className="text-sm text-green-800/80">Use sustainable methods to boost your Impact Score, earning bonus multipliers.</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-start gap-4">
+                                            <span className="flex-shrink-0 w-6 h-6 bg-green-200 text-green-800 rounded-full flex items-center justify-center font-bold text-sm">3</span>
+                                            <div>
+                                                <h4 className="font-bold text-green-900">Participate in Community</h4>
+                                                <p className="text-sm text-green-800/80">Help others in the Chat and share your knowledge to get community rewards.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* OTHER TABS */}
+                        {activeTab === 'find_produce' && (
+                            // --- FIND PRODUCE MODE (Visual Marketplace) ---
+                            <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full h-full">
+                                {/* Marketplace Grid (Center/Left) */}
+                                <div className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8 relative">
+                                    <div className="max-w-5xl mx-auto">
+                                        <div className="flex items-center justify-between mb-6">
+                                            <div>
+                                                <h2 className="text-2xl font-bold text-gray-800">Fresh Local Produce</h2>
+                                                <p className="text-gray-500 text-sm">Sourced directly from nearby vertical farms.</p>
+                                            </div>
+                                            {/* Chat Toggle / Filter could go here */}
+                                        </div>
+
+                                        {/* Produce Grid */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+                                            {[
+                                                { id: '1', name: 'Organic Red Tomatoes', price: 25000, unit: 'kg', plyt: '25', image: '/assets/images/store/cherry_tomatoes.png', description: 'Sweet, vine-ripened tomatoes grown in pesticide-free soil.', specs: ['Vitamin C Rich', 'Vine Ripened'], farm: 'Sunrise Farm', growMethod: 'Soil' },
+                                                { id: '2', name: 'Fresh Thai Basil', price: 15000, unit: 'bundle', plyt: '15', image: '/assets/images/store/thai_basil_seeds.png', description: 'Aromatic basil perfect for cooking.', specs: ['Rich Aroma', 'Hydroponic'], farm: 'GreenTech', growMethod: 'Hydroponics' },
+                                                { id: '3', name: 'Curly Kale', price: 35000, unit: 'kg', plyt: '35', image: '/assets/images/store/organic_kale.png', description: 'Crunchy, nutrient-dense kale leaves.', specs: ['Superfood', 'Organic'], farm: 'Ubud Organics', growMethod: 'Organic' },
+                                                { id: '4', name: 'Sweet Potatoes', price: 18000, unit: 'kg', plyt: '18', image: '/assets/images/systems/gallery_harvest.png', description: 'Purple sweet potatoes, high in antioxidants.', specs: ['High Fiber', 'Local'], farm: 'Bali Root', growMethod: 'Traditional' },
+                                                { id: '5', name: 'Bok Choy', price: 12000, unit: 'bundle', plyt: '12', image: '/assets/images/store/bok_choy.png', description: 'Crisp and tender, ideal for stir-fries.', specs: ['Hydroponic', 'Pesticide-Free'], farm: 'CityGreens', growMethod: 'Hydroponics' },
+                                                { id: '6', name: 'Red Spinach', price: 14000, unit: 'bundle', plyt: '14', image: '/assets/images/store/red_spinach.png', description: 'Nutrient-rich red spinach leaves.', specs: ['Iron Rich', 'Local'], farm: 'Sunrise Farm', growMethod: 'Soil' },
+                                            ].map((product) => (
+                                                <div key={product.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow group flex flex-col">
+                                                    <div
+                                                        className="aspect-[4/3] bg-gray-100 relative cursor-pointer overflow-hidden"
+                                                        onClick={() => setSelectedProduct({ ...product, quantity: 1 } as any)}
+                                                    >
+                                                        {product.image ? (
+                                                            <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                                        ) : (
+                                                            <div className="absolute inset-0 flex items-center justify-center text-gray-300">
+                                                                <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                                            </div>
+                                                        )}
+                                                        <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-bold text-green-700 shadow-sm">
+                                                            {product.plyt} PLYT
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-4 flex-1 flex flex-col">
+                                                        <div className="mb-2">
+                                                            <h3 className="font-bold text-gray-900 group-hover:text-green-700 transition-colors cursor-pointer" onClick={() => setSelectedProduct({ ...product, quantity: 1 } as any)}>{product.name}</h3>
+                                                            <p className="text-xs text-gray-500">{product.farm}</p>
+                                                        </div>
+                                                        <div className="mt-auto flex items-center justify-between">
+                                                            <p className="font-semibold text-gray-900">Rp {product.price.toLocaleString()} <span className="text-xs text-gray-400 font-normal">/{product.unit}</span></p>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setProduceItems(prev => {
+                                                                        const existing = prev.find(p => p.id === product.id);
+                                                                        if (existing) {
+                                                                            return prev.map(p => p.id === product.id ? { ...p, quantity: p.quantity + 1 } : p);
+                                                                        }
+                                                                        return [...prev, { ...product as any, quantity: 1 }];
+                                                                    });
+                                                                }}
+                                                                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-green-600 hover:text-white transition-all shadow-sm"
+                                                            >
+                                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Chat Overlay Hint */}
+                                        {(chatHistory['find_produce'] || []).length > 1 && (
+                                            <div className="bg-green-50 rounded-xl p-4 mb-6 border border-green-100 flex items-start gap-3">
+                                                <div className="p-2 bg-green-100 rounded-lg text-green-600">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm text-green-900 font-medium">Assistant Suggestion:</p>
+                                                    <p className="text-sm text-green-800 mt-1">
+                                                        {(chatHistory['find_produce'] || []).slice(-1)[0].content}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Produce Panel (Cart) */}
+                                <div className={`w-full md:w-80 shrink-0 border-t md:border-t-0 md:border-l border-gray-100 bg-white flex flex-col transition-all duration-300 overflow-hidden relative ${isPanelOpen ? 'h-80' : 'h-14'} md:h-auto z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.02)]`}>
                                     <div
-                                        className="p-4 border-b border-gray-100 bg-white/50 backdrop-blur-sm flex justify-between items-center cursor-pointer md:cursor-default"
+                                        className="p-4 border-b border-gray-100 bg-white flex justify-between items-center cursor-pointer md:cursor-default"
                                         onClick={() => setIsPanelOpen(!isPanelOpen)}
                                     >
                                         <div className="flex items-center gap-2">
-                                            <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Selected Produce</h3>
+                                            <h3 className="font-bold text-gray-800 text-sm uppercase tracking-wide">Your Cart</h3>
                                             <svg className={`w-4 h-4 text-gray-400 transition-transform md:hidden ${isPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
                                         </div>
-                                        <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">{produceItems.length} Items</span>
+                                        <span className="bg-green-600 text-white text-xs font-bold px-2.5 py-1 rounded-full">{produceItems.length}</span>
                                     </div>
 
                                     <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3 pb-20">
@@ -545,25 +675,83 @@ export default function AgriDashboard() {
                         {activeTab === 'pick_system' && (
                             // --- PICK SYSTEM MODE (Split with Side Panel) ---
                             <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full h-full">
-                                {/* Chat Area (Left/Top) */}
-                                <div className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8 space-y-6 w-full relative">
-                                    <div className="max-w-3xl mx-auto pb-4">
-                                        {(chatHistory['pick_system'] || []).map((msg, idx) => (
-                                            <motion.div
-                                                key={idx}
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                className={`flex w-full mb-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                                            >
-                                                <div className={`max-w-[90%] md:max-w-[85%] rounded-2xl px-5 py-3 shadow-sm ${msg.role === 'user'
-                                                    ? 'bg-green-600 text-white rounded-br-none'
-                                                    : 'bg-white border border-gray-100 text-gray-800 rounded-bl-none'
-                                                    }`}>
-                                                    <p className="leading-relaxed whitespace-pre-wrap text-sm md:text-base">{msg.content}</p>
+                                {/* Marketplace Grid (Center/Left) */}
+                                <div className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8 relative">
+                                    <div className="max-w-5xl mx-auto">
+                                        <div className="flex items-center justify-between mb-6">
+                                            <div>
+                                                <h2 className="text-2xl font-bold text-gray-800">Grow Systems & Containers</h2>
+                                                <p className="text-gray-500 text-sm">Find the perfect setup for your space.</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Systems Grid */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+                                            {[
+                                                { id: 's1', name: 'Urban Shelf System', price: 1500000, unit: 'unit', plyt: '1500', image: '/assets/images/systems/shelf_system.png', description: 'Compact vertical shelf system for indoor growing.', specs: ['4 Tiers', 'LED Lights'], farm: 'UrbanGrow', growMethod: 'Hydroponic' },
+                                                { id: 's2', name: 'Hydro Tower Green', price: 2200000, unit: 'unit', plyt: '2200', image: '/assets/images/systems/tower_system_green.png', description: 'Space-saving vertical tower with 24 planting sites.', specs: ['24 Sites', 'Auto-Watering'], farm: 'VertiTech', growMethod: 'Aeroponic' },
+                                                { id: 's3', name: 'Hydro Tower Pro', price: 2500000, unit: 'unit', plyt: '2500', image: '/assets/images/systems/tower_system_white.png', description: 'Professional grade tower system for maximum yield.', specs: ['36 Sites', 'High Efficiency'], farm: 'VertiTech', growMethod: 'Aeroponic' },
+                                                { id: 's4', name: 'Premium Indoor Tower', price: 3500000, unit: 'unit', plyt: '3500', image: '/assets/images/systems/tower_system_indoor.png', description: 'Elegant indoor tower system that fits any decor.', specs: ['Premium Finish', 'Silent Pump'], farm: 'LuxeGrow', growMethod: 'Hydroponic' },
+                                                { id: 's5', name: 'Living Wall System', price: 1800000, unit: 'unit', plyt: '1800', image: '/assets/images/systems/wall_system.png', description: 'Modular wall system for vertical gardening.', specs: ['Modular', 'Expandable'], farm: 'GreenWall', growMethod: 'Soil/Hydro' },
+                                            ].map((product) => (
+                                                <div key={product.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow group flex flex-col">
+                                                    <div
+                                                        className="aspect-[3/4] bg-gray-100 relative cursor-pointer overflow-hidden"
+                                                        onClick={() => setSelectedProduct({ ...product, quantity: 1 } as any)}
+                                                    >
+                                                        {product.image ? (
+                                                            <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                                        ) : (
+                                                            <div className="absolute inset-0 flex items-center justify-center text-gray-300">
+                                                                <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                                                            </div>
+                                                        )}
+                                                        <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-bold text-green-700 shadow-sm">
+                                                            {product.plyt} PLYT
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-4 flex-1 flex flex-col">
+                                                        <div className="mb-2">
+                                                            <h3 className="font-bold text-gray-900 group-hover:text-green-700 transition-colors cursor-pointer" onClick={() => setSelectedProduct({ ...product, quantity: 1 } as any)}>{product.name}</h3>
+                                                            <p className="text-xs text-gray-500">{product.specs.join(' • ')}</p>
+                                                        </div>
+                                                        <div className="mt-auto flex items-center justify-between">
+                                                            <p className="font-semibold text-gray-900">Rp {product.price.toLocaleString()} <span className="text-xs text-gray-400 font-normal">/{product.unit}</span></p>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setSystemItems(prev => {
+                                                                        const existing = prev.find(p => p.id === product.id);
+                                                                        if (existing) {
+                                                                            return prev.map(p => p.id === product.id ? { ...p, quantity: p.quantity + 1 } : p);
+                                                                        }
+                                                                        return [...prev, { ...product as any, quantity: 1 }];
+                                                                    });
+                                                                }}
+                                                                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-green-600 hover:text-white transition-all shadow-sm"
+                                                            >
+                                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                            </motion.div>
-                                        ))}
-                                        <div ref={messagesEndRef} />
+                                            ))}
+                                        </div>
+
+                                        {/* Chat Overlay Hint */}
+                                        {(chatHistory['pick_system'] || []).length > 1 && (
+                                            <div className="bg-green-50 rounded-xl p-4 mb-6 border border-green-100 flex items-start gap-3">
+                                                <div className="p-2 bg-green-100 rounded-lg text-green-600">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm text-green-900 font-medium">Assistant Suggestion:</p>
+                                                    <p className="text-sm text-green-800 mt-1">
+                                                        {(chatHistory['pick_system'] || []).slice(-1)[0].content}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
@@ -912,45 +1100,45 @@ export default function AgriDashboard() {
                             )
                         }
 
-                        {/* Main Chat Input Area (Hidden in Learn Mode, Visible in Home/Find/Pick) */}
-                        {
-                            activeTab !== 'learn' && (
-                                <div className={`shrink-0 z-10 transition-all duration-500 ${(activeTab === 'home')
-                                    ? 'p-4 md:p-6 bg-gradient-to-t from-white via-white to-transparent'
-                                    : 'p-4 md:p-6 bg-white border-t border-gray-100'
-                                    }`}>
-                                    <div className={`mx-auto transition-all duration-500 relative shadow-xl bg-white border border-gray-200 rounded-3xl ${(activeTab === 'home') ? 'max-w-2xl' : 'max-w-3xl'
-                                        }`}>
-                                        <textarea
-                                            value={prompt}
-                                            onChange={(e) => setPrompt(e.target.value)}
-                                            onKeyDown={handleKeyDown}
-                                            placeholder={(activeTab === 'home') ? "Ask a question..." : "Type your message..."}
-                                            className="w-full pl-6 pr-14 py-4 rounded-3xl resize-none focus:outline-none focus:ring-2 focus:ring-green-500/50 bg-transparent text-gray-700 placeholder:text-gray-400"
-                                            rows={1}
-                                            style={{ minHeight: '60px' }}
-                                        />
-                                        <button
-                                            onClick={handleSend}
-                                            disabled={!prompt.trim()}
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-green-600 text-white rounded-full hover:bg-green-700 disabled:opacity-50 transition shadow-md"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-                                            </svg>
-                                        </button>
-                                    </div>
-                                    {activeTab === 'home' && (
-                                        <p className="text-center text-xs text-gray-400 mt-2">
-                                            Start a chat to Find Produce, Pick a System, or Learn.
-                                        </p>
-                                    )}
-                                </div>
-                            )
-                        }
+                    </div>
 
-                    </div >
-                </div >
+                    {/* Main Chat Input Area (Hidden in Learn Mode, Visible in Home/Find/Pick) */}
+                    {
+                        activeTab !== 'learn' && (
+                            <div className={`shrink-0 z-10 transition-all duration-500 ${(activeTab === 'home')
+                                ? 'p-4 md:p-6 bg-gradient-to-t from-white via-white to-transparent'
+                                : 'p-4 md:p-6 bg-white border-t border-gray-100'
+                                }`}>
+                                <div className={`mx-auto transition-all duration-500 relative shadow-xl bg-white border border-gray-200 rounded-3xl ${(activeTab === 'home') ? 'max-w-2xl' : 'max-w-3xl'
+                                    }`}>
+                                    <textarea
+                                        value={prompt}
+                                        onChange={(e) => setPrompt(e.target.value)}
+                                        onKeyDown={handleKeyDown}
+                                        placeholder={(activeTab === 'home') ? "Ask a question..." : "Type your message..."}
+                                        className="w-full pl-6 pr-14 py-4 rounded-3xl resize-none focus:outline-none focus:ring-2 focus:ring-green-500/50 bg-transparent text-gray-700 placeholder:text-gray-400"
+                                        rows={1}
+                                        style={{ minHeight: '60px' }}
+                                    />
+                                    <button
+                                        onClick={handleSend}
+                                        disabled={!prompt.trim()}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-green-600 text-white rounded-full hover:bg-green-700 disabled:opacity-50 transition shadow-md"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                {activeTab === 'home' && (
+                                    <p className="text-center text-xs text-gray-400 mt-2">
+                                        Start a chat to Find Produce, Pick a System, or Learn.
+                                    </p>
+                                )}
+                            </div>
+                        )
+                    }
+                </div>
             </div >
         </div >
     );

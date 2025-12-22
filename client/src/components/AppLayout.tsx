@@ -41,35 +41,43 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )
         },
         {
-            name: 'Chats', href: '/?tab=find_produce', icon: (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+            name: 'Chats', href: '/?tab=learn', icon: (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
             )
         },
         {
-            name: 'Lessons', href: '/lessons', icon: (
+            name: 'Lessons', href: '#', icon: (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
             )
         },
         {
             name: 'Your Systems', href: '/systems', icon: (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m8-10a2 2 0 11-4 0 2 2 0 014 0zm0 6a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
             )
         },
         {
             name: 'Impact Score', href: '/impact', icon: (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z" /></svg>
             )
         },
         {
-            name: 'Store', href: '/store', icon: (
+            name: 'Store', href: '/?tab=find_produce', icon: (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
             )
         },
         {
             name: 'Orders', href: '/orders', icon: (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+            )
+        },
+        {
+            name: 'Wallet', href: '/wallet', icon: (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
+            )
+        },
+        {
+            name: 'Guide', href: '/?tab=guide', icon: (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
             )
         },
     ];
@@ -165,10 +173,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                     onClick={() => setLeftSidebarOpen(false)}
                                     className={`flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 group ${isActive
                                         ? 'bg-green-50 text-green-700 shadow-sm border border-green-100'
-                                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 border border-transparent'
+                                        : item.name === 'Guide'
+                                            ? 'bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100 shadow-sm'
+                                            : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 border border-transparent'
                                         }`}
                                 >
-                                    <div className={`mr-3 transition-colors ${isActive ? 'text-green-600' : 'text-gray-400 group-hover:text-gray-500'}`}>
+                                    <div className={`mr-3 transition-colors ${isActive ? 'text-green-600' : item.name === 'Guide' ? 'text-yellow-600' : 'text-gray-400 group-hover:text-gray-500'}`}>
                                         {item.icon}
                                     </div>
                                     {item.name}
@@ -237,8 +247,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             />
                         </div>
 
+                        {/* Header Stats & Actions */}
+                        <div className="flex items-center gap-4 ml-auto">
+                            {/* Wallet Balance */}
+                            {user && (
+                                <div className="hidden lg:flex items-center gap-2 bg-green-50 px-3 py-1.5 rounded-full border border-green-100">
+                                    <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-[10px] text-white font-bold">P</div>
+                                    <div className="flex flex-col leading-none">
+                                        <span className="text-xs font-bold text-gray-900">1,250 PLYT</span>
+                                        <span className="text-[10px] text-green-600">≈ $12.50</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Message Icon */}
+                            <button className="relative p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+                                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+                            </button>
+                        </div>
+
                         {/* Profile Dropdown (With Wallet) */}
-                        <div className="relative ml-auto">
+                        <div className="relative ml-2">
                             <button
                                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                                 className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-inner hover:ring-2 hover:ring-green-500/20 transition-all border border-green-100 ${user

@@ -151,11 +151,12 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 </div>
 
                 {/* -- Box 3: Stats (Row 2, Col 1) -- */}
-                <div className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex flex-col justify-center items-center text-center hover:border-green-200">
-                    <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Impact Score</p>
-                    <p className="text-5xl font-extrabold text-gray-900 mt-2">99<span className="text-lg text-green-500">%</span></p>
-                    <p className="text-xs text-green-600 font-medium mt-2 bg-green-50 px-2 py-1 rounded-full">+12% this month</p>
-                </div>
+                {/* -- Box 3: Stats (Row 2, Col 1) -- */}
+                <Link href="/impact" className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex flex-col justify-center items-center text-center hover:border-green-400 cursor-pointer group">
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-wider group-hover:text-green-600 transition-colors">Impact Points</p>
+                    <p className="text-5xl font-extrabold text-gray-900 mt-2 group-hover:scale-110 transition-transform">850</p>
+                    <p className="text-xs text-green-600 font-medium mt-2 bg-green-50 px-2 py-1 rounded-full">Top 5% in Region</p>
+                </Link>
 
                 {/* -- Box 4: Food I Eat (Row 2, Col 2-4) -- */}
                 <div

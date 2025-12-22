@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface ProfileProps {
@@ -51,6 +52,27 @@ const WALL_POSTS = [
 
 export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) {
     const [activeModal, setActiveModal] = useState<string | null>(null);
+    const [prompt, setPrompt] = useState('');
+    const router = useRouter();
+
+    const handleSearch = () => {
+        if (!prompt.trim()) return;
+
+        // Save prompt to local storage for the dashboard to pick up
+        localStorage.setItem('pendingChatPrompt', JSON.stringify({
+            text: prompt,
+            tags: [] // box 2 doesn't have tags UI yet, empty for now
+        }));
+
+        // Navigate to the Find Produce tab
+        router.push('/?tab=find_produce');
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            handleSearch();
+        }
+    };
 
     // Common Action Button Component
     const ActionButton = ({ type }: { type: 'edit' | 'like' }) => (
@@ -91,6 +113,10 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                         <p className="text-gray-500 text-sm mt-1 line-clamp-2">
                             Passionate about sustainable living. Join me on my journey! 🌱
                         </p>
+                        <Link href="/?tab=impact" className="inline-flex items-center gap-1 mt-3 text-xs font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-full hover:bg-green-100 transition-colors">
+                            View Impact Score
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        </Link>
                     </div>
                 </div>
 
@@ -110,8 +136,14 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                 type="text"
                                 placeholder="How can I assist you today?"
                                 className="bg-transparent border-none outline-none text-white placeholder:text-white/70 w-full text-sm px-2"
+                                value={prompt}
+                                onChange={(e) => setPrompt(e.target.value)}
+                                onKeyDown={handleKeyDown}
                             />
-                            <button className="bg-white text-green-700 p-2 rounded-xl hover:bg-green-50 transition shadow-sm">
+                            <button
+                                onClick={handleSearch}
+                                className="bg-white text-green-700 p-2 rounded-xl hover:bg-green-50 transition shadow-sm"
+                            >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
                             </button>
                         </div>

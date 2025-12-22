@@ -17,6 +17,10 @@ interface AuthContextType {
     login: (token: string, user: User, redirectPath?: string) => void;
     logout: () => void;
     loading: boolean;
+    isLoginModalOpen: boolean;
+    openLoginModal: () => void;
+    closeLoginModal: () => void;
+    requireAuth: (callback: () => void) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,13 +29,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [token, setToken] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
     const router = useRouter();
+
+    const openLoginModal = () => setIsLoginModalOpen(true);
+    const closeLoginModal = () => setIsLoginModalOpen(false);
 
     const login = (newToken: string, newUser: User, redirectPath?: string) => {
         setToken(newToken);
         setUser(newUser);
         localStorage.setItem('token', newToken);
         localStorage.setItem('user', JSON.stringify(newUser));
+        setIsLoginModalOpen(false); // Close modal
 
         if (redirectPath) {
             router.push(redirectPath);
@@ -44,6 +53,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         router.push('/');
+    };
+
+    const requireAuth = (callback: () => void) => {
+        if (user) {
+            callback();
+        } else {
+            openLoginModal();
+        }
     };
 
     useEffect(() => {
@@ -72,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     return (
-        <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+        <AuthContext.Provider value={{ user, token, login, logout, loading, isLoginModalOpen, openLoginModal, closeLoginModal, requireAuth }}>
             {children}
         </AuthContext.Provider>
     );

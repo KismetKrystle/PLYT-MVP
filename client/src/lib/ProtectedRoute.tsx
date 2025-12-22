@@ -12,32 +12,35 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     const pathname = usePathname();
 
     useEffect(() => {
-        // Skip check if pathname is missing or for login/signup pages
-        if (!pathname || pathname === '/login' || pathname === '/signup') return;
+        // Relaxed Protection: We no longer auto-redirect for most routes.
+        // Users can browse /grow, /eat etc. as guests.
+        // Auth is now enforced via modal when performing specific actions.
 
-        const isProtected = PROTECTED_ROUTES.some(route =>
-            route === '/' ? pathname === '/' : pathname.startsWith(route)
+        // Strict protection for Admin or clearly private routes if needed:
+        const STRICT_ROUTES = ['/orders', '/admin', '/wallet'];
+
+        const isStrictlyProtected = STRICT_ROUTES.some(route =>
+            pathname?.startsWith(route)
         );
 
-        if (!loading && !user && isProtected) {
-            router.push('/login');
+        if (!loading && !user && isStrictlyProtected) {
+            router.push('/login'); // Or open modal? For now, keep redirect for strict routes.
         }
     }, [user, loading, pathname, router]);
 
-    // Don't render anything while checking auth on protected routes
-    const isProtected = pathname && PROTECTED_ROUTES.some(route =>
-        route === '/' ? pathname === '/' : pathname.startsWith(route)
+    // Simplified Strict Protection Check for Rendering
+    const STRICT_ROUTES = ['/orders', '/admin', '/wallet'];
+    const isStrictlyProtected = pathname && STRICT_ROUTES.some(route =>
+        pathname.startsWith(route)
     );
 
-    if (loading || (!user && isProtected && pathname !== '/login' && pathname !== '/signup')) {
+    // Only block rendering if loading OR (strictly protected AND no user)
+    // Relaxed routes (like /systems, /grow) should render for guests.
+    if (loading || (!user && isStrictlyProtected)) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mb-4"></div>
                 <div className="text-green-600 font-medium">Checking Authorization...</div>
-                <div className="mt-4 text-xs text-gray-400">
-                    Status: {loading ? 'Loading...' : 'Checked'} <br />
-                    User: {user ? 'Found' : 'Missing'}
-                </div>
             </div>
         );
     }

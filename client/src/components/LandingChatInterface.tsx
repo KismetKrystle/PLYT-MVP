@@ -71,8 +71,10 @@ export default function LandingChatInterface() {
         console.log('Submitting prompt:', fullPromptPayload);
 
         // Redirect logic:
-        // We navigate to login. The Dashboard will pick up the 'pendingChatPrompt' from localStorage after auth.
-        router.push('/login');
+        // We navigate to the Dashboard (Find Produce tab) where the prompt will be processed.
+        // Guest mode is now supported there.
+        // router.push('/login'); 
+        router.push('/?tab=find_produce');
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {

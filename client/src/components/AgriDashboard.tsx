@@ -9,12 +9,13 @@ interface ProduceItem extends ProductDetail {
     quantity: number;
 }
 
-type Tab = 'home' | 'find_produce' | 'pick_system' | 'learn';
+type Tab = 'home' | 'find_produce' | 'pick_system' | 'learn' | 'impact';
 
 import { useSearchParams } from 'next/navigation';
 
 // import PublicProfile from './profile/PublicProfile'; // Deprecated
 import PublicProfileV2 from './profile/PublicProfileV2';
+import ImpactMetrics from './profile/ImpactMetrics';
 import { useAuth } from '../lib/auth';
 import FarmerDashboard from './dashboards/FarmerDashboard';
 import DistributorDashboard from './dashboards/DistributorDashboard';
@@ -24,7 +25,7 @@ export default function AgriDashboard() {
     const searchParams = useSearchParams();
     const historyId = searchParams.get('historyId');
 
-    const { user } = useAuth(); // Get user for profile
+    const { user, requireAuth } = useAuth(); // Get user for profile & requireAuth
 
     if (user?.role === 'farmer') return <FarmerDashboard />;
     if (user?.role === 'distributor') return <DistributorDashboard />;
@@ -37,7 +38,7 @@ export default function AgriDashboard() {
     // Sync Tab with URL query param
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['home', 'find_produce', 'pick_system', 'learn'].includes(tab)) {
+        if (tab && ['home', 'find_produce', 'pick_system', 'learn', 'impact'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
@@ -161,10 +162,12 @@ export default function AgriDashboard() {
 
     // Auto-scroll logic
     useEffect(() => {
-        if (messagesEndRef.current) {
+        const currentHistory = chatHistory[activeTab as 'find_produce' | 'pick_system' | 'learn'] || [];
+        // Only auto-scroll if we have more than the initial system message (interaction happened)
+        // OR if it's potentially a restored session
+        if (messagesEndRef.current && currentHistory.length > 1) {
             messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
-        // distinct dependency on history changes
     }, [chatHistory, activeTab, notes]);
 
     const handleSend = () => {
@@ -290,11 +293,13 @@ export default function AgriDashboard() {
     };
 
     const handleSaveLesson = () => {
-        if (notes.length === 0) return;
-        const title = `Lesson ${new Date().toLocaleDateString()} (${notes.length} notes)`;
-        const content = notes.join('\n\n');
-        addLesson(title, content);
-        alert(`Saved "${title}" to your sidebar!`);
+        requireAuth(() => {
+            if (notes.length === 0) return;
+            const title = `Lesson ${new Date().toLocaleDateString()} (${notes.length} notes)`;
+            const content = notes.join('\n\n');
+            addLesson(title, content);
+            alert(`Saved "${title}" to your sidebar!`);
+        });
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -339,6 +344,11 @@ export default function AgriDashboard() {
                         {/* HOME TAB - PUBLIC PROFILE V2 (Bento Grid) */}
                         {activeTab === 'home' && (
                             <PublicProfileV2 user={user} />
+                        )}
+
+                        {/* IMPACT TAB */}
+                        {activeTab === 'impact' && (
+                            <ImpactMetrics />
                         )}
 
                         {/* OTHER TABS */}
@@ -453,7 +463,10 @@ export default function AgriDashboard() {
                                                 <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Estimated</span>
                                                 <span className="text-lg font-bold text-gray-900">Rp {produceTotal.toLocaleString()}</span>
                                             </div>
-                                            <button className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm shadow-sm transition active:scale-95">
+                                            <button
+                                                onClick={() => requireAuth(() => alert('Proceeding to checkout with Farmers...'))}
+                                                className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm shadow-sm transition active:scale-95"
+                                            >
                                                 Connect with Farmers
                                             </button>
                                         </div>
@@ -513,7 +526,10 @@ export default function AgriDashboard() {
                                                         </div>
                                                         <div className="flex items-center justify-between mt-4">
                                                             <p className="text-xl font-bold text-gray-900">Rp {selectedProduct.price.toLocaleString()} <span className="text-sm font-normal text-gray-500">/{selectedProduct.unit}</span></p>
-                                                            <button className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 transition">
+                                                            <button
+                                                                onClick={() => requireAuth(() => alert(`Added ${selectedProduct.name} to cart!`))}
+                                                                className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 transition"
+                                                            >
                                                                 Add to Cart
                                                             </button>
                                                         </div>
@@ -689,7 +705,10 @@ export default function AgriDashboard() {
                                                 <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Estimated</span>
                                                 <span className="text-lg font-bold text-gray-900">Rp {systemTotal.toLocaleString()}</span>
                                             </div>
-                                            <button className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm shadow-sm transition active:scale-95">
+                                            <button
+                                                onClick={() => requireAuth(() => alert('Building your custom system...'))}
+                                                className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm shadow-sm transition active:scale-95"
+                                            >
                                                 Build My System
                                             </button>
                                         </div>
@@ -745,7 +764,10 @@ export default function AgriDashboard() {
                                                         </div>
                                                         <div className="flex items-center justify-between mt-4">
                                                             <p className="text-xl font-bold text-gray-900">Rp {selectedProduct.price.toLocaleString()} <span className="text-sm font-normal text-gray-500">/{selectedProduct.unit}</span></p>
-                                                            <button className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 transition">
+                                                            <button
+                                                                onClick={() => requireAuth(() => alert(`Added ${selectedProduct.name} to cart!`))}
+                                                                className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 transition"
+                                                            >
                                                                 Add to Cart
                                                             </button>
                                                         </div>

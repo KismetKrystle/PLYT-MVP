@@ -6,7 +6,7 @@ import { useAuth } from '../../lib/auth';
 import api from '../../lib/api';
 
 export default function AuthModal() {
-    const { isLoginModalOpen, closeLoginModal, login } = useAuth();
+    const { isLoginModalOpen, closeLoginModal, login, isAccessWallEnabled } = useAuth();
     const [mode, setMode] = useState<'signin' | 'signup'>('signin');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -37,16 +37,8 @@ export default function AuthModal() {
             }
             closeLoginModal();
         } catch (err: any) {
-            console.warn('API Auth failed, falling back to MOCK (Dev Mode)');
-            // Mock Fallback
-            const mockUser = {
-                id: 999,
-                email: email,
-                name: name || 'Guest User',
-                role: 'consumer' as const
-            };
-            login('mock-jwt-token-' + Date.now(), mockUser);
-            closeLoginModal();
+            console.error('Auth failed:', err);
+            setError(err.response?.data?.error || 'Authentication failed. Please check your credentials.');
         } finally {
             setIsLoading(false);
         }
@@ -55,14 +47,14 @@ export default function AuthModal() {
     return (
         <AnimatePresence>
             {isLoginModalOpen && (
-                <>
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 sm:p-6">
                     {/* Backdrop */}
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={closeLoginModal}
-                        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999]"
+                        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
                     />
 
                     {/* Modal */}
@@ -70,7 +62,7 @@ export default function AuthModal() {
                         initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden z-[10000] p-8"
+                        className="relative w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden z-10 p-8"
                     >
                         <button
                             onClick={closeLoginModal}
@@ -141,15 +133,17 @@ export default function AuthModal() {
                         </form>
 
                         <div className="mt-6 text-center">
-                            <button
-                                onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
-                                className="text-sm text-green-600 font-medium hover:underline"
-                            >
-                                {mode === 'signin' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
-                            </button>
+                            {!isAccessWallEnabled && (
+                                <button
+                                    onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
+                                    className="text-sm text-green-600 font-medium hover:underline"
+                                >
+                                    {mode === 'signin' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
+                                </button>
+                            )}
                         </div>
                     </motion.div>
-                </>
+                </div>
             )}
         </AnimatePresence>
     );

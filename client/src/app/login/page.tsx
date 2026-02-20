@@ -10,7 +10,7 @@ import { motion } from 'framer-motion';
 function LoginForm() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const { login } = useAuth();
+    const { login, isAccessWallEnabled } = useAuth();
     const router = useRouter();
     const searchParams = useSearchParams(); // This causes the build error if not suspended
     const redirectPath = searchParams.get('redirect') || '/';
@@ -26,14 +26,8 @@ function LoginForm() {
             const res = await api.post('/auth/login', { email, password });
             login(res.data.token, res.data.user, redirectPath);
         } catch (err: any) {
-            console.warn('API Login failed, falling back to MOCK LOGIN (Dev Mode)');
-            // Fallback for demo/dev mode if backend is unreachable
-            const mockUser = {
-                id: 999,
-                email: email,
-                role: 'consumer' as const
-            };
-            login('mock-jwt-token-' + Date.now(), mockUser, redirectPath);
+            console.error('Login failed:', err);
+            setError(err.response?.data?.error || 'Login failed. Please check your connection.');
         } finally {
             setIsLoading(false);
         }
@@ -150,10 +144,22 @@ function LoginForm() {
             </div>
 
             <div className="mt-8 text-center text-sm text-gray-600">
-                Don't have an account?{' '}
-                <Link href={`/signup?redirect=${encodeURIComponent(redirectPath)}`} className="text-green-600 font-medium hover:underline">
-                    Create one
-                </Link>
+                <div className="mb-2">
+                    {!isAccessWallEnabled && (
+                        <>
+                            Don't have an account?{' '}
+                            <Link href={`/signup?redirect=${encodeURIComponent(redirectPath)}`} className="text-green-600 font-medium hover:underline">
+                                Create one
+                            </Link>
+                        </>
+                    )}
+                </div>
+                <div className="pt-2 border-t border-gray-100">
+                    <p className="text-xs text-gray-400">
+                        Trouble logging in? Use the demo account: <br />
+                        <code className="bg-gray-100 px-1 rounded text-gray-600">demo@plyt.com</code> / <code className="bg-gray-100 px-1 rounded text-gray-600">PLYTdemo2024!</code>
+                    </p>
+                </div>
             </div>
         </motion.div>
     );

@@ -13,7 +13,7 @@ function SignupForm() {
     const [signupStep, setSignupStep] = useState<'creds' | 'kyc'>('creds');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const { login } = useAuth();
+    const { login, isAccessWallEnabled } = useAuth();
     const router = useRouter();
     const searchParams = useSearchParams();
     const redirectPath = searchParams.get('redirect') || '/';
@@ -40,20 +40,8 @@ function SignupForm() {
             login(res.data.token, res.data.user, undefined);
             setSignupStep('kyc');
         } catch (err: any) {
-            console.warn('Signup failed, falling back to MOCK SIGNUP (Dev Mode)', err);
-            // If backend is down/unreachable, allow proceeding in Dev Mode
-            // Check if it's a 500 or network error to decide, or just always fallback for MVP demo
-            const mockUser = {
-                id: Math.floor(Math.random() * 10000),
-                email: email,
-                role: 'consumer' as const // Default, will be updated in KYC
-            };
-            // Mock Login
-            login('mock-jwt-token-' + Date.now(), mockUser, undefined);
-            setSignupStep('kyc');
-
-            // Optional: Show a toast or small note that we are in offline/demo mode?
-            // setError('Network error. Switched to Offline Mode.');
+            console.error('Signup failed:', err);
+            setError(err.response?.data?.error || 'Signup failed. Please try again.');
         } finally {
             setIsLoading(false);
         }
@@ -74,55 +62,69 @@ function SignupForm() {
             animate={{ opacity: 1, y: 0 }}
             className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100"
         >
-            <div className="text-center mb-8">
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">Join PLYT</h1>
-                <p className="text-gray-500">Start your journey to food independence.</p>
-            </div>
-
-            {error && (
-                <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-6 text-center">
-                    {error}
+            {isAccessWallEnabled ? (
+                <div className="text-center">
+                    <h1 className="text-2xl font-bold text-gray-900 mb-4">Registration Unavailable</h1>
+                    <p className="text-gray-600 mb-6">
+                        We are currently in a closed beta. Registration is disabled.
+                    </p>
+                    <Link href="/login" className="text-green-600 font-medium hover:underline">
+                        Back to Login
+                    </Link>
                 </div>
+            ) : (
+                <>
+                    <div className="text-center mb-8">
+                        <h1 className="text-3xl font-bold text-gray-900 mb-2">Join PLYT</h1>
+                        <p className="text-gray-500">Start your journey to food independence.</p>
+                    </div>
+
+                    {error && (
+                        <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-6 text-center">
+                            {error}
+                        </div>
+                    )}
+
+                    <form onSubmit={handleSignup} className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                            <input
+                                type="email"
+                                required
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none transition"
+                                placeholder="you@example.com"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                            <input
+                                type="password"
+                                required
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none transition"
+                                placeholder="Create a password"
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={isLoading}
+                            className="w-full bg-green-600 text-white py-2.5 rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50"
+                        >
+                            {isLoading ? 'Creating Account...' : 'Sign Up'}
+                        </button>
+                    </form>
+
+                    <div className="mt-8 text-center text-sm text-gray-600">
+                        Already have an account?{' '}
+                        <Link href={`/login?redirect=${encodeURIComponent(redirectPath)}`} className="text-green-600 font-medium hover:underline">
+                            Sign In
+                        </Link>
+                    </div>
+                </>
             )}
-
-            <form onSubmit={handleSignup} className="space-y-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                    <input
-                        type="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none transition"
-                        placeholder="you@example.com"
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                    <input
-                        type="password"
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none transition"
-                        placeholder="Create a password"
-                    />
-                </div>
-                <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full bg-green-600 text-white py-2.5 rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50"
-                >
-                    {isLoading ? 'Creating Account...' : 'Sign Up'}
-                </button>
-            </form>
-
-            <div className="mt-8 text-center text-sm text-gray-600">
-                Already have an account?{' '}
-                <Link href={`/login?redirect=${encodeURIComponent(redirectPath)}`} className="text-green-600 font-medium hover:underline">
-                    Sign In
-                </Link>
-            </div>
         </motion.div>
     );
 }

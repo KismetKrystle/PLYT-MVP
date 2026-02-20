@@ -6,14 +6,19 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
-    "migrate": "ts-node src/migrate.ts",
-    "seed": "ts-node src/seed.ts"
+    "migrate": "ts-node src/scripts/migrate.ts",
+    "seed": "ts-node src/seed.ts",
+    "seed-user": "ts-node src/scripts/seed-user.ts",
+    "create-allowed-users": "ts-node src/scripts/create-allowed-users.ts",
+    "add-user": "ts-node src/scripts/add-user.ts",
+    "check-gatekeeper": "ts-node src/scripts/check-gatekeeper.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@types/bcrypt": "^6.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "axios": "^1.13.2",

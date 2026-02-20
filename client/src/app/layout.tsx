@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 
 import NavBar from '../components/NavBar';
 import AppLayout from '../components/AppLayout';
+import AuthModal from '../components/auth/AuthModal';
 
 import { LessonProvider } from '../context/LessonContext';
 import { CartProvider } from '../context/CartContext';
@@ -22,7 +23,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="flex flex-col min-h-screen">
+      <body className="flex flex-col min-h-screen" suppressHydrationWarning>
         <AuthProvider>
           <LessonProvider>
             <CartProvider>
@@ -35,6 +36,7 @@ export default function RootLayout({
               </ProtectedRoute>
             </CartProvider>
           </LessonProvider>
+          <AuthModal />
         </AuthProvider>
       </body>
     </html>

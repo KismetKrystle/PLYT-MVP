@@ -3,13 +3,18 @@
 import { useAuth } from './auth';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
+import AccessWall from '../components/AccessWall';
+
+const PUBLIC_ROUTES = ['/', '/login', '/auth/login', '/auth/wallet-login', '/auth/google-login'];
+
 
 const PROTECTED_ROUTES = ['/wallet', '/orders', '/grow', '/eat', '/systems', '/impact', '/store', '/admin'];
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-    const { user, loading } = useAuth();
+    const { user, loading, isAccessWallEnabled, isUserDenied } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
+
 
     useEffect(() => {
         // Relaxed Protection: We no longer auto-redirect for most routes.
@@ -36,6 +41,21 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
     // Only block rendering if loading OR (strictly protected AND no user)
     // Relaxed routes (like /systems, /grow) should render for guests.
+
+    // GATEKEEPER LOGIC
+    if (isAccessWallEnabled) {
+        const isPublic = PUBLIC_ROUTES.some(route => pathname === route || pathname?.startsWith('/auth/'));
+
+        if (!isPublic) {
+            // If not public, we need to be logged in AND allowed.
+            if (!loading) {
+                if (!user || isUserDenied) {
+                    return <AccessWall />;
+                }
+            }
+        }
+    }
+
     if (loading || (!user && isStrictlyProtected)) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
@@ -44,6 +64,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
             </div>
         );
     }
+
 
     return <>{children}</>;
 }

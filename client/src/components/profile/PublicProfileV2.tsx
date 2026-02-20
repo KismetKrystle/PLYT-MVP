@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import api from '../../lib/api';
 
 interface ProfileProps {
     user: any;
@@ -53,7 +54,32 @@ const WALL_POSTS = [
 export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) {
     const [activeModal, setActiveModal] = useState<string | null>(null);
     const [prompt, setPrompt] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
+
+    // Edit Profile Form State
+    const [editForm, setEditForm] = useState({
+        full_name: user?.full_name || '',
+        location_city: user?.location_city || '',
+        location_address: user?.location_address || '',
+        bio: user?.bio || ''
+    });
+
     const router = useRouter();
+
+    const handleSaveProfile = async () => {
+        setIsSaving(true);
+        try {
+            await api.put('/user/profile', editForm);
+            alert('Profile updated successfully!');
+            setActiveModal(null);
+            router.refresh();
+        } catch (error) {
+            console.error('Failed to update profile:', error);
+            alert('Failed to update profile.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     const handleSearch = () => {
         if (!prompt.trim()) return;
@@ -75,12 +101,12 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     };
 
     // Common Action Button Component
-    const ActionButton = ({ type }: { type: 'edit' | 'like' }) => (
+    const ActionButton = ({ type, modal }: { type: 'edit' | 'like', modal?: string }) => (
         <button
             className="absolute top-4 right-4 bg-white/30 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/50 transition z-20"
             onClick={(e) => {
                 e.stopPropagation();
-                if (type === 'edit') console.log('Edit clicked');
+                if (type === 'edit') setActiveModal(modal || 'edit');
                 else console.log('Like clicked');
             }}
         >
@@ -98,25 +124,33 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                 {/* -- Box 1: Identity (Row 1, Col 1-2) -- */}
                 <div className="col-span-2 md:col-span-2 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex items-center gap-6 relative overflow-hidden group">
-                    {isOwner && <ActionButton type="edit" />}
+                    {isOwner && <ActionButton type="edit" modal="edit" />}
                     <div className="absolute top-0 right-0 w-32 h-32 bg-green-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
                     <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-4 border-white shadow-lg overflow-hidden shrink-0 relative z-10">
                         <Image
-                            src="/assets/images/gallery/user_avatar.png"
+                            src={user?.avatar_url || "/assets/images/gallery/user_avatar.png"}
                             alt="Profile Avatar"
                             fill
                             className="object-cover"
                         />
                     </div>
                     <div className="relative z-10">
-                        <h1 className="text-2xl font-bold text-gray-900">{user?.email?.split('@')[0] || 'Urban Gardener'}</h1>
+                        <h1 className="text-2xl font-bold text-gray-900">{user?.full_name || user?.email?.split('@')[0] || 'Urban Gardener'}</h1>
                         <p className="text-gray-500 text-sm mt-1 line-clamp-2">
-                            Passionate about sustainable living. Join me on my journey! 🌱
+                            {user?.bio || 'Passionate about sustainable living. Join me on my journey! 🌱'}
                         </p>
-                        <Link href="/?tab=impact" className="inline-flex items-center gap-1 mt-3 text-xs font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-full hover:bg-green-100 transition-colors">
-                            View Impact Score
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                        </Link>
+                        <div className="flex flex-wrap gap-2 mt-3">
+                            <Link href="/?tab=impact" className="inline-flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-full hover:bg-green-100 transition-colors">
+                                View Impact Score
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                            </Link>
+                            {user?.location_city && (
+                                <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                    {user.location_city}
+                                </span>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -374,6 +408,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                     {activeModal === 'grow' && 'My Systems'}
                                     {activeModal === 'recipes' && 'Shared Recipes'}
                                     {activeModal === 'learn' && 'Learning & Resources'}
+                                    {activeModal === 'edit' && 'Edit Profile'}
                                 </h2>
                                 <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-gray-100 rounded-full transition">
                                     <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -382,6 +417,69 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                             {/* Content Scroller */}
                             <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+                                {activeModal === 'edit' && (
+                                    <div className="space-y-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Full Name</label>
+                                                <input
+                                                    type="text"
+                                                    value={editForm.full_name}
+                                                    onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
+                                                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all outline-none"
+                                                    placeholder="Enter your full name"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">City / Region</label>
+                                                <input
+                                                    type="text"
+                                                    value={editForm.location_city}
+                                                    onChange={(e) => setEditForm({ ...editForm, location_city: e.target.value })}
+                                                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all outline-none"
+                                                    placeholder="e.g. San Francisco, CA"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Home Address (Private)</label>
+                                            <textarea
+                                                value={editForm.location_address}
+                                                onChange={(e) => setEditForm({ ...editForm, location_address: e.target.value })}
+                                                rows={2}
+                                                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all outline-none resize-none"
+                                                placeholder="Enter your home address for local AI discovery"
+                                            />
+                                            <p className="text-[10px] text-gray-400 mt-1 italic">Used by AI to find local food and systems nearby. Not shared publicly.</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Bio</label>
+                                            <textarea
+                                                value={editForm.bio}
+                                                onChange={(e) => setEditForm({ ...editForm, bio: e.target.value })}
+                                                rows={3}
+                                                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all outline-none resize-none"
+                                                placeholder="Tell your local community about yourself"
+                                            />
+                                        </div>
+                                        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                                            <button
+                                                onClick={() => setActiveModal(null)}
+                                                className="px-6 py-2.5 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={handleSaveProfile}
+                                                disabled={isSaving}
+                                                className="px-8 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none"
+                                            >
+                                                {isSaving ? 'Saving...' : 'Save Profile'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {activeModal === 'food' && (
                                     <div className="flex flex-col gap-6">
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">

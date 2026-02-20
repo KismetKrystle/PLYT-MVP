@@ -8,6 +8,7 @@
         "build:all": "npm run build --prefix server && npm run build --prefix client"
     },
     "devDependencies": {
+        "baseline-browser-mapping": "^2.10.0",
         "concurrently": "^9.0.0"
     }
 }

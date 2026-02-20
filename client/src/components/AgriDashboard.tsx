@@ -11,7 +11,8 @@ interface ProduceItem extends ProductDetail {
 
 type Tab = 'home' | 'chat' | 'find_produce' | 'pick_system' | 'learn' | 'impact' | 'guide';
 
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
+import api from '../lib/api';
 
 // import PublicProfile from './profile/PublicProfile'; // Deprecated
 import PublicProfileV2 from './profile/PublicProfileV2';
@@ -49,9 +50,17 @@ export default function AgriDashboard() {
     if (user?.role === 'distributor') return <DistributorDashboard />;
     if (user?.role === 'servicer') return <ServicerDashboard />;
 
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>('home');
+    const [currentConversationId, setCurrentConversationId] = useState<number | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
     const [prompt, setPrompt] = useState('');
     const [showPreview, setShowPreview] = useState(false);
+
+    // AI Research Scope & Location State
+    const [searchScope, setSearchScope] = useState<'local' | 'global'>('local');
+    const [locationType, setLocationType] = useState<'home' | 'live' | 'custom'>('home');
+    const [customLocation, setCustomLocation] = useState('');
 
     // Sync Tab with URL query param
     useEffect(() => {
@@ -134,52 +143,159 @@ export default function AgriDashboard() {
     });
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // Restore Guest Prompt Logic
+    // Helper: Fetch history from DB
+    const fetchConversationHistory = async (convId: number) => {
+        setIsLoading(true);
+        try {
+            const res = await api.get(`/chat/history/${convId}`);
+            const messages = res.data.map((m: any) => ({
+                role: m.role,
+                content: m.content
+            }));
+            setChatHistory(prev => ({
+                ...prev,
+                chat: messages
+            }));
+            setCurrentConversationId(convId);
+        } catch (error) {
+            console.error('Failed to fetch history:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleSend = async (overridePrompt?: string, tags?: string[], overrideScope?: 'local' | 'global', overrideLocation?: string) => {
+        const messageText = overridePrompt || prompt;
+        if (!messageText.trim() && (!tags || tags.length === 0)) return;
+
+        const activeScope = overrideScope || searchScope;
+        const activeLocType = overrideLocation ? 'custom' : locationType;
+
+        const targetTab: 'chat' | 'find_produce' | 'pick_system' | 'learn' = activeTab === 'home' || activeTab === 'impact' || activeTab === 'guide' ? 'chat' : activeTab as any;
+
+        setChatHistory(prev => ({
+            ...prev,
+            [targetTab]: [...prev[targetTab], { role: 'user', content: messageText, tags }]
+        }));
+
+        if (!overridePrompt) setPrompt('');
+        if (activeTab === 'home') setActiveTab('chat');
+
+        setIsLoading(true);
+        try {
+            let finalLocation = overrideLocation || '';
+
+            // 1. Resolve Location if not overridden
+            if (!overrideLocation && activeScope === 'local') {
+                if (activeLocType === 'live') {
+                    // Try to get browser geolocation
+                    try {
+                        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                            navigator.geolocation.getCurrentPosition(resolve, reject);
+                        });
+                        finalLocation = `Lat: ${pos.coords.latitude}, Lng: ${pos.coords.longitude}`;
+                    } catch (e) {
+                        console.error('Geolocation failed:', e);
+                        finalLocation = user?.location_address || user?.location_city || 'Unknown';
+                    }
+                } else if (activeLocType === 'custom') {
+                    finalLocation = customLocation;
+                } else {
+                    // Default to Home
+                    finalLocation = user?.location_address || user?.location_city || 'Unknown';
+                }
+            }
+
+            const res = await api.post('/chat', {
+                message: messageText,
+                conversationId: currentConversationId,
+                tags: tags || [],
+                scope: activeScope,
+                location: finalLocation
+            });
+
+            const aiResponse = res.data.response;
+            const newConvId = res.data.conversationId;
+
+            if (!currentConversationId) {
+                setCurrentConversationId(newConvId);
+            }
+
+            setChatHistory(prev => ({
+                ...prev,
+                [targetTab]: [...prev[targetTab], { role: 'assistant', content: aiResponse }]
+            }));
+
+            const aiLower = aiResponse.toLowerCase();
+            const isSystem = aiLower.includes('system') || aiLower.includes('tower') || aiLower.includes('grow');
+
+            let suggestions: any[] = [];
+            if (isSystem) {
+                suggestions = [...MOCK_SYSTEMS_DB].sort(() => 0.5 - Math.random()).slice(0, 2).map(p => ({ ...p, quantity: 1 }));
+            } else if (aiLower.includes('tomato') || aiLower.includes('kale') || aiLower.includes('produce')) {
+                suggestions = [...MOCK_PRODUCE_DB].sort(() => 0.5 - Math.random()).slice(0, 2).map(p => ({ ...p, quantity: 1 }));
+            }
+
+            if (suggestions.length > 0) {
+                setSuggestedProducts(suggestions);
+                setShowPreview(true);
+            }
+
+        } catch (error: any) {
+            console.error('Chat error full:', error);
+            if (error.response) {
+                console.error('Chat error data:', error.response.data);
+            }
+            setChatHistory(prev => ({
+                ...prev,
+                [targetTab]: [...prev[targetTab], { role: 'assistant', content: `Sorry, I encountered an error: ${error.response?.data?.details || error.message || 'Unknown error'}. Please try again.` }]
+            }));
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Restore Guest Prompt or handle redirect-from-landing
     useEffect(() => {
+        const urlConvId = searchParams.get('conversationId');
+        if (urlConvId) {
+            fetchConversationHistory(parseInt(urlConvId));
+            setActiveTab('chat');
+            return;
+        }
+
         const stored = localStorage.getItem('pendingChatPrompt');
         if (stored) {
             try {
                 const parsed = JSON.parse(stored);
                 if (parsed.text) {
-                    setChatHistory(prev => ({
-                        ...prev,
-                        chat: [...prev.chat, { role: 'user', content: parsed.text, tags: parsed.tags }]
-                    }));
-                    setActiveTab('chat');
-
-                    // Trigger initial search for restored prompt
-                    setTimeout(() => {
-                        const promptLower = parsed.text.toLowerCase();
-                        const isSystem = promptLower.includes('system') || promptLower.includes('tower') || promptLower.includes('hydro') || promptLower.includes('kit');
-
-                        let suggestions: any[] = [];
-                        if (isSystem) {
-                            // Randomly pick 2 systems
-                            const shuffled = [...MOCK_SYSTEMS_DB].sort(() => 0.5 - Math.random());
-                            suggestions = shuffled.slice(0, 2).map(p => ({ ...p, quantity: 1 }));
-                        } else {
-                            // Randomly pick 2 produce
-                            const shuffled = [...MOCK_PRODUCE_DB].sort(() => 0.5 - Math.random());
-                            suggestions = shuffled.slice(0, 2).map(p => ({ ...p, quantity: 1 }));
-                        }
-
-                        setSuggestedProducts(suggestions);
+                    if (parsed.scope) setSearchScope(parsed.scope);
+                    if (parsed.location) {
+                        setLocationType('custom');
+                        setCustomLocation(parsed.location);
+                    }
+                    if (user) {
+                        handleSend(parsed.text, parsed.tags, parsed.scope, parsed.location);
+                    } else {
                         setChatHistory(prev => ({
                             ...prev,
-                            chat: [...prev.chat, { role: 'assistant', content: `I found these options for you. Check the panel on the right.` }]
+                            chat: [...prev.chat, { role: 'user', content: parsed.text, tags: parsed.tags }]
                         }));
-                    }, 500);
+                        setActiveTab('chat');
+                    }
                 }
                 localStorage.removeItem('pendingChatPrompt');
-            } catch (e) { console.error(e); }
+            } catch (e) {
+                console.error(e);
+            }
         }
-    }, []);
+    }, [searchParams, user]);
 
     // Handle History ID Navigation
     useEffect(() => {
+        const historyId = searchParams.get('historyId');
         if (historyId) {
             setActiveTab('learn');
-            // Mock Data loading - in real app fetch from DB
             if (historyId === '1') {
                 setChatHistory(prev => ({
                     ...prev,
@@ -190,7 +306,6 @@ export default function AgriDashboard() {
                         { role: 'assistant', content: 'For a simple start, try the Kratky method. You need a container, net pot, growing medium, nutrient solution, and seeds (like lettuce).' }
                     ]
                 }));
-                // Optionally clear active lesson to avoid confusion
                 setActiveLesson(null);
             } else if (historyId === '2') {
                 setChatHistory(prev => ({
@@ -203,135 +318,16 @@ export default function AgriDashboard() {
                 setActiveLesson(null);
             }
         }
-    }, [historyId, setActiveLesson]);
+    }, [searchParams, setActiveLesson]);
 
     // Auto-scroll logic
     useEffect(() => {
         const currentHistory = chatHistory[activeTab as 'chat' | 'find_produce' | 'pick_system' | 'learn'] || [];
-        // Only auto-scroll if we have more than the initial system message (interaction happened)
-        // OR if it's potentially a restored session
         if (messagesEndRef.current && currentHistory.length > 1) {
             messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
     }, [chatHistory, activeTab, notes]);
 
-    const handleSend = () => {
-        if (!prompt.trim()) return;
-
-        // Determine target tab (default to chat if on home)
-        const targetTab: 'chat' | 'find_produce' | 'pick_system' | 'learn' = activeTab === 'home' ? 'chat' : activeTab as any;
-
-        setChatHistory(prev => ({
-            ...prev,
-            [targetTab]: [...prev[targetTab], { role: 'user', content: prompt }]
-        }));
-
-        const currentPrompt = prompt; // capture for closure
-        setPrompt('');
-
-        // If in Home mode, switch to tab
-        if (activeTab === 'home') {
-            setActiveTab('chat');
-        }
-
-        setTimeout(() => {
-            let responseContent = 'Processing your request...';
-            let responseSteps: string[] | undefined;
-            let responseImage: string | undefined;
-
-            // --- CHAT TAB LOGIC (Unified Search) ---
-            if (targetTab === 'chat') {
-                const promptLower = currentPrompt.toLowerCase();
-                const isSystem = promptLower.includes('system') || promptLower.includes('tower') || promptLower.includes('hydro') || promptLower.includes('kit');
-
-                let suggestions: any[] = [];
-                if (isSystem) {
-                    // Randomly pick 2 systems
-                    const shuffled = [...MOCK_SYSTEMS_DB].sort(() => 0.5 - Math.random());
-                    suggestions = shuffled.slice(0, 2).map(p => ({ ...p, quantity: 1 }));
-                    responseContent = `I found some system options for "${currentPrompt}". Take a look at the suggestions panel.`;
-                } else {
-                    // Randomly pick 2 produce
-                    const shuffled = [...MOCK_PRODUCE_DB].sort(() => 0.5 - Math.random());
-                    suggestions = shuffled.slice(0, 2).map(p => ({ ...p, quantity: 1 }));
-                    responseContent = `I found some produce options for "${currentPrompt}". Take a look at the suggestions panel.`;
-                }
-
-                setSuggestedProducts(suggestions);
-            }
-
-            if (targetTab === 'learn') {
-                if (currentPrompt.toLowerCase().includes('grow tomatoes')) {
-                    responseContent = "Great choice! Tomatoes are rewarding to grow indoors. Here is how you can get started:";
-                    responseSteps = [
-                        "Choose a compact variety like 'Tiny Tim' suitable for containers.",
-                        "Use a grow light to provide 12-16 hours of light daily.",
-                        "Pollinate flowers by gently shaking the stems daily."
-                    ];
-                    responseImage = '/assets/images/gallery/indoor_garden.png';
-                }
-            }
-
-            setChatHistory(prev => ({
-                ...prev,
-                [targetTab]: [...prev[targetTab], {
-                    role: 'assistant',
-                    content: responseContent,
-                    steps: responseSteps,
-                    image: responseImage
-                }]
-            }));
-            setShowPreview(true);
-
-            // If in Find Produce, simulate finding an item
-            if (targetTab === 'find_produce') {
-                const MOCK_DB = MOCK_PRODUCE_DB; // Use constant
-
-                // Filter items based on prompt or pick random if no match
-                const promptLower = currentPrompt.toLowerCase();
-                const matchedItems = MOCK_DB.filter(item =>
-                    item.name.toLowerCase().includes(promptLower) ||
-                    item.description.toLowerCase().includes(promptLower)
-                );
-
-                // If match found, use the first match, otherwise random
-                const itemToAdd = matchedItems.length > 0
-                    ? matchedItems[0]
-                    : MOCK_DB[Math.floor(Math.random() * MOCK_DB.length)];
-
-                setProduceItems(prev => {
-                    const existing = prev.find(p => p.id === itemToAdd.id);
-                    if (existing) {
-                        return prev.map(p => p.id === itemToAdd.id ? { ...p, quantity: p.quantity + 1 } : p);
-                    }
-                    return [...prev, { ...itemToAdd, quantity: 1 }];
-                });
-                setIsPanelOpen(true); // Auto-open panel on mobile
-            }
-
-            // If in Pick System, simulate adding System OR Container
-            if (targetTab === 'pick_system') {
-                const promptLower = currentPrompt.toLowerCase();
-                const matched = MOCK_SYSTEMS_DB.filter(p => p.name.toLowerCase().includes(promptLower));
-
-                const item = matched.length > 0 ? matched[0] : MOCK_SYSTEMS_DB[Math.floor(Math.random() * MOCK_SYSTEMS_DB.length)];
-
-                setSystemItems(prev => {
-                    const existing = prev.find(p => p.id === item.id);
-                    if (existing) return prev; // Don't add duplicates for systems usually, or just inc qty
-                    return [...prev, { ...item, quantity: 1 }];
-                });
-                setIsPanelOpen(true); // Auto-open panel on mobile
-            }
-
-            // If in Learn Mode, generate a note
-            if (targetTab === 'learn') {
-                const newNote = `Key Insight: ${currentPrompt.substring(0, 20)}... details about growing.`;
-                setNotes(prev => [...prev, newNote]);
-                setIsPanelOpen(true); // Auto-open panel on mobile
-            }
-        }, 800);
-    };
 
     const handleSaveLesson = () => {
         requireAuth(() => {
@@ -1226,7 +1222,7 @@ export default function AgriDashboard() {
                                                         style={{ minHeight: '48px' }}
                                                     />
                                                     <button
-                                                        onClick={handleSend}
+                                                        onClick={() => handleSend()}
                                                         disabled={!prompt.trim()}
                                                         className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-green-600 text-white rounded-full hover:bg-green-700 disabled:opacity-50 transition"
                                                     >
@@ -1288,6 +1284,67 @@ export default function AgriDashboard() {
                                 ? 'p-4 md:p-6 bg-gradient-to-t from-white via-white to-transparent'
                                 : 'p-4 md:p-6 bg-white border-t border-gray-100'
                                 }`}>
+                                <div className="max-w-3xl mx-auto mb-4 flex flex-wrap gap-2 items-center justify-center">
+                                    {/* Scope Toggle */}
+                                    <div className="flex bg-gray-100 p-1 rounded-full text-[10px] font-bold uppercase tracking-tight">
+                                        <button
+                                            onClick={() => setSearchScope('local')}
+                                            className={`px-3 py-1 rounded-full transition ${searchScope === 'local' ? 'bg-white shadow-sm text-green-600' : 'text-gray-400'}`}
+                                        >
+                                            Local
+                                        </button>
+                                        <button
+                                            onClick={() => setSearchScope('global')}
+                                            className={`px-3 py-1 rounded-full transition ${searchScope === 'global' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400'}`}
+                                        >
+                                            Global
+                                        </button>
+                                    </div>
+
+                                    {/* Location Selectors (Only if local) */}
+                                    {searchScope === 'local' ? (
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setLocationType('home')}
+                                                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition ${locationType === 'home' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 text-gray-400'}`}
+                                            >
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                                                Home
+                                            </button>
+                                            <button
+                                                onClick={() => setLocationType('live')}
+                                                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition ${locationType === 'live' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-gray-200 text-gray-400'}`}
+                                            >
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                Live
+                                            </button>
+                                            <button
+                                                onClick={() => setLocationType('custom')}
+                                                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition ${locationType === 'custom' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-400'}`}
+                                            >
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                Custom
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9h18" /></svg>
+                                            Web Grounding Enabled
+                                        </div>
+                                    )}
+
+                                    {/* Custom Location Input */}
+                                    {searchScope === 'local' && locationType === 'custom' && (
+                                        <input
+                                            type="text"
+                                            value={customLocation}
+                                            onChange={(e) => setCustomLocation(e.target.value)}
+                                            placeholder="Enter address..."
+                                            className="px-3 py-1 rounded-full text-[10px] font-medium border border-blue-200 outline-none focus:ring-1 focus:ring-blue-500 w-32 animate-in slide-in-from-left-2 duration-300"
+                                        />
+                                    )}
+                                </div>
+
                                 <div className={`mx-auto transition-all duration-500 relative shadow-xl bg-white border border-gray-200 rounded-3xl ${(activeTab === 'home') ? 'max-w-2xl' : 'max-w-3xl'
                                     }`}>
                                     <textarea
@@ -1300,7 +1357,7 @@ export default function AgriDashboard() {
                                         style={{ minHeight: '60px' }}
                                     />
                                     <button
-                                        onClick={handleSend}
+                                        onClick={() => handleSend()}
                                         disabled={!prompt.trim()}
                                         className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-green-600 text-white rounded-full hover:bg-green-700 disabled:opacity-50 transition shadow-md"
                                     >

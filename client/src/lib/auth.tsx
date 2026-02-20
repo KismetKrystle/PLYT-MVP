@@ -9,6 +9,11 @@ interface User {
     email: string;
     role: 'consumer' | 'farmer' | 'distributor' | 'servicer';
     wallet_address?: string;
+    full_name?: string;
+    location_city?: string;
+    location_address?: string;
+    bio?: string;
+    avatar_url?: string;
 }
 
 interface AuthContextType {
@@ -21,6 +26,9 @@ interface AuthContextType {
     openLoginModal: () => void;
     closeLoginModal: () => void;
     requireAuth: (callback: () => void) => void;
+    isAccessWallEnabled: boolean;
+    isUserDenied: boolean;
+
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,6 +38,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [token, setToken] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+    const [isAccessWallEnabled, setIsAccessWallEnabled] = useState(
+        process.env.NEXT_PUBLIC_ACCESS_WALL_ENABLED === 'true'
+    );
+    const [isUserDenied, setIsUserDenied] = useState(false);
     const router = useRouter();
 
     const openLoginModal = () => setIsLoginModalOpen(true);
@@ -52,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        setIsUserDenied(false);
         router.push('/');
     };
 
@@ -65,21 +78,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         const initAuth = async () => {
+            // 1. Check health/env first
+            try {
+                const healthRes = await api.get('/health'); // Use api instance to respect base URL
+                if (healthRes.data?.env?.ACCESS_WALL_ENABLED) {
+                    setIsAccessWallEnabled(true);
+                }
+            } catch (err) {
+                console.warn('Health check failed', err);
+            }
+
             const storedToken = localStorage.getItem('token');
             const storedUser = localStorage.getItem('user');
 
+            if (storedToken && storedToken.startsWith('mock-jwt-token')) {
+                console.warn('Mock token detected, clearing session.');
+                logout();
+                setLoading(false);
+                return;
+            }
+
             if (storedToken && storedUser) {
                 try {
-                    // Verify session with server
-                    // We manually attach header here to be safe, though api interceptor does it too if token is in localStorage
-                    // But here token might not be in state yet, but it IS in localStorage.
                     await api.get('/me');
-
                     setToken(storedToken);
                     setUser(JSON.parse(storedUser));
-                } catch (error) {
-                    console.warn('Session invalid, logging out:', error);
-                    logout();
+                } catch (error: any) {
+                    console.warn('Session invalid or denied:', error);
+                    if (error.response?.status === 403 && error.response?.data?.code === 'GATEKEEPER_DENIED') {
+                        setIsUserDenied(true);
+                        // Keep user logged in so we can show "Signed in as X" on the wall
+                        setToken(storedToken);
+                        setUser(JSON.parse(storedUser));
+                    } else {
+                        logout();
+                    }
                 }
             }
             setLoading(false);
@@ -89,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     return (
-        <AuthContext.Provider value={{ user, token, login, logout, loading, isLoginModalOpen, openLoginModal, closeLoginModal, requireAuth }}>
+        <AuthContext.Provider value={{ user, token, login, logout, loading, isLoginModalOpen, openLoginModal, closeLoginModal, requireAuth, isAccessWallEnabled, isUserDenied }}>
             {children}
         </AuthContext.Provider>
     );

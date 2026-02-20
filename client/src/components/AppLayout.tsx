@@ -10,7 +10,6 @@ import { useState } from 'react';
 import RightSidebar from './RightSidebar';
 
 import { formatCurrency, Currency } from '../lib/currency';
-import AuthModal from './auth/AuthModal';
 import OnboardingTour from './onboarding/OnboardingTour';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -399,7 +398,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </div>
             </div>
             {/* Global Overlays */}
-            <AuthModal />
             <OnboardingTour />
         </div>
     );

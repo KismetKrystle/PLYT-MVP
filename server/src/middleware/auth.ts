@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import fs from 'fs';
+import path from 'path';
 
 export interface AuthRequest extends Request {
     user?: any;
@@ -9,15 +11,23 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
+    // Debug: Check secret
+    const secret = process.env.JWT_SECRET || 'fallback_secret';
+    const logPath = path.join(process.cwd(), 'auth_logs.txt');
+
     if (!token) {
+        fs.appendFileSync(logPath, `[${new Date().toISOString()}] Auth Failure: No token found\n`);
         res.sendStatus(401);
-        return; // Ensure function returns here
+        return;
     }
 
-    jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret', (err: any, user: any) => {
+    jwt.verify(token, secret, (err: any, user: any) => {
         if (err) {
-            res.sendStatus(403);
-            return; // Ensure function returns here
+            const logMsg = `[${new Date().toISOString()}] JWT Error: ${err.message} | Secret Len: ${secret.length} | Token: ${token.substring(0, 15)}...\n`;
+            fs.appendFileSync(logPath, logMsg);
+            console.error('JWT Verification Error:', err.message);
+            res.status(403).json({ error: 'Auth Error', details: err.message });
+            return;
         }
         req.user = user;
         next();

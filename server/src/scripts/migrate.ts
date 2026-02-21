@@ -22,11 +22,11 @@ async function migrate() {
         `);
         console.log('✅ users table ready');
 
-        // Create allowed_users table (in case it doesn't exist)
+        // Create allowed_users table with username-based access
         await pool.query(`
             CREATE TABLE IF NOT EXISTS allowed_users (
                 id SERIAL PRIMARY KEY,
-                email VARCHAR(255) UNIQUE NOT NULL,
+                username VARCHAR(255) UNIQUE NOT NULL,
                 hashed_password VARCHAR(255) NOT NULL,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );

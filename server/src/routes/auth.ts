@@ -202,20 +202,20 @@ router.post('/google-login', async (req: Request, res: Response) => {
 
 // Gatekeeper Login - checks against allowed_users table in Neon Postgres
 router.post('/gatekeeper-login', async (req: Request, res: Response) => {
-    const { email, password } = req.body;
+    const { username, password } = req.body;
 
-    if (!email || !password) {
-        res.status(400).json({ error: 'Email and password are required' });
+    if (!username || !password) {
+        res.status(400).json({ error: 'Username and password are required' });
         return;
     }
 
     try {
-        const lowerEmail = email.toLowerCase().trim();
+        const lowerUsername = username.toLowerCase().trim();
 
-        // 1. Find user in allowed_users table
-        const allowedUserResult = await pool.query('SELECT * FROM allowed_users WHERE email = $1', [lowerEmail]);
+        // 1. Find user in allowed_users table by username
+        const allowedUserResult = await pool.query('SELECT * FROM allowed_users WHERE username = $1', [lowerUsername]);
         if (allowedUserResult.rows.length === 0) {
-            res.status(401).json({ error: 'Account not found in the allowed list.' });
+            res.status(401).json({ error: 'Username not recognised.' });
             return;
         }
 
@@ -228,17 +228,18 @@ router.post('/gatekeeper-login', async (req: Request, res: Response) => {
             return;
         }
 
-        // 3. Find or auto-create corresponding app user
+        // 3. Find or auto-create corresponding app user (keyed by username as synthetic email)
+        const syntheticEmail = `${lowerUsername}@plyt.internal`;
         let appUser;
-        const appUserResult = await pool.query('SELECT * FROM users WHERE email = $1', [lowerEmail]);
+        const appUserResult = await pool.query('SELECT * FROM users WHERE email = $1', [syntheticEmail]);
 
         if (appUserResult.rows.length === 0) {
             const newUser = await pool.query(
                 'INSERT INTO users (email, password_hash, role, plyt_balance) VALUES ($1, $2, $3, $4) RETURNING *',
-                [lowerEmail, allowedUser.hashed_password, 'consumer', 100]
+                [syntheticEmail, allowedUser.hashed_password, 'consumer', 100]
             );
             appUser = newUser.rows[0];
-            console.log(`Auto-created app user for gatekeeper member: ${lowerEmail}`);
+            console.log(`Auto-created app user for gatekeeper member: ${lowerUsername}`);
         } else {
             appUser = appUserResult.rows[0];
         }

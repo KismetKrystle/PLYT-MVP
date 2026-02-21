@@ -5,33 +5,32 @@ async function addUser() {
     const args = process.argv.slice(2);
 
     if (args.length !== 2) {
-        console.error('Usage: npm run add-user <email> <password>');
+        console.error('Usage: npm run add-user <username> <password>');
         process.exit(1);
     }
 
-    const email = args[0].toLowerCase().trim();
+    const username = args[0].toLowerCase().trim();
     const password = args[1];
 
     try {
-        console.log(`Adding / Updating gatekeeper user: ${email}...`);
+        console.log(`Adding / Updating gatekeeper user: ${username}...`);
 
         // Hash the password
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-        // Insert or update
-        // We use ON CONFLICT to allow updating passwords for existing emails easily
+        // Insert or update — ON CONFLICT allows updating passwords for existing usernames
         const query = `
-            INSERT INTO allowed_users (email, hashed_password) 
+            INSERT INTO allowed_users (username, hashed_password) 
             VALUES ($1, $2)
-            ON CONFLICT (email) 
+            ON CONFLICT (username) 
             DO UPDATE SET hashed_password = EXCLUDED.hashed_password
-            RETURNING id, email;
+            RETURNING id, username;
         `;
 
-        const result = await pool.query(query, [email, hashedPassword]);
+        const result = await pool.query(query, [username, hashedPassword]);
 
-        console.log('✅ Successfully configured gatekeeper access for:', result.rows[0].email);
+        console.log('✅ Successfully configured gatekeeper access for:', result.rows[0].username);
 
     } catch (error) {
         console.error('❌ Error adding user:', error);

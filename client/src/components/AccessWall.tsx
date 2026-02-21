@@ -4,7 +4,7 @@ import api from '../lib/api';
 
 export default function AccessWall() {
     const { user, logout, login } = useAuth();
-    const [email, setEmail] = useState('');
+    const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -16,7 +16,7 @@ export default function AccessWall() {
         setIsLoading(true);
 
         try {
-            const res = await api.post('/auth/gatekeeper-login', { email, password });
+            const res = await api.post('/auth/gatekeeper-login', { username, password });
             login(res.data.token, res.data.user);
         } catch (err: any) {
             setError(err.response?.data?.error || 'Invalid credentials');
@@ -37,11 +37,13 @@ export default function AccessWall() {
 
                 <div className="space-y-4">
                     <h2 className="text-3xl font-semibold tracking-tight text-white mb-2">
-                        Private Access Only
+                        Partner Access
                     </h2>
 
                     <p className="text-zinc-400 text-lg leading-relaxed">
-                        We are currently in a closed beta phase. Access is restricted to approved members only.
+                        Hi, thanks for your interest in PLYT.<br />
+                        This environment is restricted to partners only.<br />
+                        Enter your credentials to continue.
                     </p>
 
                     {user ? (
@@ -51,7 +53,7 @@ export default function AccessWall() {
 
                             <div className="space-y-3">
                                 <div className="p-3 bg-red-500/10 border border-red-500/20 rounded text-red-400 text-sm">
-                                    Access Denied. This account is not on the allowed list.
+                                    Access Denied. Please contact founder to gain access.
                                 </div>
                                 <button
                                     onClick={logout}
@@ -70,14 +72,14 @@ export default function AccessWall() {
                                     </div>
                                 )}
                                 <div>
-                                    <label className="block text-sm font-medium text-zinc-300 mb-1">Gatekeeper Email</label>
+                                    <label className="block text-sm font-medium text-zinc-300 mb-1">Username</label>
                                     <input
-                                        type="email"
+                                        type="text"
                                         required
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
+                                        value={username}
+                                        onChange={(e) => setUsername(e.target.value)}
                                         className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-lg text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-all placeholder:text-zinc-600"
-                                        placeholder="admin@plyt.com"
+                                        placeholder="Enter your username"
                                     />
                                 </div>
                                 <div>
@@ -111,7 +113,7 @@ export default function AccessWall() {
                                     disabled={isLoading}
                                     className="w-full mt-4 py-3.5 px-6 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-400 hover:to-cyan-500 text-white font-bold rounded-lg shadow-lg hover:shadow-cyan-500/20 transition-all duration-300 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                                 >
-                                    {isLoading ? 'Verifying...' : 'Unlock Environment'}
+                                    {isLoading ? 'Verifying...' : 'Enter'}
                                 </button>
                             </form>
                         </div>

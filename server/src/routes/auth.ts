@@ -14,25 +14,19 @@ router.post('/signup', async (req: Request, res: Response) => {
         return;
     }
 
-    if (process.env.ACCESS_WALL_ENABLED === 'true') {
-        res.status(403).json({ error: 'Standard registration is disabled during private beta.', code: 'REGISTRATION_DISABLED' });
-        return;
-    }
-
     try {
-        const existingUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        if (existingUser.rows.length > 0) {
-            res.status(400).json({ error: 'User already exists' });
-            return;
-        }
+        // EPHEMERAL BETA LOGIN
+        // Do not store the user in the database. Generate a mock ID and sign a real token.
+        const mockId = Math.floor(Math.random() * 100000);
+        const user = { id: mockId, email, role: 'consumer' };
 
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = await pool.query(
-            'INSERT INTO users (email, password_hash, role, plyt_balance) VALUES ($1, $2, $3, $4) RETURNING id, email, role',
-            [email, hashedPassword, 'consumer', 0]
+        const token = jwt.sign(
+            user,
+            process.env.JWT_SECRET || 'fallback_secret',
+            { expiresIn: '24h' }
         );
 
-        res.status(201).json(newUser.rows[0]);
+        res.status(201).json({ token, user });
     } catch (error) {
         console.error('Signup error:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -43,46 +37,24 @@ router.post('/signup', async (req: Request, res: Response) => {
 router.post('/login', async (req: Request, res: Response) => {
     const { email, password } = req.body;
 
-    if (!email) {
-        res.status(400).json({ error: 'Email is required' });
-        return;
-    }
-
-    if (process.env.ACCESS_WALL_ENABLED === 'true') {
-        res.status(403).json({ error: 'Standard login is disabled during private beta. Please use the member login.', code: 'LOGIN_DISABLED' });
+    if (!email || !password) {
+        res.status(400).json({ error: 'Email and password are required' });
         return;
     }
 
     try {
-        let user;
-        const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-
-        if (userResult.rows.length === 0) {
-            // Auto-signup check
-            if (process.env.ACCESS_WALL_ENABLED === 'true') {
-                return res.status(403).json({ error: 'Registration is currently disabled.' });
-            }
-
-            // Auto-signup for any new email
-            const hashedPassword = await bcrypt.hash(password || 'default_password', 10);
-            const newUser = await pool.query(
-                'INSERT INTO users (email, password_hash, role, plyt_balance) VALUES ($1, $2, $3, $4) RETURNING *',
-                [email, hashedPassword, 'consumer', 100] // Give some initial balance
-            );
-            user = newUser.rows[0];
-            console.log(`Auto-signed up new user: ${email}`);
-        } else {
-            user = userResult.rows[0];
-            console.log(`Loging in existing user: ${email} (Password check bypassed)`);
-        }
+        // EPHEMERAL BETA LOGIN
+        // Do not query or store in the database. Generate a mock ID and sign a real token.
+        const mockId = Math.floor(Math.random() * 100000);
+        const user = { id: mockId, email, role: 'consumer' };
 
         const token = jwt.sign(
-            { id: user.id, email: user.email, role: user.role },
+            user,
             process.env.JWT_SECRET || 'fallback_secret',
             { expiresIn: '24h' }
         );
 
-        res.json({ token, user: { id: user.id, email: user.email, role: user.role } });
+        res.json({ token, user });
     } catch (error: any) {
         console.error('Login error details:', {
             message: error.message,

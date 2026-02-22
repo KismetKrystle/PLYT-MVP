@@ -19,14 +19,14 @@ async function checkGatekeeper() {
         }
 
         // 2. Show all rows (without hashed passwords)
-        const users = await pool.query('SELECT id, email, created_at FROM allowed_users ORDER BY created_at DESC');
+        const users = await pool.query('SELECT id, username, created_at FROM allowed_users ORDER BY created_at DESC');
         console.log(`\n✅ Found ${users.rows.length} allowed user(s):`);
 
         if (users.rows.length === 0) {
-            console.log('   (none)\n❌ No users found. Run: npm run add-user <email> <password>\n');
+            console.log('   (none)\n❌ No users found. Run: npm run add-user <username> <password>\n');
         } else {
             users.rows.forEach(row => {
-                console.log(`   - ${row.email} (added: ${row.created_at})`);
+                console.log(`   - ${row.username} (added: ${row.created_at})`);
             });
             console.log('');
         }

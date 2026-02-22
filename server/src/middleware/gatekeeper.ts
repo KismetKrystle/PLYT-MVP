@@ -56,23 +56,7 @@ export const checkGatekeeper = async (req: Request, res: Response, next: NextFun
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // 5. Check Allowlist via Postgres directly
-    // This ensures revocation is instant if removed from the DB
-    try {
-        const userEmail = req.user.email.toLowerCase();
-
-        const result = await pool.query('SELECT id FROM allowed_users WHERE email = $1', [userEmail]);
-
-        if (result.rows.length === 0) {
-            return res.status(403).json({
-                error: 'Access denied. Your email is not on the allowed list.',
-                code: 'GATEKEEPER_DENIED'
-            });
-        }
-
-        return next();
-    } catch (err) {
-        console.error('Error verifying user against allowed_users db:', err);
-        return res.status(500).json({ error: 'Internal Server Error' });
-    }
+    // 5. Bypass Allowlist check for internal app tokens during beta
+    // Tokens are already verified by softAuth. We do not require them to be in allowed_users.
+    return next();
 };

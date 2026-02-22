@@ -1,6 +1,6 @@
 import path from 'path';
 import dotenv from 'dotenv';
-dotenv.config({ path: path.join(__dirname, '.env') });
+dotenv.config({ path: path.join(__dirname, '../.env') });
 import { Pool } from 'pg';
 
 const pool = new Pool({
@@ -27,9 +27,9 @@ async function checkTables() {
 
         // Check allowed_users rows
         try {
-            const au = await pool.query('SELECT id, email, created_at FROM allowed_users');
+            const au = await pool.query('SELECT id, username, created_at FROM allowed_users');
             console.log(`\n✅ allowed_users has ${au.rows.length} row(s):`);
-            au.rows.forEach(r => console.log(`  - ${r.email} (id: ${r.id})`));
+            au.rows.forEach(r => console.log(`  - ${r.username} (id: ${r.id})`));
         } catch (e: any) {
             console.log('\n❌ allowed_users query failed:', e.message);
         }

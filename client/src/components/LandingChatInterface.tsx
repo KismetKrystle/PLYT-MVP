@@ -164,9 +164,9 @@ export default function LandingChatInterface() {
                         animate={{ opacity: 1, y: 0 }}
                         className="text-3xl md:text-6xl font-extrabold text-gray-900 tracking-tight leading-tight"
                     >
-                        What do you want to <br />
+                        What are you looking for, <br />
                         <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-600 to-emerald-600">
-                            eat, grow, or sell?
+                            food or advice?
                         </span>
                     </motion.h1>
                     <motion.p

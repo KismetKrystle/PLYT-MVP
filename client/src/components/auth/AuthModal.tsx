@@ -27,7 +27,7 @@ export default function AuthModal() {
                 login(res.data.token, res.data.user);
             } else {
                 // SignUp Logic
-                const res = await api.post('/auth/register', {
+                const res = await api.post('/auth/signup', {
                     email,
                     password,
                     name,

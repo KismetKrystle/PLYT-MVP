@@ -2,9 +2,10 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import path from 'path';
+import { JwtUser } from '../types/auth';
 
 export interface AuthRequest extends Request {
-    user?: any;
+    user?: JwtUser;
 }
 
 export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -21,7 +22,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
         return;
     }
 
-    jwt.verify(token, secret, (err: any, user: any) => {
+    jwt.verify(token, secret, (err, decoded) => {
         if (err) {
             const logMsg = `[${new Date().toISOString()}] JWT Error: ${err.message} | Secret Len: ${secret.length} | Token: ${token.substring(0, 15)}...\n`;
             fs.appendFileSync(logPath, logMsg);
@@ -29,6 +30,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
             res.status(403).json({ error: 'Auth Error', details: err.message });
             return;
         }
+        const user = decoded as JwtUser;
         req.user = user;
         next();
     });

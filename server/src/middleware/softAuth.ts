@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import path from 'path';
+import { JwtUser } from '../types/auth';
 
 export const softAuthenticateToken = (req: Request, res: Response, next: NextFunction) => {
     const authHeader = req.headers['authorization'];
@@ -13,7 +14,7 @@ export const softAuthenticateToken = (req: Request, res: Response, next: NextFun
 
     const secret = process.env.JWT_SECRET || 'fallback_secret';
 
-    jwt.verify(token, secret, (err: any, user: any) => {
+    jwt.verify(token, secret, (err, decoded) => {
         if (err) {
             // Token invalid, just continue. user will be undefined.
             // Optionally log or whatever, but avoiding side effects for now.
@@ -22,6 +23,7 @@ export const softAuthenticateToken = (req: Request, res: Response, next: NextFun
         }
 
         // Token valid, attach user
+        const user = decoded as JwtUser;
         req.user = user;
         next();
     });

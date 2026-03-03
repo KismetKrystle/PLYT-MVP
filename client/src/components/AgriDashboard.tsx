@@ -9,7 +9,7 @@ interface ProduceItem extends ProductDetail {
     quantity: number;
 }
 
-type Tab = 'home' | 'chat' | 'find_produce' | 'pick_system' | 'learn' | 'impact' | 'guide';
+type Tab = 'home' | 'chat' | 'find_produce' | 'pick_system' | 'learn' | 'impact' | 'guide' | 'health_profiles' | 'customer_profile';
 
 import { useSearchParams, useRouter } from 'next/navigation';
 import api from '../lib/api';
@@ -22,6 +22,8 @@ import { useAuth } from '../lib/auth';
 import FarmerDashboard from './dashboards/FarmerDashboard';
 import DistributorDashboard from './dashboards/DistributorDashboard';
 import ServicerDashboard from './dashboards/ServicerDashboard';
+import ProfileWorkspace from './consumer-health-profile/ProfileWorkspace';
+import CustomerProfileDashboard from './profile/CustomerProfileDashboard';
 
 const MOCK_PRODUCE_DB: Omit<ProduceItem, 'quantity'>[] = [
     { id: '1', name: 'Organic Red Tomatoes', price: 25000, unit: 'kg', plyt: '25', image: '/assets/images/store/cherry_tomatoes.png', description: 'Sweet, vine-ripened tomatoes grown in pesticide-free soil.', specs: ['Vitamin C Rich', 'Vine Ripened'], farm: 'Sunrise Farm', growMethod: 'Soil' },
@@ -42,13 +44,17 @@ const MOCK_SYSTEMS_DB: Omit<ProduceItem, 'quantity'>[] = [
 export default function AgriDashboard() {
     const searchParams = useSearchParams();
     const historyId = searchParams.get('historyId');
+    const requestedTab = searchParams.get('tab');
 
     const { user, requireAuth } = useAuth(); // Get user for profile & requireAuth
     const { addToCart } = useCart();
 
-    if (user?.role === 'farmer') return <FarmerDashboard />;
-    if (user?.role === 'distributor') return <DistributorDashboard />;
-    if (user?.role === 'servicer') return <ServicerDashboard />;
+    const isProfileTab = requestedTab === 'customer_profile' || requestedTab === 'health_profiles';
+    if (!isProfileTab) {
+        if (user?.role === 'farmer') return <FarmerDashboard />;
+        if (user?.role === 'distributor') return <DistributorDashboard />;
+        if (user?.role === 'servicer') return <ServicerDashboard />;
+    }
 
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>('home');
@@ -65,7 +71,7 @@ export default function AgriDashboard() {
     // Sync Tab with URL query param
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['home', 'chat', 'find_produce', 'pick_system', 'learn', 'impact', 'guide'].includes(tab)) {
+        if (tab && ['home', 'chat', 'find_produce', 'pick_system', 'learn', 'impact', 'guide', 'health_profiles', 'customer_profile'].includes(tab)) {
             setActiveTab(tab as any);
         }
     }, [searchParams]);
@@ -171,7 +177,7 @@ export default function AgriDashboard() {
         const activeScope = overrideScope || searchScope;
         const activeLocType = overrideLocation ? 'custom' : locationType;
 
-        const targetTab: 'chat' | 'find_produce' | 'pick_system' | 'learn' = activeTab === 'home' || activeTab === 'impact' || activeTab === 'guide' ? 'chat' : activeTab as any;
+        const targetTab: 'chat' | 'find_produce' | 'pick_system' | 'learn' = activeTab === 'home' || activeTab === 'impact' || activeTab === 'guide' || activeTab === 'health_profiles' || activeTab === 'customer_profile' ? 'chat' : activeTab as any;
 
         setChatHistory(prev => ({
             ...prev,
@@ -387,6 +393,14 @@ export default function AgriDashboard() {
                         {/* IMPACT TAB */}
                         {activeTab === 'impact' && (
                             <ImpactMetrics />
+                        )}
+
+                        {activeTab === 'customer_profile' && (
+                            <CustomerProfileDashboard user={user} />
+                        )}
+
+                        {activeTab === 'health_profiles' && (
+                            <ProfileWorkspace />
                         )}
 
                         {/* GUIDE TAB */}
@@ -1279,7 +1293,7 @@ export default function AgriDashboard() {
 
                     {/* Main Chat Input Area (Hidden in Learn Mode, Visible in Home/Find/Pick) */}
                     {
-                        activeTab !== 'learn' && (
+                        activeTab !== 'learn' && activeTab !== 'health_profiles' && activeTab !== 'customer_profile' && (
                             <div className={`shrink-0 z-10 transition-all duration-500 ${(activeTab === 'home')
                                 ? 'p-4 md:p-6 bg-gradient-to-t from-white via-white to-transparent'
                                 : 'p-4 md:p-6 bg-white border-t border-gray-100'

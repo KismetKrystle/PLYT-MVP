@@ -3,175 +3,187 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import pool from '../db';
 import { authenticateToken } from '../middleware/auth';
 import { SYSTEM_INSTRUCTION } from '../config/persona';
+import { fetchRoleProfileData } from '../services/profileContext';
 
 const router = express.Router();
 
-/**
- * POST /chat
- * Gemini Implementation with History and Persona
- */
-router.post('/', authenticateToken, async (req: Request, res: Response) => {
-    if (!process.env.GEMINI_API_KEY) {
-        console.error('ERROR: GEMINI_API_KEY is not defined in .env');
-        return res.status(500).json({ error: 'AI Error', details: 'Gemini API Key is missing on the server.' });
+function toGeminiRole(role: string): 'model' | 'user' {
+    return role === 'assistant' ? 'model' : 'user';
+}
+
+async function generateWithFallbackModels(
+    genAI: GoogleGenerativeAI,
+    message: string,
+    systemInstruction: string,
+    history: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>
+) {
+    const configuredModel = (process.env.GEMINI_MODEL || '').trim();
+    const candidates = [
+        configuredModel,
+        'gemini-2.0-flash',
+        'gemini-1.5-flash'
+    ].filter(Boolean);
+
+    const tried: string[] = [];
+    let lastError: any = null;
+
+    for (const modelName of candidates) {
+        try {
+            tried.push(modelName);
+            const model = genAI.getGenerativeModel({
+                model: modelName,
+                systemInstruction
+            });
+            const chatSession = model.startChat({ history });
+            const result = await chatSession.sendMessage(message);
+            return { text: result.response.text(), modelName, tried };
+        } catch (error: any) {
+            lastError = error;
+            continue;
+        }
     }
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const { message, conversationId, scope, location } = req.body;
-    const userId = (req as any).user.id;
+    const err = new Error(lastError?.message || 'Failed to generate AI response');
+    (err as any).triedModels = tried;
+    throw err;
+}
+
+router.post('/', authenticateToken, async (req: Request, res: Response) => {
+    if (!process.env.GEMINI_API_KEY) {
+        res.status(500).json({ error: 'AI Error', details: 'Gemini API key missing' });
+        return;
+    }
+
+    const { message } = req.body || {};
+    const user = (req as any).user;
+    const userId = user?.id;
+    const userRole = user?.role || 'consumer';
 
     if (!message) {
-        return res.status(400).json({ error: 'Message is required' });
+        res.status(400).json({ error: 'Message is required' });
+        return;
     }
 
     try {
-        console.log('--- Chat Request ---');
-        console.log('User ID:', userId);
-        console.log('Scope:', scope);
-        console.log('Location:', location);
-        console.log('Message:', message);
+        const profileData = await fetchRoleProfileData(userId, userRole);
+        const systemInstruction = `${SYSTEM_INSTRUCTION}
 
-        let currentConvId = conversationId;
+User role: ${userRole}
+Role-specific profile_data JSON:
+${JSON.stringify(profileData, null, 2)}
 
-        // 1. Create a new conversation if one doesn't exist
-        if (!currentConvId) {
-            const convRes = await pool.query(
-                'INSERT INTO conversations (user_id, title) VALUES ($1, $2) RETURNING id',
-                [userId, message.substring(0, 50)]
-            );
-            currentConvId = convRes.rows[0].id;
-        }
+Use this profile_data directly for personalization.
+Do not ask for details already provided in profile_data unless necessary for safety.`;
 
-        // 2. Save user message to DB
         await pool.query(
-            'INSERT INTO messages (conversation_id, role, content) VALUES ($1, $2, $3)',
-            [currentConvId, 'user', message]
+            `INSERT INTO chat_history (user_id, role, message)
+             VALUES ($1, $2, $3)`,
+            [userId, 'user', message]
         );
 
-        // 3. Fetch History for Context
         const historyRes = await pool.query(
-            'SELECT role, content FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 15',
-            [currentConvId]
+            `SELECT role, message
+             FROM chat_history
+             WHERE user_id = $1
+             ORDER BY created_at ASC
+             LIMIT 40`,
+            [userId]
         );
 
-        // Gemini requires alternating roles (user/model) and starting with user.
-        const rawHistory = historyRes.rows.map(m => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: m.content }]
+        const rawHistory: Array<{ role: 'model' | 'user'; parts: Array<{ text: string }> }> = historyRes.rows.map((row: any) => ({
+            role: toGeminiRole(row.role),
+            parts: [{ text: String(row.message) }]
         }));
 
-        const cleanHistory: any[] = [];
-        let lastRole: string | null = null;
-
-        // Gemini expects history to strictly alternate: user -> model -> user -> model
-        // And it expects the NEXT message (sendMessage) to be the opposite of the last history role.
-        // Since sendMessage is ALWAYS 'user', the last message in history MUST be 'model'.
-        for (const msg of rawHistory.slice(0, -1)) {
-            if (msg.role !== lastRole) {
-                cleanHistory.push(msg);
-                lastRole = msg.role;
-            } else {
-                // If consecutive same roles, keep the latest one (overwrite previous)
-                cleanHistory[cleanHistory.length - 1] = msg;
+        const cleanHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+        let lastRole: 'user' | 'model' | null = null;
+        for (const entry of rawHistory.slice(0, -1)) {
+            if ((entry.role === 'user' || entry.role === 'model') && entry.role !== lastRole) {
+                cleanHistory.push(entry);
+                lastRole = entry.role;
             }
         }
-
-        // 1. Ensure history starts with 'user'
         while (cleanHistory.length > 0 && cleanHistory[0].role !== 'user') {
             cleanHistory.shift();
         }
-
-        // 2. Ensure history ends with 'model' (so next sendMessage 'user' is valid)
         while (cleanHistory.length > 0 && cleanHistory[cleanHistory.length - 1].role !== 'model') {
             cleanHistory.pop();
         }
 
-        console.log(`Cleaned history to ${cleanHistory.length} messages.`);
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const completion = await generateWithFallbackModels(genAI, message, systemInstruction, cleanHistory);
+        const aiResponse = completion.text;
 
-        // 4. Simplified Chat Logic
-        const getGeminiResponse = async () => {
-            const model = genAI.getGenerativeModel({
-                model: "gemini-1.5-flash",
-                systemInstruction: SYSTEM_INSTRUCTION
-            });
-
-            const chatSession = model.startChat({
-                history: cleanHistory,
-            });
-
-            // Just send the raw message, let the system prompt handle context or ask for it
-            const result = await chatSession.sendMessage(message);
-            return result.response.text();
-        };
-
-        let aiResponse: string;
-        try {
-            console.log('Attempting Gemini chat...');
-            aiResponse = await getGeminiResponse();
-        } catch (error: any) {
-            console.error('Gemini Chat Error:', error.message || error);
-            throw error;
-        }
-
-        // 6. Save AI Response to DB
         await pool.query(
-            'INSERT INTO messages (conversation_id, role, content) VALUES ($1, $2, $3)',
-            [currentConvId, 'assistant', aiResponse]
+            `INSERT INTO chat_history (user_id, role, message)
+             VALUES ($1, $2, $3)`,
+            [userId, 'assistant', aiResponse]
         );
 
         res.json({
             response: aiResponse,
-            conversationId: currentConvId
+            conversationId: String(userId),
+            model: completion.modelName
         });
-
     } catch (error: any) {
-        console.error('FINAL Gemini Chat Error:', error);
+        console.error('Chat error:', error);
         res.status(500).json({
             error: 'Failed to process chat',
             details: error.message,
-            status: error.status
+            tried_models: error?.triedModels || []
         });
     }
 });
 
-/**
- * GET /chat/history
- * Fetch list of conversations for the user
- */
 router.get('/history', authenticateToken, async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     try {
-        const convs = await pool.query(
-            'SELECT * FROM conversations WHERE user_id = $1 ORDER BY created_at DESC',
+        const summary = await pool.query(
+            `SELECT MIN(created_at) AS created_at, MAX(created_at) AS updated_at
+             FROM chat_history
+             WHERE user_id = $1`,
             [userId]
         );
-        res.json(convs.rows);
+
+        if (!summary.rows[0]?.created_at) {
+            res.json([]);
+            return;
+        }
+
+        res.json([
+            {
+                id: String(userId),
+                title: 'Personalized Chat',
+                created_at: summary.rows[0].created_at,
+                updated_at: summary.rows[0].updated_at
+            }
+        ]);
     } catch (error) {
+        console.error('History list error:', error);
         res.status(500).json({ error: 'Failed to fetch history' });
     }
 });
 
-/**
- * GET /chat/history/:id
- * Fetch messages for a specific conversation
- */
 router.get('/history/:id', authenticateToken, async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
-    const convId = req.params.id;
+    const userId = String((req as any).user.id);
+    const historyId = String(req.params.id);
+
+    if (historyId !== userId) {
+        res.status(403).json({ error: 'Unauthorized' });
+        return;
+    }
 
     try {
-        // Verify ownership
-        const conv = await pool.query('SELECT user_id FROM conversations WHERE id = $1', [convId]);
-        if (conv.rows.length === 0 || conv.rows[0].user_id !== userId) {
-            return res.status(403).json({ error: 'Unauthorized' });
-        }
-
         const messages = await pool.query(
-            'SELECT * FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC',
-            [convId]
+            `SELECT role, message AS content, created_at
+             FROM chat_history
+             WHERE user_id = $1
+             ORDER BY created_at ASC`,
+            [userId]
         );
         res.json(messages.rows);
     } catch (error) {
+        console.error('History detail error:', error);
         res.status(500).json({ error: 'Failed to fetch messages' });
     }
 });

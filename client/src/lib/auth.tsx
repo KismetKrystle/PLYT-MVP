@@ -5,9 +5,9 @@ import api from './api';
 import { useRouter } from 'next/navigation';
 
 interface User {
-    id: number;
+    id: string | number;
     email: string;
-    role: 'consumer' | 'farmer' | 'distributor' | 'servicer';
+    role: 'consumer' | 'farmer' | 'expert' | 'distributor' | 'servicer';
     wallet_address?: string;
     full_name?: string;
     location_city?: string;

@@ -6,6 +6,7 @@ import cors from 'cors';
 
 import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
+import usersRoutes from './routes/users';
 import sessionRoutes from './routes/session';
 import assistantRoutes from './routes/assistant';
 import inventoryRoutes from './routes/inventory';
@@ -13,6 +14,9 @@ import growRoutes from './routes/grow';
 import orderRoutes from './routes/orders';
 import walletRoutes from './routes/wallet';
 import chatRoutes from './routes/chat';
+import consumerHealthProfileRoutes from './routes/consumer-health-profile';
+import farmerProfileRoutes from './routes/farmer-profiles';
+import expertProfileRoutes from './routes/expert-profiles';
 import { softAuthenticateToken } from './middleware/softAuth';
 import { checkGatekeeper } from './middleware/gatekeeper';
 
@@ -28,7 +32,12 @@ app.use(checkGatekeeper);
 
 
 app.use('/auth', authRoutes);
-app.use('/', userRoutes); // mounts /me
+app.use('/', userRoutes); // keeps /me
+app.use('/user', userRoutes); // keeps /user/profile compatibility
+app.use('/users', usersRoutes);
+app.use('/consumer-health-profile', consumerHealthProfileRoutes);
+app.use('/farmer-profiles', farmerProfileRoutes);
+app.use('/expert-profiles', expertProfileRoutes);
 app.use('/session', sessionRoutes);
 app.use('/assistant', assistantRoutes);
 app.use('/inventory', inventoryRoutes);

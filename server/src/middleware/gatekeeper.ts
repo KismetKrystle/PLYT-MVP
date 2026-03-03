@@ -3,7 +3,7 @@ import pool from '../db';
 
 // Define the shape of the user object attached to the request
 interface UserPayload {
-    id: number;
+    id: string | number;
     email: string;
     role: string;
 }

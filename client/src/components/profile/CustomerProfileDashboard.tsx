@@ -148,6 +148,7 @@ export default function CustomerProfileDashboard({ user }: Props) {
     const [mealStatusByDate, setMealStatusByDate] = useState<Record<string, MealStatus>>({});
     const [selectedDateKey, setSelectedDateKey] = useState(toDateKey(new Date()));
     const [mealDraft, setMealDraft] = useState<MealEntry>({ breakfast: '', lunch: '', dinner: '', notes: '' });
+    const [isHealthProfileOpen, setIsHealthProfileOpen] = useState(true);
     const weekScrollerRef = useRef<HTMLDivElement | null>(null);
     const todayCardRef = useRef<HTMLButtonElement | null>(null);
 
@@ -304,94 +305,107 @@ export default function CustomerProfileDashboard({ user }: Props) {
                     <p className="mt-1 text-sm text-gray-500">Days of consistent healthy choices</p>
                 </Card>
 
-                {/* ── HEALTH PROFILE (real data) ──────────────────────────── */}
                 <section className="md:col-span-4 rounded-2xl border-2 border-green-200 bg-gradient-to-br from-green-50 to-white p-6 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold text-gray-900">🌱 My Health Profile</h3>
-                        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">Private</span>
+                        <h3 className="text-lg font-bold text-gray-900">My Health Profile</h3>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setIsHealthProfileOpen((v) => !v)}
+                                aria-label={isHealthProfileOpen ? 'Collapse health profile' : 'Expand health profile'}
+                                className="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                            >
+                                <svg
+                                    className={`h-3 w-3 transition-transform ${isHealthProfileOpen ? 'rotate-180' : ''}`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+                        </div>
                     </div>
 
-                    {loadingProfile ? (
-                        <p className="text-sm text-gray-400">Loading your health profile...</p>
-                    ) : conditions.length === 0 && preferences.length === 0 && allergies.length === 0 ? (
-                        <div className="text-center py-6">
-                            <p className="text-sm text-gray-500 mb-3">No health profile set up yet.</p>
-                            <a href="/signup" className="text-green-600 text-sm font-semibold hover:underline">
-                                Complete your health profile →
-                            </a>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-
-                            {/* Conditions */}
-                            <div>
-                                <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-3">
-                                    Health Conditions
-                                </p>
-                                {conditions.length === 0 ? (
-                                    <p className="text-sm text-gray-400">None added</p>
-                                ) : (
-                                    <div className="flex flex-wrap gap-2">
-                                        {conditions.map(c => (
-                                            <Pill
-                                                key={c}
-                                                label={CONDITION_LABELS[c] || c}
-                                                color="bg-rose-50 text-rose-700 border border-rose-200"
-                                            />
-                                        ))}
+                    {isHealthProfileOpen && (
+                        <>
+                            {loadingProfile ? (
+                                <p className="text-sm text-gray-400">Loading your health profile...</p>
+                            ) : conditions.length === 0 && preferences.length === 0 && allergies.length === 0 ? (
+                                <div className="text-center py-6">
+                                    <p className="text-sm text-gray-500 mb-3">No health profile set up yet.</p>
+                                    <a href="/signup" className="text-green-600 text-sm font-semibold hover:underline">
+                                        Complete your health profile &rarr;
+                                    </a>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div>
+                                        <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-3">
+                                            Health Conditions
+                                        </p>
+                                        {conditions.length === 0 ? (
+                                            <p className="text-sm text-gray-400">None added</p>
+                                        ) : (
+                                            <div className="flex flex-wrap gap-2">
+                                                {conditions.map(c => (
+                                                    <Pill
+                                                        key={c}
+                                                        label={CONDITION_LABELS[c] || c}
+                                                        color="bg-rose-50 text-rose-700 border border-rose-200"
+                                                    />
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
 
-                            {/* Dietary Preferences */}
-                            <div>
-                                <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-3">
-                                    Dietary Preferences
-                                </p>
-                                {preferences.length === 0 ? (
-                                    <p className="text-sm text-gray-400">None added</p>
-                                ) : (
-                                    <div className="flex flex-wrap gap-2">
-                                        {preferences.map(p => (
-                                            <Pill
-                                                key={p}
-                                                label={PREFERENCE_LABELS[p] || p}
-                                                color="bg-green-50 text-green-700 border border-green-200"
-                                            />
-                                        ))}
+                                    <div>
+                                        <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-3">
+                                            Dietary Preferences
+                                        </p>
+                                        {preferences.length === 0 ? (
+                                            <p className="text-sm text-gray-400">None added</p>
+                                        ) : (
+                                            <div className="flex flex-wrap gap-2">
+                                                {preferences.map(p => (
+                                                    <Pill
+                                                        key={p}
+                                                        label={PREFERENCE_LABELS[p] || p}
+                                                        color="bg-green-50 text-green-700 border border-green-200"
+                                                    />
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
 
-                            {/* Allergies */}
-                            <div>
-                                <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-3">
-                                    Allergies
-                                </p>
-                                {allergies.length === 0 ? (
-                                    <p className="text-sm text-gray-400">None added</p>
-                                ) : (
-                                    <div className="flex flex-wrap gap-2">
-                                        {allergies.map(a => (
-                                            <Pill
-                                                key={a}
-                                                label={`⚠️ ${a}`}
-                                                color="bg-amber-50 text-amber-700 border border-amber-200"
-                                            />
-                                        ))}
+                                    <div>
+                                        <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-3">
+                                            Allergies
+                                        </p>
+                                        {allergies.length === 0 ? (
+                                            <p className="text-sm text-gray-400">None added</p>
+                                        ) : (
+                                            <div className="flex flex-wrap gap-2">
+                                                {allergies.map(a => (
+                                                    <Pill
+                                                        key={a}
+                                                        label={`?? ${a}`}
+                                                        color="bg-amber-50 text-amber-700 border border-amber-200"
+                                                    />
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
+                                </div>
+                            )}
 
-                        </div>
-                    )}
-
-                    {/* AI nudge */}
-                    {conditions.length > 0 && (
-                        <div className="mt-4 p-3 bg-green-100 rounded-xl text-sm text-green-800 flex items-center gap-2">
-                            <span>✨</span>
-                            <span>Your AI food recommendations are personalized based on your health profile. <a href="/?tab=chat" className="font-semibold underline">Ask the assistant</a> what to eat today.</span>
-                        </div>
+                            {conditions.length > 0 && (
+                                <div className="mt-4 p-3 bg-green-100 rounded-xl text-sm text-green-800 flex items-center gap-2">
+                                    <span>?</span>
+                                    <span>Your AI food recommendations are personalized based on your health profile. <a href="/?tab=chat" className="font-semibold underline">Ask the assistant</a> what to eat today.</span>
+                                </div>
+                            )}
+                        </>
                     )}
                 </section>
 

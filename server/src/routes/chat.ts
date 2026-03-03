@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import axios from 'axios';
 import pool from '../db';
 import { authenticateToken } from '../middleware/auth';
 import { SYSTEM_INSTRUCTION } from '../config/persona';
@@ -141,6 +142,41 @@ async function generateWithFallbackModels(
     throw err;
 }
 
+async function fetchGooglePlace(query: string) {
+    const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    if (!key) return null;
+
+    const textSearch = await axios.get('https://maps.googleapis.com/maps/api/place/textsearch/json', {
+        params: { query, key }
+    });
+    const first = textSearch.data?.results?.[0];
+    if (!first?.place_id) return null;
+
+    const details = await axios.get('https://maps.googleapis.com/maps/api/place/details/json', {
+        params: {
+            place_id: first.place_id,
+            fields: 'name,formatted_address,formatted_phone_number,rating,user_ratings_total,website,photos,url',
+            key
+        }
+    });
+    const d = details.data?.result || {};
+    const photoRef = d?.photos?.[0]?.photo_reference;
+    const image = photoRef
+        ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=640&photo_reference=${encodeURIComponent(photoRef)}&key=${encodeURIComponent(key)}`
+        : null;
+
+    return {
+        name: d.name || first.name || query,
+        address: d.formatted_address || first.formatted_address || '',
+        phone: d.formatted_phone_number || '',
+        rating: typeof d.rating === 'number' ? d.rating : (typeof first.rating === 'number' ? first.rating : null),
+        reviewsCount: Number.isFinite(d.user_ratings_total) ? d.user_ratings_total : (first.user_ratings_total || 0),
+        website: d.website || '',
+        mapsUrl: d.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+        image
+    };
+}
+
 // ─── Main chat route ──────────────────────────────────────────────────────────
 router.post('/', authenticateToken, async (req: Request, res: Response) => {
     if (!process.env.GEMINI_API_KEY) {
@@ -238,6 +274,48 @@ Use this profile directly for personalization. Do not ask for details already pr
             details: error.message,
             tried_models: error?.triedModels || []
         });
+    }
+});
+
+router.post('/places', authenticateToken, async (req: Request, res: Response) => {
+    const { queries } = req.body || {};
+    if (!Array.isArray(queries) || queries.length === 0) {
+        res.status(400).json({ error: 'queries array is required' });
+        return;
+    }
+
+    try {
+        const uniqueQueries = Array.from(new Set(
+            queries
+                .map((q: any) => String(q || '').trim())
+                .filter(Boolean)
+        )).slice(0, 6);
+
+        const keyConfigured = Boolean(process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY);
+        const enriched = await Promise.all(
+            uniqueQueries.map(async (query) => {
+                try {
+                    const place = await fetchGooglePlace(query);
+                    if (place) return place;
+                } catch {
+                    // fallback below
+                }
+                return {
+                    name: query.split(',')[0]?.trim() || query,
+                    address: query,
+                    phone: '',
+                    rating: null,
+                    reviewsCount: 0,
+                    website: '',
+                    mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+                    image: null
+                };
+            })
+        );
+
+        res.json({ places: enriched, enriched: keyConfigured });
+    } catch (error: any) {
+        res.status(500).json({ error: 'Failed to fetch places', details: error.message });
     }
 });
 

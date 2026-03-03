@@ -9,6 +9,17 @@ interface ProduceItem extends ProductDetail {
     quantity: number;
 }
 
+interface PlaceSuggestion {
+    name: string;
+    address: string;
+    phone: string;
+    rating: number | null;
+    reviewsCount: number;
+    website: string;
+    mapsUrl: string;
+    image: string | null;
+}
+
 type Tab = 'home' | 'chat' | 'find_produce' | 'pick_system' | 'learn' | 'impact' | 'guide' | 'health_profiles' | 'customer_profile';
 
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -93,6 +104,7 @@ export default function AgriDashboard() {
 
     // Chat Tab Suggested Products
     const [suggestedProducts, setSuggestedProducts] = useState<ProduceItem[]>([]);
+    const [suggestedPlaces, setSuggestedPlaces] = useState<PlaceSuggestion[]>([]);
 
     const [selectedProduct, setSelectedProduct] = useState<ProductDetail | null>(null);
 
@@ -232,6 +244,32 @@ export default function AgriDashboard() {
                 [targetTab]: [...prev[targetTab], { role: 'assistant', content: aiResponse }]
             }));
 
+            const placeQueries = extractGoogleMapsQueries(aiResponse);
+            if (placeQueries.length > 0) {
+                try {
+                    const placeRes = await api.post('/chat/places', { queries: placeQueries });
+                    const places = Array.isArray(placeRes.data?.places) ? placeRes.data.places : [];
+                    setSuggestedPlaces(places);
+                    setSuggestedProducts([]);
+                    setShowPreview(true);
+                } catch {
+                    const fallbackPlaces = placeQueries.map((q) => ({
+                        name: q.split(',')[0]?.trim() || q,
+                        address: q,
+                        phone: '',
+                        rating: null,
+                        reviewsCount: 0,
+                        website: '',
+                        mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`,
+                        image: null
+                    }));
+                    setSuggestedPlaces(fallbackPlaces);
+                    setSuggestedProducts([]);
+                    setShowPreview(true);
+                }
+                return;
+            }
+
             const aiLower = aiResponse.toLowerCase();
             const isSystem = aiLower.includes('system') || aiLower.includes('tower') || aiLower.includes('grow');
 
@@ -243,6 +281,7 @@ export default function AgriDashboard() {
             }
 
             if (suggestions.length > 0) {
+                setSuggestedPlaces([]);
                 setSuggestedProducts(suggestions);
                 setShowPreview(true);
             }
@@ -399,6 +438,18 @@ export default function AgriDashboard() {
             .replace(/(<\/ul>)<br \/>/g, '$1');
 
         return html;
+    };
+
+    const extractGoogleMapsQueries = (text: string) => {
+        const queries: string[] = [];
+        const re = /https?:\/\/(?:www\.)?google\.com\/maps\/search\/\?api=1&query=([^\s)]+)/gi;
+        let match: RegExpExecArray | null = null;
+        while ((match = re.exec(text)) !== null) {
+            const encoded = match[1] || '';
+            const decoded = decodeURIComponent(encoded).replace(/\+/g, ' ').trim();
+            if (decoded) queries.push(decoded);
+        }
+        return Array.from(new Set(queries));
     };
 
     return (
@@ -563,7 +614,62 @@ export default function AgriDashboard() {
                                         </div>
                                     </div>
                                     <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3">
-                                        {suggestedProducts.length === 0 ? (
+                                        {suggestedPlaces.length > 0 ? (
+                                            suggestedPlaces.map((place, idx) => (
+                                                <motion.div
+                                                    key={`${place.name}-${idx}`}
+                                                    initial={{ opacity: 0, x: 20 }}
+                                                    animate={{ opacity: 1, x: 0 }}
+                                                    className="p-3 bg-white rounded-xl border border-gray-100 shadow-sm"
+                                                >
+                                                    <div className="flex gap-3">
+                                                        <div className="w-14 h-14 rounded-lg bg-gray-100 shrink-0 overflow-hidden">
+                                                            {place.image ? (
+                                                                <img src={place.image} alt={place.name} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0L6.343 16.657a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <h4 className="text-sm font-bold text-gray-800 leading-snug">{place.name}</h4>
+                                                            <p className="text-xs text-gray-500 mt-1">{place.address || 'Address unavailable'}</p>
+                                                            <div className="mt-2 space-y-1">
+                                                                {typeof place.rating === 'number' && (
+                                                                    <p className="text-xs text-amber-700 font-semibold">
+                                                                        ★ {place.rating.toFixed(1)} ({place.reviewsCount || 0} reviews)
+                                                                    </p>
+                                                                )}
+                                                                {place.phone && (
+                                                                    <p className="text-xs text-gray-600">{place.phone}</p>
+                                                                )}
+                                                            </div>
+                                                            <div className="mt-2 flex flex-wrap gap-3">
+                                                                <a
+                                                                    href={place.mapsUrl}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-xs font-semibold text-blue-600 hover:underline"
+                                                                >
+                                                                    Open Map
+                                                                </a>
+                                                                {place.website && (
+                                                                    <a
+                                                                        href={place.website}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="text-xs font-semibold text-green-700 hover:underline"
+                                                                    >
+                                                                        Website
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </motion.div>
+                                            ))
+                                        ) : suggestedProducts.length === 0 ? (
                                             <div className="text-center py-10 opacity-40">
                                                 <svg className="w-12 h-12 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                                 <p className="text-sm text-gray-400">Relevant items will appear here.</p>

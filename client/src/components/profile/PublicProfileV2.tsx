@@ -53,7 +53,6 @@ const WALL_POSTS = [
 
 export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) {
     const [activeModal, setActiveModal] = useState<string | null>(null);
-    const [prompt, setPrompt] = useState('');
     const [isSaving, setIsSaving] = useState(false);
 
     // Edit Profile Form State
@@ -81,25 +80,6 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         }
     };
 
-    const handleSearch = () => {
-        if (!prompt.trim()) return;
-
-        // Save prompt to local storage for the dashboard to pick up
-        localStorage.setItem('pendingChatPrompt', JSON.stringify({
-            text: prompt,
-            tags: [] // box 2 doesn't have tags UI yet, empty for now
-        }));
-
-        // Navigate to the Find Produce tab
-        router.push('/?tab=find_produce');
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            handleSearch();
-        }
-    };
-
     // Common Action Button Component
     const ActionButton = ({ type, modal }: { type: 'edit' | 'like', modal?: string }) => (
         <button
@@ -123,7 +103,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 auto-rows-min">
 
                 {/* -- Box 1: Identity (Row 1, Col 1-2) -- */}
-                <div className="col-span-2 md:col-span-2 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex items-center gap-6 relative overflow-hidden group">
+                <div className="col-span-2 md:col-span-4 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex items-center gap-6 relative overflow-hidden group">
                     {isOwner && <ActionButton type="edit" modal="edit" />}
                     <div className="absolute top-0 right-0 w-32 h-32 bg-green-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
                     <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-4 border-white shadow-lg overflow-hidden shrink-0 relative z-10">
@@ -150,36 +130,6 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                     {user.location_city}
                                 </span>
                             )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* -- Box 2: AI Prompt (Row 1, Col 3-4) -- */}
-                <div className="col-span-2 md:col-span-2 bg-gradient-to-br from-green-600 to-emerald-700 rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,128,0,0.15)] hover:shadow-[0_8px_30px_rgb(0,128,0,0.25)] transition-all duration-300 text-white flex flex-col justify-center relative overflow-hidden">
-                    {/* Decorative Elements */}
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
-                    <div className="absolute bottom-0 left-0 w-32 h-32 bg-black/10 rounded-full blur-2xl -ml-8 -mb-8"></div>
-
-                    <label className="text-green-100 text-sm font-semibold mb-3 uppercase tracking-wider relative z-10">AI Assistant</label>
-                    <div className="relative z-10">
-                        <div className="bg-white/20 backdrop-blur-md rounded-2xl p-1 flex items-center border border-white/30">
-                            <div className="p-2 text-white/70">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                            </div>
-                            <input
-                                type="text"
-                                placeholder="How can I assist you today?"
-                                className="bg-transparent border-none outline-none text-white placeholder:text-white/70 w-full text-sm px-2"
-                                value={prompt}
-                                onChange={(e) => setPrompt(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                            />
-                            <button
-                                onClick={handleSearch}
-                                className="bg-white text-green-700 p-2 rounded-xl hover:bg-green-50 transition shadow-sm"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                            </button>
                         </div>
                     </div>
                 </div>

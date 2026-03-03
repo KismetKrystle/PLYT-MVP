@@ -49,7 +49,12 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
         if (!isPublic) {
             // If not public, we need to be logged in AND allowed.
             if (!loading) {
-                if (!user || isUserDenied) {
+                // Allow if: user is logged in AND (they're admin OR not denied)
+                if (!user) {
+                    return <AccessWall />;
+                }
+                // If user exists but is denied (non-admin), show access wall
+                if (isUserDenied && user.role !== 'admin') {
                     return <AccessWall />;
                 }
             }

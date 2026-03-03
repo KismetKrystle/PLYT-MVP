@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 
 export default function ResourcesPanel() {
     const router = useRouter();
-    const [openGroup, setOpenGroup] = useState<string | null>('Learn');
+    const [openGroup, setOpenGroup] = useState<string | null>('Produce');
 
     // Grouped Mock Data
     const HISTORY_GROUPS = [
@@ -16,19 +16,19 @@ export default function ResourcesPanel() {
                 { id: 102, title: 'Price check: Basil', date: '1d ago' },
             ]
         },
-        {
-            title: 'System',
-            items: [
-                { id: 201, title: 'Water Pump Issue', date: '3d ago' },
-            ]
-        },
-        {
-            title: 'Learn',
-            items: [
-                { id: 301, title: 'Hydroponics for beginners', date: '4h ago' },
-                { id: 302, title: 'Best Kale varieties', date: '5d ago' },
-            ]
-        }
+        // {
+        //     title: 'System',
+        //     items: [
+        //         { id: 201, title: 'Water Pump Issue', date: '3d ago' },
+        //     ]
+        // },
+        // {
+        //     title: 'Learn',
+        //     items: [
+        //         { id: 301, title: 'Hydroponics for beginners', date: '4h ago' },
+        //         { id: 302, title: 'Best Kale varieties', date: '5d ago' },
+        //     ]
+        // }
     ];
 
     const toggleGroup = (title: string) => {

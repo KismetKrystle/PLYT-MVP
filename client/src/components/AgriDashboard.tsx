@@ -71,7 +71,7 @@ export default function AgriDashboard() {
     // Sync Tab with URL query param
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['home', 'chat', 'find_produce', 'pick_system', 'learn', 'impact', 'guide', 'health_profiles', 'customer_profile'].includes(tab)) {
+        if (tab && ['home', 'chat', 'find_produce', 'impact', 'guide', 'health_profiles', 'customer_profile'].includes(tab)) {
             setActiveTab(tab as any);
         }
     }, [searchParams]);
@@ -352,6 +352,55 @@ export default function AgriDashboard() {
         }
     };
 
+    const escapeHtml = (text: string) =>
+        text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+
+    const renderAssistantMarkdown = (text: string) => {
+        let html = escapeHtml(text);
+
+        // Markdown links: [label](https://...)
+        html = html.replace(
+            /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+            '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline break-all">$1</a>'
+        );
+
+        // Plain URLs: https://...
+        html = html.replace(
+            /(?<!href=")(https?:\/\/[^\s<]+)/g,
+            '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline break-all">$1</a>'
+        );
+
+        // Headings
+        html = html
+            .replace(/^###\s+(.+)$/gm, '<h3 class="font-semibold text-base mt-2 mb-1">$1</h3>')
+            .replace(/^##\s+(.+)$/gm, '<h2 class="font-semibold text-lg mt-2 mb-1">$1</h2>')
+            .replace(/^#\s+(.+)$/gm, '<h1 class="font-bold text-xl mt-2 mb-1">$1</h1>');
+
+        // Bold
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+        // Bullet lists (single-level)
+        html = html.replace(/(?:^|\n)-\s+(.+)(?=\n|$)/g, '<li>$1</li>');
+        html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 my-2">$1</ul>');
+
+        // Line breaks
+        html = html.replace(/\n/g, '<br />');
+
+        // Clean up breaks around block elements
+        html = html
+            .replace(/<br \/>(<h[1-3])/g, '$1')
+            .replace(/(<\/h[1-3]>)<br \/>/g, '$1')
+            .replace(/<br \/>((?:<ul class="list-disc ml-5 my-2">))/g, '$1')
+            .replace(/(<\/ul>)<br \/>/g, '$1');
+
+        return html;
+    };
+
     return (
         <div className="flex w-full h-full">
             {/* Middle Column: Main Content (Dashboard OR Chat) */}
@@ -361,7 +410,7 @@ export default function AgriDashboard() {
                 {activeTab !== 'home' && (
                     <div className="flex border-b border-gray-100 items-center justify-center px-4 pt-2 shrink-0">
                         <div className="flex space-x-1 overflow-x-auto no-scrollbar w-full max-w-2xl justify-center">
-                            {['chat', 'find_produce', 'pick_system', 'learn'].map((tab) => (
+                            {['chat', 'find_produce'].map((tab) => (
                                 <button
                                     key={tab}
                                     onClick={() => setActiveTab(tab as Tab)}
@@ -372,8 +421,6 @@ export default function AgriDashboard() {
                                 >
                                     {tab === 'chat' && 'Assistant'}
                                     {tab === 'find_produce' && 'Produce'}
-                                    {tab === 'pick_system' && 'Grow System'}
-                                    {tab === 'learn' && 'Learn'}
                                 </button>
                             ))}
                         </div>
@@ -490,7 +537,14 @@ export default function AgriDashboard() {
                                                 ? 'bg-green-600 text-white rounded-br-none'
                                                 : 'bg-white border border-gray-100 text-gray-800 rounded-bl-none'
                                                 }`}>
-                                                <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
+                                                {msg.role === 'assistant' ? (
+                                                    <div
+                                                        className="leading-relaxed text-sm"
+                                                        dangerouslySetInnerHTML={{ __html: renderAssistantMarkdown(msg.content) }}
+                                                    />
+                                                ) : (
+                                                    <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
+                                                )}
                                             </div>
                                         </motion.div>
                                     ))}
@@ -1196,7 +1250,14 @@ export default function AgriDashboard() {
                                                             ? 'bg-green-600 text-white rounded-br-none'
                                                             : 'bg-white border border-gray-100 text-gray-800 rounded-bl-none'
                                                             }`}>
-                                                            <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
+                                                            {msg.role === 'assistant' ? (
+                                                                <div
+                                                                    className="leading-relaxed text-sm"
+                                                                    dangerouslySetInnerHTML={{ __html: renderAssistantMarkdown(msg.content) }}
+                                                                />
+                                                            ) : (
+                                                                <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
+                                                            )}
 
                                                             {/* Render Steps if available */}
                                                             {msg.steps && (

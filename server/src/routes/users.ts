@@ -4,7 +4,7 @@ import pool from '../db';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = express.Router();
-const VALID_ROLES = new Set(['consumer', 'farmer', 'expert']);
+const VALID_ROLES = new Set(['consumer', 'farmer', 'expert', 'distributor', 'servicer']);
 
 function sanitizeUser(row: any) {
     return {

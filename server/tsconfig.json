@@ -9,8 +9,11 @@
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true
     },
+    "include": [
+        "src/**/*.ts"
+    ],
     "exclude": [
-        "check-db.ts",
-        "diagnose.ts"
+        "dist",
+        "node_modules"
     ]
 }

@@ -3,7 +3,7 @@ import pool from '../db';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = express.Router();
-const VALID_ROLES = new Set(['consumer', 'farmer', 'expert']);
+const VALID_ROLES = new Set(['consumer', 'farmer', 'expert', 'distributor', 'servicer']);
 
 router.get('/me', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
@@ -40,6 +40,7 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
             name,
             full_name,
             role,
+            profile_data,
             ...rest
         } = req.body || {};
 
@@ -62,7 +63,8 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
                 nextRole ?? null,
                 JSON.stringify({
                     ...(full_name ? { full_name } : {}),
-                    ...rest
+                    ...rest,
+                    ...(profile_data && typeof profile_data === 'object' ? profile_data : {})
                 }),
                 userId
             ]
@@ -81,4 +83,3 @@ router.put('/profile', authenticateToken, async (req: AuthRequest, res: Response
 });
 
 export default router;
-

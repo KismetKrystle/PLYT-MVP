@@ -4,7 +4,7 @@ import api from '../lib/api';
 
 export default function AccessWall() {
     const { user, logout, login } = useAuth();
-    const [username, setUsername] = useState('');
+    const [credential, setCredential] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -16,7 +16,10 @@ export default function AccessWall() {
         setIsLoading(true);
 
         try {
-            const res = await api.post('/auth/gatekeeper-login', { username, password });
+            const res = await api.post('/auth/gatekeeper-login', {
+                username: credential,
+                password
+            });
             login(res.data.token, res.data.user);
         } catch (err: any) {
             setError(err.response?.data?.error || 'Invalid credentials');
@@ -28,7 +31,6 @@ export default function AccessWall() {
     return (
         <div className="fixed inset-0 z-[100] bg-zinc-950 flex flex-col items-center justify-center p-6 text-center text-white">
             <div className="max-w-md w-full space-y-8">
-                {/* Logo or Brand */}
                 <div className="flex justify-center mb-8">
                     <h1 className="text-4xl font-bold tracking-tighter bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
                         PLYT
@@ -50,18 +52,15 @@ export default function AccessWall() {
                         <div className="bg-zinc-900/50 rounded-lg p-6 border border-zinc-800 backdrop-blur-sm mt-8">
                             <div className="text-zinc-500 text-sm uppercase tracking-wider font-medium mb-1">Signed in as</div>
                             <div className="text-white font-mono text-base mb-6">{user.email}</div>
-
-                            <div className="space-y-3">
-                                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded text-red-400 text-sm">
-                                    Access Denied. Please contact founder to gain access.
-                                </div>
-                                <button
-                                    onClick={logout}
-                                    className="w-full py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium rounded-lg transition-colors border border-zinc-700"
-                                >
-                                    Sign Out
-                                </button>
+                            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded text-emerald-400 text-sm">
+                                Access granted. Entering app...
                             </div>
+                            <button
+                                onClick={logout}
+                                className="w-full mt-4 py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium rounded-lg transition-colors border border-zinc-700"
+                            >
+                                Sign Out
+                            </button>
                         </div>
                     ) : (
                         <div className="mt-8">
@@ -72,14 +71,14 @@ export default function AccessWall() {
                                     </div>
                                 )}
                                 <div>
-                                    <label className="block text-sm font-medium text-zinc-300 mb-1">Username</label>
+                                    <label className="block text-sm font-medium text-zinc-300 mb-1">Username or Email</label>
                                     <input
                                         type="text"
                                         required
-                                        value={username}
-                                        onChange={(e) => setUsername(e.target.value)}
+                                        value={credential}
+                                        onChange={(e) => setCredential(e.target.value)}
                                         className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-lg text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-all placeholder:text-zinc-600"
-                                        placeholder="Enter your username"
+                                        placeholder="your username or email"
                                     />
                                 </div>
                                 <div>
@@ -91,7 +90,7 @@ export default function AccessWall() {
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
                                             className="w-full px-4 py-3 pr-12 bg-zinc-900 border border-zinc-800 rounded-lg text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-all placeholder:text-zinc-600"
-                                            placeholder="••••••••"
+                                            placeholder="********"
                                         />
                                         <button
                                             type="button"

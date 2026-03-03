@@ -29,10 +29,13 @@ function signToken(user: { id: string | number; email: string; role: string }) {
 router.post('/signup', async (req: Request, res: Response) => {
     const { name, email, password, role } = req.body;
 
-    if (!name || !email || !password) {
-        res.status(400).json({ error: 'name, email, and password are required' });
+    if (!email || !password) {
+        res.status(400).json({ error: 'email and password are required' });
         return;
     }
+
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const normalizedName = String(name || normalizedEmail.split('@')[0] || 'new-user').trim();
 
     const normalizedRole = role || 'consumer';
     if (!VALID_ROLES.has(normalizedRole)) {
@@ -41,7 +44,7 @@ router.post('/signup', async (req: Request, res: Response) => {
     }
 
     try {
-        const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+        const existing = await pool.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
         if (existing.rows.length > 0) {
             res.status(409).json({ error: 'Email already registered' });
             return;
@@ -52,7 +55,7 @@ router.post('/signup', async (req: Request, res: Response) => {
             `INSERT INTO users (name, email, password_hash, role)
              VALUES ($1, $2, $3, $4)
              RETURNING id, name, email, role, created_at, updated_at`,
-            [name, email, passwordHash, normalizedRole]
+            [normalizedName, normalizedEmail, passwordHash, normalizedRole]
         );
 
         const user = sanitizeUser(result.rows[0]);
@@ -73,13 +76,25 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     try {
+        const normalizedEmail = String(email).toLowerCase().trim();
         const result = await pool.query(
             'SELECT id, name, email, role, password_hash, created_at, updated_at FROM users WHERE email = $1',
-            [email]
+            [normalizedEmail]
         );
 
         if (result.rows.length === 0) {
-            res.status(401).json({ error: 'Invalid credentials' });
+            const passwordHash = await bcrypt.hash(password, 10);
+            const defaultName = normalizedEmail.split('@')[0] || 'new-user';
+            const created = await pool.query(
+                `INSERT INTO users (name, email, password_hash, role)
+                 VALUES ($1, $2, $3, $4)
+                 RETURNING id, name, email, role, created_at, updated_at`,
+                [defaultName, normalizedEmail, passwordHash, 'consumer']
+            );
+
+            const user = sanitizeUser(created.rows[0]);
+            const token = signToken(user);
+            res.status(201).json({ token, user, isNewUser: true });
             return;
         }
 
@@ -127,7 +142,12 @@ router.post('/gatekeeper-login', async (req: Request, res: Response) => {
             return;
         }
 
-        const syntheticEmail = `${lowerUsername}@plyt.internal`;
+        const syntheticEmail = lowerUsername.includes('@')
+            ? lowerUsername
+            : `${lowerUsername}@plyt.internal`;
+        const defaultName = lowerUsername.includes('@')
+            ? lowerUsername.split('@')[0]
+            : lowerUsername;
         let appUser;
 
         const appUserResult = await pool.query(
@@ -140,7 +160,7 @@ router.post('/gatekeeper-login', async (req: Request, res: Response) => {
                 `INSERT INTO users (name, email, password_hash, role)
                  VALUES ($1, $2, $3, $4)
                  RETURNING id, name, email, role, created_at, updated_at`,
-                [lowerUsername, syntheticEmail, allowedUser.hashed_password, 'consumer']
+                [defaultName, syntheticEmail, allowedUser.hashed_password, 'consumer']
             );
             appUser = created.rows[0];
         } else {

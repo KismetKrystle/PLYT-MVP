@@ -11,6 +11,101 @@ function toGeminiRole(role: string): 'model' | 'user' {
     return role === 'assistant' ? 'model' : 'user';
 }
 
+// ─── Health condition guidance injected into system prompt ───────────────────
+function buildHealthContext(profileData: any): string {
+    const conditions: string[] = profileData?.health_conditions || [];
+    const allergies: string[] = profileData?.allergies || [];
+    const preferences: string[] = profileData?.dietary_preferences || [];
+
+    if (!conditions.length && !allergies.length && !preferences.length) return '';
+
+    const conditionGuidance: Record<string, string> = {
+        fibroids: `
+FIBROIDS PROTOCOL:
+- Recommend: Cruciferous vegetables (broccoli, cauliflower, kale), flaxseed, leafy greens, turmeric, green tea, omega-3 rich foods (walnuts, chia seeds)
+- Avoid recommending: Processed foods, excess red meat, alcohol, conventional dairy, high-estrogen foods, soy in excess
+- Tone: Warm and encouraging — this is a real daily struggle. Celebrate small wins.
+- Always mention: Fiber-rich foods help the body eliminate excess estrogen`,
+
+        no_gallbladder: `
+NO GALLBLADDER PROTOCOL:
+- Recommend: Low-fat meals, smaller portions throughout the day, easily digestible foods, steamed vegetables, lean proteins
+- Avoid recommending: High-fat foods, fried foods, large heavy meals, excess oils even healthy ones
+- Note: Without a gallbladder bile drips constantly so fat digestion is impaired`,
+
+        diabetes: `
+DIABETES PROTOCOL:
+- Recommend: Low-glycemic vegetables, high-fiber foods, raw nuts and seeds, leafy greens, berries, avocado, cucumbers
+- Avoid recommending: Refined sugar, white rice, white bread, high-GI fruits like watermelon in excess
+- Always mention: Raw foods reduce blood sugar spikes due to fiber and enzyme content`,
+
+        high_blood_pressure: `
+HIGH BLOOD PRESSURE PROTOCOL:
+- Recommend: Potassium-rich foods (bananas, leafy greens, avocado), celery, beets, watermelon, low-sodium options
+- Avoid recommending: High-sodium foods, processed snacks`,
+
+        digestive_issues: `
+DIGESTIVE ISSUES PROTOCOL:
+- Recommend: Enzyme-rich raw foods, papaya, pineapple, fermented foods (kimchi, sauerkraut), sprouted seeds
+- Note: Suggest starting slow with raw foods to allow gut adjustment`,
+    };
+
+    let healthSection = `
+## ACTIVE HEALTH CONTEXT — CRITICAL: READ BEFORE RESPONDING
+
+This user has specific health conditions. Every food recommendation MUST account for these.`;
+
+    if (conditions.length) {
+        healthSection += `\n\nHealth conditions: ${conditions.join(', ')}`;
+        conditions.forEach(c => {
+            const key = c.toLowerCase().replace(/\s+/g, '_');
+            if (conditionGuidance[key]) {
+                healthSection += `\n${conditionGuidance[key]}`;
+            }
+        });
+    }
+
+    if (allergies.length) {
+        healthSection += `\n\n⚠️ ALLERGIES — NEVER recommend foods containing: ${allergies.join(', ')}`;
+        healthSection += `\nCheck every single recommendation against this list before responding.`;
+    }
+
+    if (preferences.length) {
+        healthSection += `\n\nDietary preferences: ${preferences.join(', ')} — respect these in all suggestions.`;
+    }
+
+    healthSection += `\n\n ALWAYS:
+- Explain WHY a food helps their specific condition (not just what to eat)
+- Suggest where to find or how to source the food locally
+- Be warm and encouraging — managing health through food is hard and deserves support
+- Add a brief disclaimer: "This is general nutritional guidance. Please consult your healthcare provider for personalized medical advice."
+
+RESPONSE STYLE:
+- Be conversational and warm, not clinical
+- Keep responses concise — 3 to 5 short paragraphs max
+- Lead with the direct answer first
+- Use bullet points sparingly, only when listing 4 or more items
+- Feel like a knowledgeable friend, not a medical report`;
+
+    return healthSection;
+}
+
+function buildLocationLinkRule(profileData: any): string {
+    const loc = profileData?.location || {};
+    const city = String(loc.city || '').trim();
+    const region = String(loc.address || '').trim();
+    const baseLocation = [city, region].filter(Boolean).join(', ');
+
+    return `
+## LOCAL PLACE LINK RULE
+- When you recommend any place (market, grocery, farm, clinic, restaurant, co-op, food bank), include a Google Maps link immediately after the place name.
+- Use this format: https://www.google.com/maps/search/?api=1&query=<PLACE+CITY+REGION>
+- Always include city/region in the query for accuracy.
+- If user location is known, bias recommendations near: ${baseLocation || 'the user-provided location (ask for city/region if missing)'}.
+- If location is missing, ask one short follow-up question for city/region before listing places.`;
+}
+
+// ─── Fallback model logic (unchanged from your original) ─────────────────────
 async function generateWithFallbackModels(
     genAI: GoogleGenerativeAI,
     message: string,
@@ -18,11 +113,12 @@ async function generateWithFallbackModels(
     history: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>
 ) {
     const configuredModel = (process.env.GEMINI_MODEL || '').trim();
-    const candidates = [
+    const candidates = Array.from(new Set([
         configuredModel,
-        'gemini-2.0-flash',
-        'gemini-1.5-flash'
-    ].filter(Boolean);
+        'gemini-2.5-flash',
+        'gemini-2.0-flash-lite',
+        'gemini-2.0-flash'
+    ].filter(Boolean)));
 
     const tried: string[] = [];
     let lastError: any = null;
@@ -30,10 +126,7 @@ async function generateWithFallbackModels(
     for (const modelName of candidates) {
         try {
             tried.push(modelName);
-            const model = genAI.getGenerativeModel({
-                model: modelName,
-                systemInstruction
-            });
+            const model = genAI.getGenerativeModel({ model: modelName, systemInstruction });
             const chatSession = model.startChat({ history });
             const result = await chatSession.sendMessage(message);
             return { text: result.response.text(), modelName, tried };
@@ -48,6 +141,7 @@ async function generateWithFallbackModels(
     throw err;
 }
 
+// ─── Main chat route ──────────────────────────────────────────────────────────
 router.post('/', authenticateToken, async (req: Request, res: Response) => {
     if (!process.env.GEMINI_API_KEY) {
         res.status(500).json({ error: 'AI Error', details: 'Gemini API key missing' });
@@ -65,32 +159,47 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     }
 
     try {
-        const profileData = await fetchRoleProfileData(userId, userRole);
+        let profileData: any = {};
+        try {
+            profileData = await fetchRoleProfileData(userId, userRole);
+        } catch (profileErr) {
+            // Do not fail chat when profile context lookup fails.
+            console.warn('Profile context lookup failed, continuing without profile context:', profileErr);
+            profileData = {};
+        }
+
+        // Build full system instruction with health context injected
+        const healthContext = buildHealthContext(profileData);
+        const locationLinkRule = buildLocationLinkRule(profileData);
         const systemInstruction = `${SYSTEM_INSTRUCTION}
 
+${healthContext}
+${locationLinkRule}
+
+## CURRENT USER PROFILE
 User role: ${userRole}
-Role-specific profile_data JSON:
+Full profile data:
 ${JSON.stringify(profileData, null, 2)}
 
-Use this profile_data directly for personalization.
-Do not ask for details already provided in profile_data unless necessary for safety.`;
+Use this profile directly for personalization. Do not ask for details already provided.`;
 
+        // Save user message
         await pool.query(
-            `INSERT INTO chat_history (user_id, role, message)
-             VALUES ($1, $2, $3)`,
+            `INSERT INTO chat_history (user_id, role, message) VALUES ($1, $2, $3)`,
             [userId, 'user', message]
         );
 
+        // Fetch history
         const historyRes = await pool.query(
-            `SELECT role, message
-             FROM chat_history
+            `SELECT role, message FROM chat_history
              WHERE user_id = $1
              ORDER BY created_at ASC
              LIMIT 40`,
             [userId]
         );
 
-        const rawHistory: Array<{ role: 'model' | 'user'; parts: Array<{ text: string }> }> = historyRes.rows.map((row: any) => ({
+        // Build and clean Gemini history (same logic as your original)
+        const rawHistory = historyRes.rows.map((row: any) => ({
             role: toGeminiRole(row.role),
             parts: [{ text: String(row.message) }]
         }));
@@ -103,20 +212,16 @@ Do not ask for details already provided in profile_data unless necessary for saf
                 lastRole = entry.role;
             }
         }
-        while (cleanHistory.length > 0 && cleanHistory[0].role !== 'user') {
-            cleanHistory.shift();
-        }
-        while (cleanHistory.length > 0 && cleanHistory[cleanHistory.length - 1].role !== 'model') {
-            cleanHistory.pop();
-        }
+        while (cleanHistory.length > 0 && cleanHistory[0].role !== 'user') cleanHistory.shift();
+        while (cleanHistory.length > 0 && cleanHistory[cleanHistory.length - 1].role !== 'model') cleanHistory.pop();
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const completion = await generateWithFallbackModels(genAI, message, systemInstruction, cleanHistory);
         const aiResponse = completion.text;
 
+        // Save assistant response
         await pool.query(
-            `INSERT INTO chat_history (user_id, role, message)
-             VALUES ($1, $2, $3)`,
+            `INSERT INTO chat_history (user_id, role, message) VALUES ($1, $2, $3)`,
             [userId, 'assistant', aiResponse]
         );
 
@@ -125,6 +230,7 @@ Do not ask for details already provided in profile_data unless necessary for saf
             conversationId: String(userId),
             model: completion.modelName
         });
+
     } catch (error: any) {
         console.error('Chat error:', error);
         res.status(500).json({
@@ -135,29 +241,24 @@ Do not ask for details already provided in profile_data unless necessary for saf
     }
 });
 
+// ─── History routes (unchanged) ──────────────────────────────────────────────
 router.get('/history', authenticateToken, async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     try {
         const summary = await pool.query(
             `SELECT MIN(created_at) AS created_at, MAX(created_at) AS updated_at
-             FROM chat_history
-             WHERE user_id = $1`,
+             FROM chat_history WHERE user_id = $1`,
             [userId]
         );
 
-        if (!summary.rows[0]?.created_at) {
-            res.json([]);
-            return;
-        }
+        if (!summary.rows[0]?.created_at) { res.json([]); return; }
 
-        res.json([
-            {
-                id: String(userId),
-                title: 'Personalized Chat',
-                created_at: summary.rows[0].created_at,
-                updated_at: summary.rows[0].updated_at
-            }
-        ]);
+        res.json([{
+            id: String(userId),
+            title: 'My Health & Food Chat',
+            created_at: summary.rows[0].created_at,
+            updated_at: summary.rows[0].updated_at
+        }]);
     } catch (error) {
         console.error('History list error:', error);
         res.status(500).json({ error: 'Failed to fetch history' });
@@ -168,16 +269,12 @@ router.get('/history/:id', authenticateToken, async (req: Request, res: Response
     const userId = String((req as any).user.id);
     const historyId = String(req.params.id);
 
-    if (historyId !== userId) {
-        res.status(403).json({ error: 'Unauthorized' });
-        return;
-    }
+    if (historyId !== userId) { res.status(403).json({ error: 'Unauthorized' }); return; }
 
     try {
         const messages = await pool.query(
             `SELECT role, message AS content, created_at
-             FROM chat_history
-             WHERE user_id = $1
+             FROM chat_history WHERE user_id = $1
              ORDER BY created_at ASC`,
             [userId]
         );

@@ -91,19 +91,24 @@ RESPONSE STYLE:
     return healthSection;
 }
 
-function buildLocationLinkRule(profileData: any): string {
+function buildLocationLinkRule(profileData: any, requestLocation?: string): string {
+    // Priority: 1. Live/custom location from frontend, 2. Profile city, 3. Ask user
     const loc = profileData?.location || {};
-    const city = String(loc.city || '').trim();
-    const region = String(loc.address || '').trim();
-    const baseLocation = [city, region].filter(Boolean).join(', ');
+    const profileCity = String(loc.city || '').trim();
+    const profileRegion = String(loc.address || '').trim();
+    const profileLocation = [profileCity, profileRegion].filter(Boolean).join(', ');
+
+    const activeLocation = requestLocation?.trim() || profileLocation;
 
     return `
 ## LOCAL PLACE LINK RULE
 - When you recommend any place (market, grocery, farm, clinic, restaurant, co-op, food bank), include a Google Maps link immediately after the place name.
 - Use this format: https://www.google.com/maps/search/?api=1&query=<PLACE+CITY+REGION>
 - Always include city/region in the query for accuracy.
-- If user location is known, bias recommendations near: ${baseLocation || 'the user-provided location (ask for city/region if missing)'}.
-- If location is missing, ask one short follow-up question for city/region before listing places.`;
+${activeLocation
+    ? `- User is currently near: ${activeLocation}. Prioritize recommendations in this area.`
+    : `- Location unknown. Ask one short follow-up question for city before listing places.`
+}`;
 }
 
 // ─── Fallback model logic (unchanged from your original) ─────────────────────
@@ -184,7 +189,7 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
         return;
     }
 
-    const { message } = req.body || {};
+    const { message, location } = req.body || {};
     const user = (req as any).user;
     const userId = user?.id;
     const userRole = user?.role || 'consumer';
@@ -206,7 +211,7 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
 
         // Build full system instruction with health context injected
         const healthContext = buildHealthContext(profileData);
-        const locationLinkRule = buildLocationLinkRule(profileData);
+        const locationLinkRule = buildLocationLinkRule(profileData, location);
         const systemInstruction = `${SYSTEM_INSTRUCTION}
 
 ${healthContext}

@@ -6,6 +6,7 @@ import api from '../../lib/api';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import axios from 'axios';
 
 import KYCForm from '../../components/KYCForm';
 
@@ -35,14 +36,16 @@ function SignupForm() {
         setError('');
         setIsLoading(true);
         try {
-            // Attempt real signup
-            await api.post('/auth/signup', { email, password });
-            const res = await api.post('/auth/login', { email, password });
+            const res = await api.post('/auth/signup', { email, password });
             login(res.data.token, res.data.user, undefined);
             setSignupStep('kyc');
-        } catch (err: any) {
-            console.error('Signup failed:', err);
-            setError(err.response?.data?.error || 'Signup failed. Please try again.');
+        } catch (err: unknown) {
+            if (axios.isAxiosError(err) && err.response?.status === 409) {
+                setError('That email is already registered. Sign in instead or use a different email.');
+            } else {
+                console.error('Signup failed:', err);
+                setError(axios.isAxiosError(err) ? err.response?.data?.error || 'Signup failed. Please try again.' : 'Signup failed. Please try again.');
+            }
         } finally {
             setIsLoading(false);
         }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import api from '../../lib/api';
 
 type Props = {
@@ -55,10 +56,51 @@ const CONDITION_LABELS: Record<string, string> = {
     inflammation: '🔥 Chronic Inflammation',
 };
 const PREFERENCE_LABELS: Record<string, string> = {
-    vegan: 'Vegan', vegetarian: 'Vegetarian', raw_vegan: 'Raw Vegan',
+    vegan: 'Vegan', vegetarian: 'Vegetarian', pescatarian: 'Pescatarian', celiac: 'Celiac', raw_vegan: 'Raw Vegan',
     gluten_free: 'Gluten-Free', dairy_free: 'Dairy-Free',
     paleo: 'Paleo', low_sugar: 'Low Sugar', low_fat: 'Low Fat',
 };
+const GOAL_LABELS: Record<string, string> = {
+    reduce_inflammation: 'Reduce Inflammation',
+    hormone_balance: 'Balance Hormones',
+    weight_management: 'Weight Management',
+    gut_health: 'Improve Gut Health',
+    energy: 'Increase Energy',
+    blood_sugar: 'Stabilize Blood Sugar',
+    heart_health: 'Support Heart Health',
+    mental_clarity: 'Mental Clarity',
+};
+
+function fromCsv(value: string | undefined) {
+    return (value || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+
+function buildHealthDashboardSummary(profile: any, userRecord: any) {
+    const conditions = (profile?.health_conditions || []).map((item: string) => CONDITION_LABELS[item] || item);
+    const preferences = (profile?.dietary_preferences || []).map((item: string) => PREFERENCE_LABELS[item] || item);
+    const allergies = (profile?.allergies || []).map((item: string) => item);
+    const goals = (profile?.wellness_goals || []).map((item: string) => GOAL_LABELS[item] || item);
+    const location = typeof profile?.location === 'string'
+        ? profile.location
+        : [profile?.location?.city, profile?.location?.address].filter(Boolean).join(', ');
+    const identityLocation = [userRecord?.location_city, userRecord?.location_address].filter(Boolean).join(', ');
+    const notes = profile?.notes?.trim?.() || '';
+    const name = userRecord?.full_name || userRecord?.name || userRecord?.email?.split('@')[0] || 'This member';
+
+    const parts = [
+        `${name} is tracking ${conditions.length ? conditions.join(', ') : 'no recorded health conditions yet'}.`,
+        goals.length ? `Current goals include ${goals.join(', ')}.` : '',
+        preferences.length ? `Eating style includes ${preferences.join(', ')}.` : '',
+        allergies.length ? `Avoidances include ${allergies.join(', ')}.` : '',
+        location ? `Health profile location: ${location}.` : identityLocation ? `About You location: ${identityLocation}.` : '',
+        notes ? `Notes: ${notes}.` : ''
+    ].filter(Boolean);
+
+    return parts.join(' ');
+}
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 type MealEntry = { breakfast: string; lunch: string; dinner: string; notes: string };
@@ -141,6 +183,7 @@ export default function CustomerProfileDashboard({ user }: Props) {
     const [avatar, setAvatar] = useState<string>(user?.avatar_url || '/assets/images/gallery/user_avatar.png');
     const [healthyDays] = useState(42);
     const [profileData, setProfileData] = useState<any>(null);
+    const [resolvedUser, setResolvedUser] = useState<any>(user || null);
     const [loadingProfile, setLoadingProfile] = useState(true);
     const [isCalendarOpen, setIsCalendarOpen] = useState(false);
     const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -156,8 +199,24 @@ export default function CustomerProfileDashboard({ user }: Props) {
     useEffect(() => {
         const fetchProfile = async () => {
             try {
-                const res = await api.get('/user/me');
-                const rawData = res.data?.profile_data || {};
+                const meRes = await api.get('/user/me');
+                const me = meRes.data || user || {};
+                setResolvedUser(me);
+
+                if (me?.id) {
+                    try {
+                        const consumerProfileRes = await api.get(`/consumer-health-profile/${me.id}`);
+                        const consumerProfile = consumerProfileRes.data?.profile_data || {};
+                        if (consumerProfile && Object.keys(consumerProfile).length > 0) {
+                            setProfileData(consumerProfile);
+                            return;
+                        }
+                    } catch {
+                        // Fall back to legacy onboarding profile data below.
+                    }
+                }
+
+                const rawData = me?.profile_data || {};
                 const data = rawData?.profile_data && typeof rawData.profile_data === 'object'
                     ? rawData.profile_data
                     : rawData;
@@ -180,8 +239,19 @@ export default function CustomerProfileDashboard({ user }: Props) {
     const conditions: string[] = profileData?.health_conditions || [];
     const preferences: string[] = profileData?.dietary_preferences || [];
     const allergies: string[] = profileData?.allergies || [];
-    const location = profileData?.location || {};
+    const goals: string[] = profileData?.wellness_goals || [];
+    const location = typeof profileData?.location === 'string'
+        ? { address: profileData.location, city: '' }
+        : (profileData?.location || {});
     const autoMealPlanEnabled = profileData?.auto_meal_plan_enabled !== false;
+    const hasHealthProfile =
+        conditions.length > 0 ||
+        preferences.length > 0 ||
+        allergies.length > 0 ||
+        goals.length > 0 ||
+        Boolean(profileData?.notes?.trim?.()) ||
+        Boolean(profileData?.location);
+    const healthSummary = useMemo(() => buildHealthDashboardSummary(profileData, resolvedUser), [profileData, resolvedUser]);
 
     const cartTotal = useMemo(() => foodCart.reduce((s, r) => s + r.price * r.qty, 0), []);
     const weekStart = useMemo(() => startOfWeek(new Date()), []);
@@ -331,70 +401,39 @@ export default function CustomerProfileDashboard({ user }: Props) {
                         <>
                             {loadingProfile ? (
                                 <p className="text-sm text-gray-400">Loading your health profile...</p>
-                            ) : conditions.length === 0 && preferences.length === 0 && allergies.length === 0 ? (
+                            ) : !hasHealthProfile ? (
                                 <div className="text-center py-6">
                                     <p className="text-sm text-gray-500 mb-3">No health profile set up yet.</p>
-                                    <a href="/signup" className="text-green-600 text-sm font-semibold hover:underline">
+                                    <Link href="/?tab=health_profiles&profile=consumer" className="text-green-600 text-sm font-semibold hover:underline">
                                         Complete your health profile &rarr;
-                                    </a>
+                                    </Link>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div>
-                                        <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-3">
-                                            Health Conditions
-                                        </p>
-                                        {conditions.length === 0 ? (
-                                            <p className="text-sm text-gray-400">None added</p>
-                                        ) : (
-                                            <div className="flex flex-wrap gap-2">
-                                                {conditions.map(c => (
-                                                    <Pill
-                                                        key={c}
-                                                        label={CONDITION_LABELS[c] || c}
-                                                        color="bg-rose-50 text-rose-700 border border-rose-200"
-                                                    />
-                                                ))}
+                                <div className="rounded-2xl bg-gradient-to-br from-green-600 to-emerald-700 p-5 text-white shadow-sm">
+                                    <div className="flex flex-wrap items-end justify-between gap-4">
+                                        <div>
+                                            <div className="flex flex-wrap gap-3">
+                                                <div className="rounded-xl bg-white/15 px-4 py-3 text-center">
+                                                    <p className="text-2xl font-bold">{conditions.length}</p>
+                                                    <p className="text-xs text-white/80">Conditions</p>
+                                                </div>
+                                                <div className="rounded-xl bg-white/15 px-4 py-3 text-center">
+                                                    <p className="text-2xl font-bold">{goals.length}</p>
+                                                    <p className="text-xs text-white/80">Health Goals</p>
+                                                </div>
+                                                <div className="rounded-xl bg-white/15 px-4 py-3 text-center">
+                                                    <p className="text-2xl font-bold">{allergies.length}</p>
+                                                    <p className="text-xs text-white/80">Allergies</p>
+                                                </div>
                                             </div>
-                                        )}
-                                    </div>
-
-                                    <div>
-                                        <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-3">
-                                            Dietary Preferences
-                                        </p>
-                                        {preferences.length === 0 ? (
-                                            <p className="text-sm text-gray-400">None added</p>
-                                        ) : (
-                                            <div className="flex flex-wrap gap-2">
-                                                {preferences.map(p => (
-                                                    <Pill
-                                                        key={p}
-                                                        label={PREFERENCE_LABELS[p] || p}
-                                                        color="bg-green-50 text-green-700 border border-green-200"
-                                                    />
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div>
-                                        <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-3">
-                                            Allergies
-                                        </p>
-                                        {allergies.length === 0 ? (
-                                            <p className="text-sm text-gray-400">None added</p>
-                                        ) : (
-                                            <div className="flex flex-wrap gap-2">
-                                                {allergies.map(a => (
-                                                    <Pill
-                                                        key={a}
-                                                        label={`?? ${a}`}
-                                                        color="bg-amber-50 text-amber-700 border border-amber-200"
-                                                    />
-                                                ))}
-                                            </div>
-                                        )}
+                                            <p className="mt-3 text-xs text-white/70">{new Date().toLocaleDateString()}</p>
+                                        </div>
+                                        <Link
+                                            href="/?tab=health_profiles&profile=consumer"
+                                            className="inline-flex rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
+                                        >
+                                            View Full Report
+                                        </Link>
                                     </div>
                                 </div>
                             )}

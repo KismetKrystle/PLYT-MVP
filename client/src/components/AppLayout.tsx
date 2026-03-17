@@ -6,11 +6,19 @@ import { useAuth } from '../lib/auth';
 import { useLessons } from '../context/LessonContext';
 import { useCart } from '../context/CartContext';
 import Logo from './Logo';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import RightSidebar from './RightSidebar';
+import api from '../lib/api';
 
 import { formatCurrency, Currency } from '../lib/currency';
 import OnboardingTour from './onboarding/OnboardingTour';
+
+type ChatConversationSummary = {
+    id: string;
+    title: string;
+    created_at: string;
+    updated_at: string;
+};
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
@@ -21,9 +29,55 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [leftSidebarOpen, setLeftSidebarOpen] = useState(false);
     const [isDesktopOpen, setIsDesktopOpen] = useState(true);
     const [isLessonsOpen, setIsLessonsOpen] = useState(false);
+    const [isChatsOpen, setIsChatsOpen] = useState(searchParams.get('tab') === 'chat');
+    const [isChatHistoryOpen, setIsChatHistoryOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [currency, setCurrency] = useState<Currency>('IDR');
+    const [isSearchTipOpen, setIsSearchTipOpen] = useState(false);
+    const [conversationList, setConversationList] = useState<ChatConversationSummary[]>([]);
     const { savedLessons, activeLesson, setActiveLesson } = useLessons();
+
+    useEffect(() => {
+        if (searchParams.get('tab') === 'chat') {
+            setIsChatsOpen(true);
+        }
+    }, [searchParams]);
+
+    useEffect(() => {
+        if (!user?.id) {
+            setConversationList([]);
+            return;
+        }
+
+        const fetchConversationList = async () => {
+            try {
+                const res = await api.get('/chat/history');
+                setConversationList(Array.isArray(res.data) ? res.data : []);
+            } catch (error) {
+                console.warn('Unable to load chat history list in sidebar.', error);
+            }
+        };
+
+        void fetchConversationList();
+    }, [user?.id, searchParams]);
+
+    useEffect(() => {
+        if (!user?.id) {
+            setIsSearchTipOpen(false);
+            return;
+        }
+
+        const storageKey = `plyt-search-tip-seen-${user.id}`;
+        const hasSeenTip = localStorage.getItem(storageKey) === 'true';
+        setIsSearchTipOpen(!hasSeenTip);
+    }, [user?.id]);
+
+    const closeSearchTip = () => {
+        if (user?.id) {
+            localStorage.setItem(`plyt-search-tip-seen-${user.id}`, 'true');
+        }
+        setIsSearchTipOpen(false);
+    };
 
     // 1. Auth & Loading Guard
     if (loading) return <div className="min-h-screen bg-white"></div>;
@@ -86,6 +140,42 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     return (
         <div className="flex h-screen bg-gray-50 overflow-hidden relative">
+            {user && isSearchTipOpen ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 backdrop-blur-sm">
+                    <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-gray-200">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-green-600">Search Tips</p>
+                                <h2 className="mt-2 text-2xl font-bold text-gray-900">PLYT now searches for you automatically</h2>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeSearchTip}
+                                className="rounded-full p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+                                aria-label="Close search tips"
+                            >
+                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                        <div className="mt-4 space-y-3 text-sm text-gray-600">
+                            <p>PLYT uses broad health guidance to decide what foods fit you best.</p>
+                            <p>When it helps you source produce or ready-to-eat food, it searches local-first using your current location, then your saved home location if live location is unavailable.</p>
+                            <p>If you want another area, just type it naturally in chat, like “find produce in Austin.”</p>
+                        </div>
+                        <div className="mt-6 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={closeSearchTip}
+                                className="rounded-full bg-green-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700"
+                            >
+                                Got it
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
 
             {/* Mobile Overlay (Backdrop) */}
             {leftSidebarOpen && (
@@ -116,7 +206,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="flex-1 overflow-y-auto no-scrollbar w-64">
                     <nav className="px-4 space-y-2 mt-2">
                         {NAV_ITEMS.map((item) => {
-                            const isActive = pathname === item.href;
+                            const currentTab = searchParams.get('tab');
+                            const isChats = item.name === 'Chats';
+                            const isActive = isChats ? currentTab === 'chat' : pathname === item.href;
                             const isLessons = item.name === 'Lessons';
 
                             if (isLessons) {
@@ -159,6 +251,86 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                         {lesson.title}
                                                     </div>
                                                 ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            if (isChats) {
+                                return (
+                                    <div key={item.name} className="flex flex-col">
+                                        <button
+                                            onClick={() => setIsChatsOpen(!isChatsOpen)}
+                                            className={`flex items-center justify-between w-full px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 group ${isActive || isChatsOpen
+                                                ? 'bg-green-50 text-green-700 shadow-sm border border-green-100'
+                                                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 border border-transparent'
+                                                }`}
+                                        >
+                                            <div className="flex items-center">
+                                                <div className={`mr-3 transition-colors ${isActive || isChatsOpen ? 'text-green-600' : 'text-gray-400 group-hover:text-gray-500'}`}>
+                                                    {item.icon}
+                                                </div>
+                                                {item.name}
+                                            </div>
+                                            <svg
+                                                className={`w-4 h-4 transition-transform duration-200 ${isChatsOpen ? 'rotate-180' : ''}`}
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </button>
+                                        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isChatsOpen ? 'max-h-[32rem] opacity-100 mt-1' : 'max-h-0 opacity-0'}`}>
+                                            <div className="pl-11 pr-2 space-y-1">
+                                                <Link
+                                                    href="/?tab=chat&newChat=1"
+                                                    onClick={() => setLeftSidebarOpen(false)}
+                                                    className="block px-3 py-2 text-xs font-medium rounded-lg text-gray-500 hover:bg-gray-50 hover:text-green-600 transition-colors border border-transparent hover:border-gray-100"
+                                                >
+                                                    New chat
+                                                </Link>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsChatHistoryOpen((prev) => !prev)}
+                                                    className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium rounded-lg text-gray-500 hover:bg-gray-50 hover:text-green-600 transition-colors border border-transparent hover:border-gray-100"
+                                                >
+                                                    <span>History</span>
+                                                    <svg
+                                                        className={`w-3.5 h-3.5 transition-transform duration-200 ${isChatHistoryOpen ? 'rotate-180' : ''}`}
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        viewBox="0 0 24 24"
+                                                    >
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                    </svg>
+                                                </button>
+                                                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isChatHistoryOpen ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0'}`}>
+                                                    <div className="pl-2 space-y-1">
+                                                        {conversationList.length > 0 ? (
+                                                            conversationList.map((conversation) => (
+                                                                <Link
+                                                                    key={conversation.id}
+                                                                    href={`/?tab=chat&conversationId=${conversation.id}`}
+                                                                    onClick={() => setLeftSidebarOpen(false)}
+                                                                    className={`block rounded-lg px-3 py-2 text-xs transition-colors border ${
+                                                                        searchParams.get('conversationId') === conversation.id
+                                                                            ? 'border-green-200 bg-green-50 text-green-700'
+                                                                            : 'border-transparent text-gray-500 hover:bg-gray-50 hover:text-green-600 hover:border-gray-100'
+                                                                    }`}
+                                                                >
+                                                                    <p className="truncate font-medium">{conversation.title}</p>
+                                                                    <p className="mt-0.5 text-[10px] text-gray-400">
+                                                                        {new Date(conversation.updated_at).toLocaleDateString()}
+                                                                    </p>
+                                                                </Link>
+                                                            ))
+                                                        ) : (
+                                                            <p className="px-3 py-2 text-[11px] text-gray-400">No saved chats yet.</p>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

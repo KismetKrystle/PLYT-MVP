@@ -18,7 +18,20 @@ interface PlaceSuggestion {
     website: string;
     mapsUrl: string;
     image: string | null;
+    distance_km?: number | null;
 }
+
+type LastPlaceSearch = {
+    message: string;
+    queries: string[];
+    location: string;
+};
+
+type QuickReplyOption = {
+    id: string;
+    label: string;
+    prompt: string;
+};
 
 type Tab = 'home' | 'chat' | 'find_produce' | 'pick_system' | 'learn' | 'impact' | 'guide' | 'health_profiles' | 'customer_profile';
 
@@ -52,6 +65,66 @@ const MOCK_SYSTEMS_DB: Omit<ProduceItem, 'quantity'>[] = [
     { id: 'c1', name: 'Terracotta Pot (L)', price: 150000, unit: 'unit', plyt: '150', image: '/assets/images/gallery/soil_garden.png', description: 'Handcrafted clay pot.', specs: ['Breathable', 'Natural'], farm: 'Bali Clay', artisan: 'Wayan Sudra', material: 'Red Clay', impactScore: 850, growMethod: 'Handmade' },
 ];
 
+const SEARCH_RADIUS_OPTIONS_KM = [5, 10, 25, 50, 80, 120];
+const DEFAULT_CHAT_GREETING = 'Hello! I can help you find fresh food, nearby places, recipes, and practical nutrition guidance. What are you looking for?';
+
+function FoodChatMascot() {
+    return (
+        <motion.div
+            aria-hidden="true"
+            animate={{ y: [0, -4, 0], rotate: [0, 2, 0, -2, 0] }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+            className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-100 via-teal-50 to-white shadow-[0_8px_24px_rgba(16,185,129,0.18)] ring-1 ring-emerald-100"
+        >
+            <svg viewBox="0 0 64 64" className="h-10 w-10 drop-shadow-sm">
+                <defs>
+                    <linearGradient id="plyt-mascot-body" x1="0%" x2="100%" y1="0%" y2="100%">
+                        <stop offset="0%" stopColor="#6ee7b7" />
+                        <stop offset="100%" stopColor="#059669" />
+                    </linearGradient>
+                    <linearGradient id="plyt-mascot-wing" x1="0%" x2="100%" y1="50%" y2="50%">
+                        <stop offset="0%" stopColor="#99f6e4" />
+                        <stop offset="100%" stopColor="#34d399" />
+                    </linearGradient>
+                </defs>
+                <motion.g
+                    animate={{ rotate: [0, -8, 0, 8, 0] }}
+                    transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+                    style={{ originX: '50%', originY: '45%' }}
+                >
+                    <ellipse cx="18" cy="28" rx="13" ry="6" fill="url(#plyt-mascot-wing)" transform="rotate(-22 18 28)" />
+                    <ellipse cx="46" cy="28" rx="13" ry="6" fill="url(#plyt-mascot-wing)" transform="rotate(22 46 28)" />
+                </motion.g>
+                <ellipse cx="32" cy="33" rx="12" ry="15" fill="url(#plyt-mascot-body)" />
+                <circle cx="36" cy="20" r="9" fill="url(#plyt-mascot-body)" />
+                <circle cx="39" cy="19" r="3" fill="#fff7ed" />
+                <circle cx="40" cy="19" r="1.5" fill="#7c2d12" />
+                <path d="M44 20l11-2-10 6z" fill="#0f766e" />
+                <path d="M28 28c4 4 8 4 12 0" stroke="#d1fae5" strokeWidth="2" strokeLinecap="round" fill="none" />
+                <path d="M26 48c2-1 4-1 6 0M34 48c2-1 4-1 6 0" stroke="#065f46" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            <motion.span
+                className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-orange-300 ring-2 ring-white"
+                animate={{ scale: [1, 1.2, 1] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+            />
+        </motion.div>
+    );
+}
+
+function normalizeSearchLocationText(location?: string) {
+    const value = String(location || '').trim();
+    if (!value || /^Lat:\s*[-0-9.]+\s*,\s*Lng:\s*[-0-9.]+$/i.test(value)) {
+        return value;
+    }
+
+    if (/bali/i.test(value) && !/indonesia/i.test(value)) {
+        return `${value}, Indonesia`;
+    }
+
+    return value;
+}
+
 export default function AgriDashboard() {
     const searchParams = useSearchParams();
     const historyId = searchParams.get('historyId');
@@ -69,15 +142,15 @@ export default function AgriDashboard() {
 
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>('home');
-    const [currentConversationId, setCurrentConversationId] = useState<number | null>(null);
+    const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [prompt, setPrompt] = useState('');
     const [showPreview, setShowPreview] = useState(false);
+    const [searchRadiusKm, setSearchRadiusKm] = useState(25);
+    const [searchAreaLabel, setSearchAreaLabel] = useState('Current location');
+    const [locationSourceLabel, setLocationSourceLabel] = useState('device');
 
-    // AI Research Scope & Location State
-    const [searchScope, setSearchScope] = useState<'local' | 'global'>('local');
-    const [locationType, setLocationType] = useState<'home' | 'live' | 'custom'>('home');
-    const [customLocation, setCustomLocation] = useState('');
+    const homeLocation = (user?.location_address || user?.location_city || '').trim();
 
     // Sync Tab with URL query param
     useEffect(() => {
@@ -105,6 +178,10 @@ export default function AgriDashboard() {
     // Chat Tab Suggested Products
     const [suggestedProducts, setSuggestedProducts] = useState<ProduceItem[]>([]);
     const [suggestedPlaces, setSuggestedPlaces] = useState<PlaceSuggestion[]>([]);
+    const [lastPlaceSearch, setLastPlaceSearch] = useState<LastPlaceSearch | null>(null);
+    const [isRefreshingSuggestions, setIsRefreshingSuggestions] = useState(false);
+    const [isSuggestionSettingsOpen, setIsSuggestionSettingsOpen] = useState(false);
+    const [skipAutoRestore, setSkipAutoRestore] = useState(false);
 
     const [selectedProduct, setSelectedProduct] = useState<ProductDetail | null>(null);
 
@@ -136,6 +213,48 @@ export default function AgriDashboard() {
         stateSetter(prev => prev.filter(item => item.id !== id));
     };
 
+    const normalizeSuggestedPlaces = (places: PlaceSuggestion[]) => {
+        const merged = new Map<string, PlaceSuggestion>();
+
+        places.forEach((place) => {
+            const key = `${place.name}|${place.address}|${place.mapsUrl}`;
+            if (!merged.has(key)) {
+                merged.set(key, place);
+            }
+        });
+
+        return Array.from(merged.values()).sort((a, b) => {
+            if (a.distance_km == null && b.distance_km == null) return 0;
+            if (a.distance_km == null) return 1;
+            if (b.distance_km == null) return -1;
+            return a.distance_km - b.distance_km;
+        });
+    };
+
+    const mergeSuggestedPlaces = (incoming: PlaceSuggestion[]) => {
+        setSuggestedPlaces((prev) => normalizeSuggestedPlaces([...prev, ...incoming]));
+    };
+
+    const replaceSuggestedPlaces = (incoming: PlaceSuggestion[]) => {
+        setSuggestedPlaces(normalizeSuggestedPlaces(incoming));
+    };
+
+    const fetchAndMergePlaces = async (queries: string[], location: string, radiusKm: number, limit = 16) => {
+        if (queries.length === 0) return [];
+
+        const placeRes = await api.post('/chat/places', {
+            queries,
+            location,
+            radiusKm,
+            limit
+        });
+        const places = Array.isArray(placeRes.data?.places) ? placeRes.data.places : [];
+        mergeSuggestedPlaces(places);
+        setSuggestedProducts([]);
+        setShowPreview(true);
+        return places as PlaceSuggestion[];
+    };
+
     // Auto-switch to Learn tab when a lesson is selected
     useEffect(() => {
         if (activeLesson) {
@@ -152,17 +271,19 @@ export default function AgriDashboard() {
             tags?: string[];
             steps?: string[];
             image?: string;
+            followUpOptions?: QuickReplyOption[] | null;
+            usedFallback?: boolean;
         }[]
     }>({
-        chat: [{ role: 'assistant', content: 'Hello! I can help you find fresh produce or the best growing systems. What are you looking for?' }],
+        chat: [{ role: 'assistant', content: DEFAULT_CHAT_GREETING }],
         find_produce: [{ role: 'assistant', content: 'Welcome back! Looking for fresh produce?' }],
-        pick_system: [{ role: 'assistant', content: 'Ready to find your perfect growing system?' }],
+        pick_system: [{ role: 'assistant', content: 'If you want to explore home growing later, I can help with that too.' }],
         learn: [{ role: 'assistant', content: 'What would you like to learn about growing today?' }]
     });
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Helper: Fetch history from DB
-    const fetchConversationHistory = async (convId: number) => {
+    const fetchConversationHistory = async (convId: string) => {
         setIsLoading(true);
         try {
             const res = await api.get(`/chat/history/${convId}`);
@@ -172,9 +293,10 @@ export default function AgriDashboard() {
             }));
             setChatHistory(prev => ({
                 ...prev,
-                chat: messages
+                chat: messages.length > 0 ? messages : [{ role: 'assistant', content: DEFAULT_CHAT_GREETING }]
             }));
             setCurrentConversationId(convId);
+            setSkipAutoRestore(false);
         } catch (error) {
             console.error('Failed to fetch history:', error);
         } finally {
@@ -182,12 +304,40 @@ export default function AgriDashboard() {
         }
     };
 
+    const resolveSearchLocation = async (manualLocation?: string) => {
+        const requestedLocation = (manualLocation || '').trim();
+        if (requestedLocation) {
+            const normalizedLocation = normalizeSearchLocationText(requestedLocation);
+            return { location: normalizedLocation, areaLabel: requestedLocation, source: 'manual' as const };
+        }
+
+        try {
+            const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(
+                    resolve,
+                    reject,
+                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 }
+                );
+            });
+            return {
+                location: `Lat: ${pos.coords.latitude}, Lng: ${pos.coords.longitude}`,
+                areaLabel: 'Current location',
+                source: 'device' as const
+            };
+        } catch (e) {
+            console.warn('Geolocation unavailable, falling back to saved home area.');
+            const normalizedHomeLocation = normalizeSearchLocationText(homeLocation);
+            return {
+                location: normalizedHomeLocation,
+                areaLabel: homeLocation || 'Saved home area unavailable',
+                source: homeLocation ? 'home' as const : 'unknown' as const
+            };
+        }
+    };
+
     const handleSend = async (overridePrompt?: string, tags?: string[], overrideScope?: 'local' | 'global', overrideLocation?: string) => {
         const messageText = overridePrompt || prompt;
         if (!messageText.trim() && (!tags || tags.length === 0)) return;
-
-        const activeScope = overrideScope || searchScope;
-        const activeLocType = overrideLocation ? 'custom' : locationType;
 
         const targetTab: 'chat' | 'find_produce' | 'pick_system' | 'learn' = activeTab === 'home' || activeTab === 'impact' || activeTab === 'guide' || activeTab === 'health_profiles' || activeTab === 'customer_profile' ? 'chat' : activeTab as any;
 
@@ -201,59 +351,125 @@ export default function AgriDashboard() {
 
         setIsLoading(true);
         try {
-            let finalLocation = overrideLocation || '';
-
-            // 1. Resolve Location if not overridden
-            if (!overrideLocation && activeScope === 'local') {
-                if (activeLocType === 'live') {
-                    // Try to get browser geolocation
-                    try {
-                        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-                            navigator.geolocation.getCurrentPosition(resolve, reject);
-                        });
-                        finalLocation = `Lat: ${pos.coords.latitude}, Lng: ${pos.coords.longitude}`;
-                    } catch (e) {
-                        console.error('Geolocation failed:', e);
-                        finalLocation = user?.location_address || user?.location_city || 'Unknown';
-                    }
-                } else if (activeLocType === 'custom') {
-                    finalLocation = customLocation;
-                } else {
-                    // Default to Home
-                    finalLocation = user?.location_address || user?.location_city || 'Unknown';
-                }
-            }
-
-            const res = await api.post('/chat', {
+            const resolvedSearch = await resolveSearchLocation(overrideLocation);
+            const finalLocation = resolvedSearch.location;
+            setSearchAreaLabel(resolvedSearch.areaLabel);
+            setLocationSourceLabel(resolvedSearch.source);
+            const chatPromise = api.post('/chat', {
                 message: messageText,
                 conversationId: currentConversationId,
                 tags: tags || [],
-                scope: activeScope,
-                location: finalLocation
+                scope: overrideScope || 'local',
+                location: finalLocation,
+                visiblePlaces: suggestedPlaces.slice(0, 12)
+            });
+            const searchContextPromise = api.post('/chat/search-context', {
+                message: messageText
             });
 
-            const aiResponse = res.data.response;
-            const newConvId = res.data.conversationId;
+            let parallelPlaceQueries: string[] = [];
+            let parallelPlaces: any[] = [];
+            let placeFetchFailed = false;
 
-            if (!currentConversationId) {
+            const placeSearchPromise = (async () => {
+                try {
+                    const searchContextRes = await searchContextPromise;
+                    const queries = Array.isArray(searchContextRes.data?.searchQueries)
+                        ? searchContextRes.data.searchQueries
+                        : [];
+                    parallelPlaceQueries = queries;
+
+                    if (queries.length === 0) {
+                        return;
+                    }
+
+                    setLastPlaceSearch({
+                        message: messageText,
+                        queries,
+                        location: finalLocation
+                    });
+
+                    parallelPlaces = await fetchAndMergePlaces(queries, finalLocation, searchRadiusKm, 16);
+                } catch {
+                    placeFetchFailed = true;
+                }
+            })();
+
+            const res = await chatPromise;
+
+            const aiResponse = res.data.reply || res.data.response;
+            const usedFallback = Boolean(res.data?.usedFallback);
+            const newConvId = res.data.conversationId ? String(res.data.conversationId) : null;
+
+            if (newConvId && !currentConversationId) {
                 setCurrentConversationId(newConvId);
             }
+            if (newConvId) {
+                setSkipAutoRestore(false);
+            }
 
-            setChatHistory(prev => ({
-                ...prev,
-                [targetTab]: [...prev[targetTab], { role: 'assistant', content: aiResponse }]
-            }));
+            await placeSearchPromise;
 
-            const placeQueries = extractGoogleMapsQueries(aiResponse);
+            const searchQueries = parallelPlaceQueries.length > 0
+                ? parallelPlaceQueries
+                : Array.isArray(res.data?.searchQueries) && res.data.searchQueries.length > 0
+                    ? res.data.searchQueries
+                    : extractGoogleMapsQueries(aiResponse);
+            const placeQueries = searchQueries;
             if (placeQueries.length > 0) {
+                if (parallelPlaceQueries.length === 0) {
+                    setLastPlaceSearch({
+                        message: messageText,
+                        queries: placeQueries,
+                        location: finalLocation
+                    });
+                }
                 try {
-                    const placeRes = await api.post('/chat/places', { queries: placeQueries });
-                    const places = Array.isArray(placeRes.data?.places) ? placeRes.data.places : [];
-                    setSuggestedPlaces(places);
-                    setSuggestedProducts([]);
-                    setShowPreview(true);
+                    const places = parallelPlaces.length > 0 || !placeFetchFailed
+                        ? parallelPlaces
+                        : await fetchAndMergePlaces(placeQueries, finalLocation, searchRadiusKm, 16);
+
+                    if (places.length > 0) {
+                        try {
+                            const recommendationRes = await api.post('/chat/recommend-places', {
+                                message: messageText,
+                                places,
+                                conversationId: newConvId || currentConversationId
+                            });
+                            const syncedResponse = recommendationRes.data?.response || aiResponse;
+                            setChatHistory(prev => ({
+                                ...prev,
+                                [targetTab]: [...prev[targetTab], {
+                                    role: 'assistant',
+                                    content: syncedResponse,
+                                    followUpOptions: null,
+                                    usedFallback: false
+                                }]
+                            }));
+                        } catch {
+                            setChatHistory(prev => ({
+                                ...prev,
+                                [targetTab]: [...prev[targetTab], {
+                                    role: 'assistant',
+                                    content: aiResponse,
+                                    followUpOptions: Array.isArray(res.data?.followUpOptions) ? res.data.followUpOptions : null,
+                                    usedFallback
+                                }]
+                            }));
+                        }
+                    } else {
+                        setChatHistory(prev => ({
+                            ...prev,
+                            [targetTab]: [...prev[targetTab], {
+                                role: 'assistant',
+                                content: aiResponse,
+                                followUpOptions: Array.isArray(res.data?.followUpOptions) ? res.data.followUpOptions : null,
+                                usedFallback
+                            }]
+                        }));
+                    }
                 } catch {
-                    const fallbackPlaces = placeQueries.map((q) => ({
+                    const fallbackPlaces = placeQueries.map((q: string) => ({
                         name: q.split(',')[0]?.trim() || q,
                         address: q,
                         phone: '',
@@ -261,14 +477,34 @@ export default function AgriDashboard() {
                         reviewsCount: 0,
                         website: '',
                         mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`,
-                        image: null
+                        image: null,
+                        distance_km: null
                     }));
-                    setSuggestedPlaces(fallbackPlaces);
+                    mergeSuggestedPlaces(fallbackPlaces);
                     setSuggestedProducts([]);
                     setShowPreview(true);
+                    setChatHistory(prev => ({
+                        ...prev,
+                        [targetTab]: [...prev[targetTab], {
+                            role: 'assistant',
+                            content: aiResponse,
+                            followUpOptions: Array.isArray(res.data?.followUpOptions) ? res.data.followUpOptions : null,
+                            usedFallback
+                        }]
+                    }));
                 }
                 return;
             }
+
+            setChatHistory(prev => ({
+                ...prev,
+                [targetTab]: [...prev[targetTab], {
+                    role: 'assistant',
+                    content: aiResponse,
+                    followUpOptions: Array.isArray(res.data?.followUpOptions) ? res.data.followUpOptions : null,
+                    usedFallback
+                }]
+            }));
 
             const aiLower = aiResponse.toLowerCase();
             const isSystem = aiLower.includes('system') || aiLower.includes('tower') || aiLower.includes('grow');
@@ -304,7 +540,7 @@ export default function AgriDashboard() {
     useEffect(() => {
         const urlConvId = searchParams.get('conversationId');
         if (urlConvId) {
-            fetchConversationHistory(parseInt(urlConvId));
+            fetchConversationHistory(urlConvId);
             setActiveTab('chat');
             return;
         }
@@ -314,11 +550,6 @@ export default function AgriDashboard() {
             try {
                 const parsed = JSON.parse(stored);
                 if (parsed.text) {
-                    if (parsed.scope) setSearchScope(parsed.scope);
-                    if (parsed.location) {
-                        setLocationType('custom');
-                        setCustomLocation(parsed.location);
-                    }
                     if (user) {
                         handleSend(parsed.text, parsed.tags, parsed.scope, parsed.location);
                     } else {
@@ -335,6 +566,35 @@ export default function AgriDashboard() {
             }
         }
     }, [searchParams, user]);
+
+    useEffect(() => {
+        const urlConvId = searchParams.get('conversationId');
+        const pendingPrompt = typeof window !== 'undefined' ? localStorage.getItem('pendingChatPrompt') : null;
+
+        if (!user?.id || urlConvId || pendingPrompt || currentConversationId || skipAutoRestore) {
+            return;
+        }
+
+        let cancelled = false;
+
+        const restoreLatestHistory = async () => {
+            try {
+                const historyRes = await api.get('/chat/history');
+                const latestHistory = Array.isArray(historyRes.data) ? historyRes.data[0] : null;
+                if (!latestHistory?.id || cancelled) return;
+
+                await fetchConversationHistory(String(latestHistory.id));
+            } catch (error) {
+                console.warn('Unable to restore chat history on load.', error);
+            }
+        };
+
+        void restoreLatestHistory();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [user?.id, searchParams, currentConversationId, skipAutoRestore]);
 
     // Handle History ID Navigation
     useEffect(() => {
@@ -364,6 +624,12 @@ export default function AgriDashboard() {
             }
         }
     }, [searchParams, setActiveLesson]);
+
+    useEffect(() => {
+        if (searchParams.get('newChat') === '1') {
+            handleStartNewChat();
+        }
+    }, [searchParams]);
 
     // Auto-scroll logic
     useEffect(() => {
@@ -452,16 +718,103 @@ export default function AgriDashboard() {
         return Array.from(new Set(queries));
     };
 
+    const handleRadiusChange = async (nextRadiusKm: number) => {
+        setSearchRadiusKm(nextRadiusKm);
+
+        if (!lastPlaceSearch || nextRadiusKm <= searchRadiusKm) {
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            await fetchAndMergePlaces(
+                lastPlaceSearch.queries,
+                lastPlaceSearch.location,
+                nextRadiusKm,
+                Math.max(24, suggestedPlaces.length + 12)
+            );
+            setChatHistory((prev) => {
+                const chatMessages = prev.chat;
+                if (chatMessages.length === 0) return prev;
+
+                const lastMessage = chatMessages[chatMessages.length - 1];
+                if (
+                    lastMessage.role === 'assistant' &&
+                    lastMessage.content.includes('I found a wider set of nearby options in the suggestions panel.')
+                ) {
+                    return prev;
+                }
+
+                return {
+                    ...prev,
+                    chat: [
+                        ...chatMessages,
+                        {
+                            role: 'assistant',
+                            content: `I found a wider set of nearby options in the suggestions panel using a ${nextRadiusKm} km search radius.`
+                        }
+                    ]
+                };
+            });
+        } catch (error) {
+            console.warn('Unable to expand place search radius.', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleRefreshSuggestions = async () => {
+        if (!lastPlaceSearch) return;
+
+        setIsRefreshingSuggestions(true);
+        try {
+            const places = await api.post('/chat/places', {
+                queries: lastPlaceSearch.queries,
+                location: lastPlaceSearch.location,
+                radiusKm: searchRadiusKm,
+                limit: Math.max(16, suggestedPlaces.length || 16)
+            });
+
+            const freshPlaces = Array.isArray(places.data?.places) ? places.data.places as PlaceSuggestion[] : [];
+            replaceSuggestedPlaces(freshPlaces);
+            setSuggestedProducts([]);
+            setShowPreview(true);
+        } catch (error) {
+            console.warn('Unable to refresh suggested places.', error);
+        } finally {
+            setIsRefreshingSuggestions(false);
+        }
+    };
+
+    const handleStartNewChat = () => {
+        setSkipAutoRestore(true);
+        setCurrentConversationId(null);
+        setLastPlaceSearch(null);
+        setSuggestedPlaces([]);
+        setSuggestedProducts([]);
+        setShowPreview(false);
+        setPrompt('');
+        setChatHistory((prev) => ({
+            ...prev,
+            chat: [{ role: 'assistant', content: DEFAULT_CHAT_GREETING }]
+        }));
+        setActiveTab('chat');
+    };
+
+    const handleQuickReply = (option: QuickReplyOption) => {
+        handleSend(option.prompt);
+    };
+
     return (
         <div className="flex w-full h-full">
             {/* Middle Column: Main Content (Dashboard OR Chat) */}
             <div className="flex-1 flex flex-col min-w-0 bg-white relative">
 
-                {/* Tab Navigation (Produce / Grow / Learn) */}
+                {/* Tab Navigation */}
                 {activeTab !== 'home' && (
                     <div className="flex border-b border-gray-100 items-center justify-center px-4 pt-2 shrink-0">
                         <div className="flex space-x-1 overflow-x-auto no-scrollbar w-full max-w-2xl justify-center">
-                            {['chat', 'find_produce'].map((tab) => (
+                            {['chat'].map((tab) => (
                                 <button
                                     key={tab}
                                     onClick={() => setActiveTab(tab as Tab)}
@@ -471,7 +824,6 @@ export default function AgriDashboard() {
                                         }`}
                                 >
                                     {tab === 'chat' && 'Assistant'}
-                                    {tab === 'find_produce' && 'Produce'}
                                 </button>
                             ))}
                         </div>
@@ -576,8 +928,27 @@ export default function AgriDashboard() {
                         {activeTab === 'chat' && (
                             <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full h-full">
                                 {/* Chat Area */}
+                                <div className="flex-1 flex flex-col overflow-hidden">
+                                <div className="border-b border-gray-100 bg-white px-4 py-3 md:px-6">
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex items-center gap-3">
+                                            <FoodChatMascot />
+                                            <div>
+                                                <h2 className="text-sm font-bold text-gray-800">Hi, I'm Navi.</h2>
+                                                <p className="text-xs text-gray-400">I search cities for the healthiest food sources, for your unique health conditions and diet preferences.</p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleStartNewChat}
+                                            className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:border-green-300 hover:text-green-700"
+                                        >
+                                            New chat
+                                        </button>
+                                    </div>
+                                </div>
                                 <div className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-6 space-y-4">
-                                    {(chatHistory['chat'] || []).map((msg, idx) => (
+                                    {(chatHistory['chat'] || []).map((msg, idx, messages) => (
                                         <motion.div
                                             key={idx}
                                             initial={{ opacity: 0, y: 10 }}
@@ -596,26 +967,112 @@ export default function AgriDashboard() {
                                                 ) : (
                                                     <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
                                                 )}
+                                                {msg.role === 'assistant' && msg.usedFallback ? (
+                                                    <p className="mt-2 text-xs text-gray-400">
+                                                        ⚠ Navi is having trouble connecting. Please try again in a moment.
+                                                    </p>
+                                                ) : null}
+                                                {msg.role === 'assistant' && msg.followUpOptions?.length && idx === messages.length - 1 ? (
+                                                    <div className="mt-3 flex flex-wrap gap-2">
+                                                        {msg.followUpOptions.map((option) => (
+                                                            <button
+                                                                key={option.id}
+                                                                type="button"
+                                                                onClick={() => handleQuickReply(option)}
+                                                                className="rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 transition hover:border-green-300 hover:bg-green-100"
+                                                            >
+                                                                {option.label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                ) : null}
                                             </div>
                                         </motion.div>
                                     ))}
                                     <div ref={messagesEndRef} />
                                 </div>
+                                </div>
 
                                 {/* Suggested Products Panel */}
-                                <div className={`w-full md:w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col shadow-[0_0_15px_rgba(0,0,0,0.03)] z-10 md:static transition-all duration-300 overflow-hidden ${isPanelOpen ? 'h-80' : 'h-14'} md:h-auto`}>
-                                    <div
-                                        className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 cursor-pointer md:cursor-default"
-                                        onClick={() => setIsPanelOpen(!isPanelOpen)}
-                                    >
+                                 <div className={`w-full md:w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col shadow-[0_0_15px_rgba(0,0,0,0.03)] z-10 md:static transition-all duration-300 overflow-hidden ${isPanelOpen ? 'h-80' : 'h-14'} md:h-auto`}>
+                                     <div
+                                         className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 cursor-pointer md:cursor-default"
+                                         onClick={() => setIsPanelOpen(!isPanelOpen)}
+                                     >
                                         <div className="flex items-center gap-2">
-                                            <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Suggestions</h3>
-                                            <svg className={`w-4 h-4 text-gray-400 transition-transform md:hidden ${isPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-                                        </div>
-                                    </div>
-                                    <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3">
-                                        {suggestedPlaces.length > 0 ? (
-                                            suggestedPlaces.map((place, idx) => (
+                                             <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Suggestions</h3>
+                                             <svg className={`w-4 h-4 text-gray-400 transition-transform md:hidden ${isPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                                         </div>
+                                         <div className="flex items-center gap-2">
+                                             <button
+                                                 type="button"
+                                                 onClick={(e) => {
+                                                     e.stopPropagation();
+                                                     void handleRefreshSuggestions();
+                                                 }}
+                                                 disabled={!lastPlaceSearch || isRefreshingSuggestions}
+                                                 className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:border-green-300 hover:text-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                 aria-label="Refresh suggestion list"
+                                             >
+                                                 <svg className={`h-4 w-4 ${isRefreshingSuggestions ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5M20 20v-5h-5" />
+                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 9a8 8 0 00-13.657-4.657L4 9m16 6l-2.343 2.343A8 8 0 014 15" />
+                                                 </svg>
+                                             </button>
+                                             <button
+                                                 type="button"
+                                                 onClick={(e) => {
+                                                     e.stopPropagation();
+                                                     setIsSuggestionSettingsOpen((prev) => !prev);
+                                                 }}
+                                                 className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:border-green-300 hover:text-green-700"
+                                                 aria-label="Toggle suggestion settings"
+                                             >
+                                                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                 </svg>
+                                             </button>
+                                         </div>
+                                     </div>
+                                     <div className={`border-b border-gray-100 bg-white px-4 transition-all duration-200 overflow-hidden ${isSuggestionSettingsOpen ? 'max-h-60 py-3' : 'max-h-0 py-0 border-b-0'}`}>
+                                         <div className="space-y-3">
+                                             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gray-400">
+                                                 Search settings
+                                             </p>
+                                             <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                                                 <span className="rounded-full bg-gray-100 px-2.5 py-1 font-semibold text-gray-700">
+                                                     Based near: {searchAreaLabel}
+                                                 </span>
+                                                 <span className="rounded-full bg-green-50 px-2.5 py-1 font-semibold text-green-700">
+                                                     Radius: {searchRadiusKm} km
+                                                 </span>
+                                                 <span className="rounded-full bg-blue-50 px-2.5 py-1 font-semibold text-blue-700 capitalize">
+                                                     Source: {locationSourceLabel}
+                                                 </span>
+                                             </div>
+                                             <div className="flex items-center gap-2">
+                                                 <label htmlFor="search-radius" className="text-[11px] font-medium text-gray-500">
+                                                     Search distance
+                                                 </label>
+                                                 <select
+                                                     id="search-radius"
+                                                     value={searchRadiusKm}
+                                                     onChange={(e) => void handleRadiusChange(Number(e.target.value))}
+                                                     className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 outline-none focus:border-green-400 focus:ring-1 focus:ring-green-400"
+                                                 >
+                                                     {SEARCH_RADIUS_OPTIONS_KM.map((radius) => (
+                                                         <option key={radius} value={radius}>
+                                                             {radius} km
+                                                         </option>
+                                                     ))}
+                                                 </select>
+                                             </div>
+                                         </div>
+                                     </div>
+                                     <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3">
+                                         {suggestedPlaces.length > 0 ? (
+                                             suggestedPlaces.map((place, idx) => (
                                                 <motion.div
                                                     key={`${place.name}-${idx}`}
                                                     initial={{ opacity: 0, x: 20 }}
@@ -635,6 +1092,13 @@ export default function AgriDashboard() {
                                                         <div className="flex-1 min-w-0">
                                                             <h4 className="text-sm font-bold text-gray-800 leading-snug">{place.name}</h4>
                                                             <p className="text-xs text-gray-500 mt-1">{place.address || 'Address unavailable'}</p>
+                                                            {typeof place.distance_km === 'number' ? (
+                                                                <p className="mt-1 text-[11px] font-semibold text-green-700">
+                                                                    {place.distance_km < 1
+                                                                        ? `${Math.round(place.distance_km * 1000)} m away`
+                                                                        : `${place.distance_km.toFixed(1)} km away`}
+                                                                </p>
+                                                            ) : null}
                                                             <div className="mt-2 space-y-1">
                                                                 {typeof place.rating === 'number' && (
                                                                     <p className="text-xs text-amber-700 font-semibold">
@@ -1465,67 +1929,6 @@ export default function AgriDashboard() {
                                 ? 'p-4 md:p-6 bg-gradient-to-t from-white via-white to-transparent'
                                 : 'p-4 md:p-6 bg-white border-t border-gray-100'
                                 }`}>
-                                <div className="max-w-3xl mx-auto mb-4 flex flex-wrap gap-2 items-center justify-center">
-                                    {/* Scope Toggle */}
-                                    <div className="flex bg-gray-100 p-1 rounded-full text-[10px] font-bold uppercase tracking-tight">
-                                        <button
-                                            onClick={() => setSearchScope('local')}
-                                            className={`px-3 py-1 rounded-full transition ${searchScope === 'local' ? 'bg-white shadow-sm text-green-600' : 'text-gray-400'}`}
-                                        >
-                                            Local
-                                        </button>
-                                        <button
-                                            onClick={() => setSearchScope('global')}
-                                            className={`px-3 py-1 rounded-full transition ${searchScope === 'global' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400'}`}
-                                        >
-                                            Global
-                                        </button>
-                                    </div>
-
-                                    {/* Location Selectors (Only if local) */}
-                                    {searchScope === 'local' ? (
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => setLocationType('home')}
-                                                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition ${locationType === 'home' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 text-gray-400'}`}
-                                            >
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-                                                Home
-                                            </button>
-                                            <button
-                                                onClick={() => setLocationType('live')}
-                                                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition ${locationType === 'live' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-gray-200 text-gray-400'}`}
-                                            >
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                Live
-                                            </button>
-                                            <button
-                                                onClick={() => setLocationType('custom')}
-                                                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition ${locationType === 'custom' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-400'}`}
-                                            >
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                                Custom
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
-                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9h18" /></svg>
-                                            Web Grounding Enabled
-                                        </div>
-                                    )}
-
-                                    {/* Custom Location Input */}
-                                    {searchScope === 'local' && locationType === 'custom' && (
-                                        <input
-                                            type="text"
-                                            value={customLocation}
-                                            onChange={(e) => setCustomLocation(e.target.value)}
-                                            placeholder="Enter address..."
-                                            className="px-3 py-1 rounded-full text-[10px] font-medium border border-blue-200 outline-none focus:ring-1 focus:ring-blue-500 w-32 animate-in slide-in-from-left-2 duration-300"
-                                        />
-                                    )}
-                                </div>
-
                                 <div className={`mx-auto transition-all duration-500 relative shadow-xl bg-white border border-gray-200 rounded-3xl ${(activeTab === 'home') ? 'max-w-2xl' : 'max-w-3xl'
                                     }`}>
                                     <textarea
@@ -1549,7 +1952,7 @@ export default function AgriDashboard() {
                                 </div>
                                 {activeTab === 'home' && (
                                     <p className="text-center text-xs text-gray-400 mt-2">
-                                        Start a chat to Find Produce, Pick a System, or Learn.
+                                        Start a chat to find food, discover places nearby, or get personalized guidance.
                                     </p>
                                 )}
                             </div>

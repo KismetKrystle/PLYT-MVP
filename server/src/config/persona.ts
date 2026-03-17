@@ -1,1 +1,1 @@
-export { SYSTEM_INSTRUCTION } from './system_prompt';
+export { buildNaviSystemInstruction } from './system_prompt';

@@ -5,8 +5,22 @@ import { createProfile, deleteProfile, getProfile, updateProfile } from '../prof
 
 const router = express.Router();
 
+function extractAddressCity(result: any) {
+    const components = Array.isArray(result?.address_components) ? result.address_components : [];
+    const findComponent = (types: string[]) =>
+        components.find((component: any) => types.some((type) => component.types?.includes(type)));
+
+    return (
+        findComponent(['locality'])?.long_name ||
+        findComponent(['administrative_area_level_2'])?.long_name ||
+        findComponent(['administrative_area_level_1'])?.long_name ||
+        ''
+    );
+}
+
 router.get('/location-suggestions/search', authenticateToken, async (req: AuthRequest, res) => {
     const query = String(req.query.q || '').trim();
+    const country = String(req.query.country || '').trim().toUpperCase();
     const fallbackSuggestion = {
         placeId: '',
         description: query,
@@ -34,6 +48,7 @@ router.get('/location-suggestions/search', authenticateToken, async (req: AuthRe
             params: {
                 input: query,
                 types: 'geocode',
+                ...(country ? { components: `country:${country}` } : {}),
                 key
             }
         });
@@ -63,6 +78,55 @@ router.get('/location-suggestions/search', authenticateToken, async (req: AuthRe
             enriched: false,
             providerStatus: 'REQUEST_FAILED',
             error: 'Failed to fetch location suggestions',
+            details: error.message
+        });
+    }
+});
+
+router.get('/location-suggestions/reverse-geocode', authenticateToken, async (req: AuthRequest, res) => {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        res.status(400).json({ error: 'Valid lat and lng are required' });
+        return;
+    }
+
+    const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    if (!key) {
+        res.json({
+            enriched: false,
+            providerStatus: 'MISSING_KEY',
+            address: '',
+            city: ''
+        });
+        return;
+    }
+
+    try {
+        const response = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
+            params: {
+                latlng: `${lat},${lng}`,
+                key
+            }
+        });
+
+        const providerStatus = String(response.data?.status || 'UNKNOWN');
+        const first = Array.isArray(response.data?.results) ? response.data.results[0] : null;
+
+        res.json({
+            enriched: providerStatus === 'OK' && !!first,
+            providerStatus,
+            address: first?.formatted_address || '',
+            city: extractAddressCity(first)
+        });
+    } catch (error: any) {
+        res.json({
+            enriched: false,
+            providerStatus: 'REQUEST_FAILED',
+            address: '',
+            city: '',
+            error: 'Failed to reverse geocode location',
             details: error.message
         });
     }

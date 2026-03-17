@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import api from '../../lib/api';
+import { useAuth } from '../../lib/auth';
 
 type Props = {
     user: any;
@@ -180,6 +181,7 @@ function Pill({ label, color }: { label: string; color: string }) {
 }
 
 export default function CustomerProfileDashboard({ user }: Props) {
+    const { token, loading: authLoading } = useAuth();
     const [avatar, setAvatar] = useState<string>(user?.avatar_url || '/assets/images/gallery/user_avatar.png');
     const [healthyDays] = useState(42);
     const [profileData, setProfileData] = useState<any>(null);
@@ -197,7 +199,20 @@ export default function CustomerProfileDashboard({ user }: Props) {
 
     // ── Fetch real profile data from API ─────────────────────────────────────
     useEffect(() => {
+        if (authLoading) return;
+
         const fetchProfile = async () => {
+            if (!token && !user?.id) {
+                const rawData = user?.profile_data || {};
+                const data = rawData?.profile_data && typeof rawData.profile_data === 'object'
+                    ? rawData.profile_data
+                    : rawData;
+                setResolvedUser(user || null);
+                setProfileData(data);
+                setLoadingProfile(false);
+                return;
+            }
+
             try {
                 const meRes = await api.get('/user/me');
                 const me = meRes.data || user || {};
@@ -221,8 +236,12 @@ export default function CustomerProfileDashboard({ user }: Props) {
                     ? rawData.profile_data
                     : rawData;
                 setProfileData(data);
-            } catch (err) {
-                console.error('Failed to fetch profile:', err);
+            } catch (err: any) {
+                if (err?.response?.status === 401) {
+                    console.warn('Profile request returned 401; falling back to local user state.');
+                } else {
+                    console.error('Failed to fetch profile:', err);
+                }
                 // Fallback to user prop if available
                 const rawData = user?.profile_data || {};
                 const data = rawData?.profile_data && typeof rawData.profile_data === 'object'
@@ -234,7 +253,7 @@ export default function CustomerProfileDashboard({ user }: Props) {
             }
         };
         fetchProfile();
-    }, [user]);
+    }, [authLoading, token, user]);
 
     const conditions: string[] = profileData?.health_conditions || [];
     const preferences: string[] = profileData?.dietary_preferences || [];

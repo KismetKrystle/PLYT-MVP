@@ -175,6 +175,31 @@ function normalizeLocation(value: ConsumerProfile['location']) {
     return [value.city, value.address].filter(Boolean).join(', ');
 }
 
+function toConsumerFormState(data: Partial<ConsumerProfile> | Record<string, any>) {
+    const knownAllergyIds = new Set<string>(COMMON_ALLERGIES.map((item) => item.id));
+    const knownConditionIds = new Set<string>(HEALTH_CONDITIONS.map((item) => item.id));
+    const knownDietIds = new Set<string>(DIETARY_PREFERENCES.map((item) => item.id));
+    const knownGoalIds = new Set<string>(HEALTH_GOALS.map((item) => item.id));
+    const allergies = Array.isArray(data?.allergies) ? data.allergies : [];
+    const conditions = Array.isArray(data?.health_conditions) ? data.health_conditions : [];
+    const dietaryPreferences = Array.isArray(data?.dietary_preferences) ? data.dietary_preferences : [];
+    const wellnessGoals = Array.isArray(data?.wellness_goals) ? data.wellness_goals : [];
+
+    return {
+        dietary_preferences: dietaryPreferences.filter((item) => knownDietIds.has(item)),
+        other_dietary_preferences: dietaryPreferences.filter((item) => !knownDietIds.has(item)).join(', '),
+        health_conditions: conditions.filter((item) => knownConditionIds.has(item)),
+        other_conditions: conditions.filter((item) => !knownConditionIds.has(item)).join(', '),
+        allergies: allergies.filter((item) => knownAllergyIds.has(item)),
+        other_allergies: allergies.filter((item) => !knownAllergyIds.has(item)).join(', '),
+        wellness_goals: wellnessGoals.filter((item) => knownGoalIds.has(item)),
+        other_wellness_goals: wellnessGoals.filter((item) => !knownGoalIds.has(item)).join(', '),
+        location: normalizeLocation((data?.location || '') as ConsumerProfile['location']),
+        notes: typeof data?.notes === 'string' ? data.notes : '',
+        health_documents: Array.isArray(data?.health_documents) ? data.health_documents : []
+    };
+}
+
 function getMode(param: string | null): ProfileMode {
     if (param === 'business') return 'business';
     if (param === 'expert') return 'expert';
@@ -358,28 +383,7 @@ export default function ProfileWorkspace() {
                 }
 
                 if (mode === 'consumer') {
-                    const p = data as ConsumerProfile;
-                    const knownAllergyIds = new Set<string>(COMMON_ALLERGIES.map((item) => item.id));
-                    const knownConditionIds = new Set<string>(HEALTH_CONDITIONS.map((item) => item.id));
-                    const knownDietIds = new Set<string>(DIETARY_PREFERENCES.map((item) => item.id));
-                    const knownGoalIds = new Set<string>(HEALTH_GOALS.map((item) => item.id));
-                    const allergies = p.allergies || [];
-                    const conditions = p.health_conditions || [];
-                    const dietaryPreferences = p.dietary_preferences || [];
-                    const wellnessGoals = p.wellness_goals || [];
-                    setConsumerForm({
-                        dietary_preferences: dietaryPreferences.filter((item) => knownDietIds.has(item)),
-                        other_dietary_preferences: dietaryPreferences.filter((item) => !knownDietIds.has(item)).join(', '),
-                        health_conditions: conditions.filter((item) => knownConditionIds.has(item)),
-                        other_conditions: conditions.filter((item) => !knownConditionIds.has(item)).join(', '),
-                        allergies: allergies.filter((item) => knownAllergyIds.has(item)),
-                        other_allergies: allergies.filter((item) => !knownAllergyIds.has(item)).join(', '),
-                        wellness_goals: wellnessGoals.filter((item) => knownGoalIds.has(item)),
-                        other_wellness_goals: wellnessGoals.filter((item) => !knownGoalIds.has(item)).join(', '),
-                        location: normalizeLocation(p.location),
-                        notes: p.notes || '',
-                        health_documents: Array.isArray(p.health_documents) ? p.health_documents : []
-                    });
+                    setConsumerForm(toConsumerFormState(data as ConsumerProfile));
                 } else if (mode === 'business') {
                     const p = data as BusinessProfile;
                     setBusinessForm({
@@ -401,6 +405,13 @@ export default function ProfileWorkspace() {
             } catch (error: any) {
                 if (error?.response?.status === 404) {
                     setHasProfile(false);
+                    if (mode === 'consumer') {
+                        const legacyProfile = (user as any)?.profile_data || {};
+                        if (legacyProfile && Object.keys(legacyProfile).length > 0) {
+                            setConsumerForm(toConsumerFormState(legacyProfile));
+                            setStatus('Loaded your saved onboarding answers. Save once to create your dedicated health profile record.');
+                        }
+                    }
                 } else {
                     setStatus(error?.response?.data?.error || 'Could not load your profile right now.');
                 }

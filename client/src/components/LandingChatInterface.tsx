@@ -50,40 +50,35 @@ export default function LandingChatInterface() {
 
     const [isLoading, setIsLoading] = useState(false);
     const { user } = useAuth();
+    const homeLocation = (user?.location_address || user?.location_city || '').trim();
 
-    // AI Research Scope & Location State
-    const [searchScope, setSearchScope] = useState<'local' | 'global'>('global'); // Default to global for guest
-    const [locationType, setLocationType] = useState<'home' | 'live' | 'custom'>('live');
-    const [customLocation, setCustomLocation] = useState('');
+    const resolveSearchLocation = async () => {
+        try {
+            const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(
+                    resolve,
+                    reject,
+                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 }
+                );
+            });
+            return `Lat: ${pos.coords.latitude}, Lng: ${pos.coords.longitude}`;
+        } catch (e) {
+            console.error('Geolocation failed:', e);
+            return homeLocation;
+        }
+    };
 
     const handleSubmit = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
         if (!prompt.trim() && selectedTags.length === 0) return;
 
-        let finalLocation = '';
-        if (searchScope === 'local') {
-            if (locationType === 'live') {
-                try {
-                    const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-                        navigator.geolocation.getCurrentPosition(resolve, reject);
-                    });
-                    finalLocation = `Lat: ${pos.coords.latitude}, Lng: ${pos.coords.longitude}`;
-                } catch (e) {
-                    console.error('Geolocation failed:', e);
-                    finalLocation = user?.location_address || user?.location_city || 'Unknown';
-                }
-            } else if (locationType === 'custom') {
-                finalLocation = customLocation;
-            } else {
-                finalLocation = user?.location_address || user?.location_city || 'Unknown';
-            }
-        }
+        const finalLocation = await resolveSearchLocation();
 
         if (!user) {
             const payload = {
                 tags: selectedTags,
                 text: prompt,
-                scope: searchScope,
+                scope: 'local',
                 location: finalLocation
             };
             localStorage.setItem('pendingChatPrompt', JSON.stringify(payload));
@@ -97,7 +92,7 @@ export default function LandingChatInterface() {
             const res = await api.post('/chat', {
                 message: prompt,
                 tags: selectedTags,
-                scope: searchScope,
+                scope: 'local',
                 location: finalLocation
             });
             console.log('Chat response success:', res.data); // Debug log
@@ -110,7 +105,7 @@ export default function LandingChatInterface() {
             localStorage.setItem('pendingChatPrompt', JSON.stringify({
                 tags: selectedTags,
                 text: prompt,
-                scope: searchScope,
+                scope: 'local',
                 location: finalLocation
             }));
             // Still try to redirect to chat tab in case it's just a partial failure? 
@@ -194,68 +189,6 @@ export default function LandingChatInterface() {
                     transition={{ delay: 0.3 }}
                     className="w-full bg-white rounded-3xl shadow-2xl shadow-green-900/5 ring-1 ring-gray-100 overflow-hidden p-1 md:p-2 shrink-0"
                 >
-                    <div className="flex flex-wrap gap-2 items-center justify-center pt-4 px-4">
-                        {/* Scope Toggle */}
-                        <div className="flex bg-gray-100 p-1 rounded-full text-[10px] font-bold uppercase tracking-tight">
-                            <button
-                                onClick={() => setSearchScope('local')}
-                                className={`px-3 py-1 rounded-full transition ${searchScope === 'local' ? 'bg-white shadow-sm text-green-600' : 'text-gray-400'}`}
-                            >
-                                Local
-                            </button>
-                            <button
-                                onClick={() => setSearchScope('global')}
-                                className={`px-3 py-1 rounded-full transition ${searchScope === 'global' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400'}`}
-                            >
-                                Global
-                            </button>
-                        </div>
-
-                        {/* Location Selectors (Only if local) */}
-                        {searchScope === 'local' ? (
-                            <div className="flex gap-2">
-                                {user && (
-                                    <button
-                                        onClick={() => setLocationType('home')}
-                                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition ${locationType === 'home' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-gray-200 text-gray-400'}`}
-                                    >
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-                                        Home
-                                    </button>
-                                )}
-                                <button
-                                    onClick={() => setLocationType('live')}
-                                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition ${locationType === 'live' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-gray-200 text-gray-400'}`}
-                                >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                    Live
-                                </button>
-                                <button
-                                    onClick={() => setLocationType('custom')}
-                                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition ${locationType === 'custom' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-400'}`}
-                                >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                    Custom
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9h18" /></svg>
-                                Global Data Enabled
-                            </div>
-                        )}
-
-                        {searchScope === 'local' && locationType === 'custom' && (
-                            <input
-                                type="text"
-                                value={customLocation}
-                                onChange={(e) => setCustomLocation(e.target.value)}
-                                placeholder="Enter address..."
-                                className="px-3 py-1 rounded-full text-[10px] font-medium border border-blue-200 outline-none focus:ring-1 focus:ring-blue-500 w-32 animate-in slide-in-from-left-2 duration-300"
-                            />
-                        )}
-                    </div>
-
                     {/* Active Tags Area */}
                     <AnimatePresence>
                         {selectedTags.length > 0 && (

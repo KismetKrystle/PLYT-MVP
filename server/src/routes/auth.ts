@@ -18,6 +18,11 @@ function sanitizeUser(row: any) {
     };
 }
 
+function buildProfileDataPatch(fullName?: string | null) {
+    const normalized = String(fullName || '').trim();
+    return normalized ? { full_name: normalized } : {};
+}
+
 function signToken(user: { id: string | number; email: string; role: string }) {
     return jwt.sign(
         { id: user.id, email: user.email, role: user.role },
@@ -27,7 +32,7 @@ function signToken(user: { id: string | number; email: string; role: string }) {
 }
 
 router.post('/signup', async (req: Request, res: Response) => {
-    const { name, email, password, role } = req.body;
+    const { name, full_name, email, password, role } = req.body;
 
     if (!email || !password) {
         res.status(400).json({ error: 'email and password are required' });
@@ -35,7 +40,9 @@ router.post('/signup', async (req: Request, res: Response) => {
     }
 
     const normalizedEmail = String(email).toLowerCase().trim();
-    const normalizedName = String(name || normalizedEmail.split('@')[0] || 'new-user').trim();
+    const providedFullName = String(full_name || name || '').trim();
+    const normalizedName = String(providedFullName || normalizedEmail.split('@')[0] || 'new-user').trim();
+    const profileDataPatch = buildProfileDataPatch(providedFullName);
 
     const normalizedRole = role || 'consumer';
     if (!VALID_ROLES.has(normalizedRole)) {
@@ -52,10 +59,10 @@ router.post('/signup', async (req: Request, res: Response) => {
 
         const passwordHash = await bcrypt.hash(password, 10);
         const result = await pool.query(
-            `INSERT INTO users (name, email, password_hash, role)
-             VALUES ($1, $2, $3, $4)
+            `INSERT INTO users (name, email, password_hash, role, profile_data)
+             VALUES ($1, $2, $3, $4, $5::jsonb)
              RETURNING id, name, email, role, created_at, updated_at`,
-            [normalizedName, normalizedEmail, passwordHash, normalizedRole]
+            [normalizedName, normalizedEmail, passwordHash, normalizedRole, JSON.stringify(profileDataPatch)]
         );
 
         const user = sanitizeUser(result.rows[0]);
@@ -63,6 +70,65 @@ router.post('/signup', async (req: Request, res: Response) => {
         res.status(201).json({ token, user });
     } catch (error) {
         console.error('Signup error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.post('/google-login', async (req: Request, res: Response) => {
+    const { email, name } = req.body;
+
+    if (!email) {
+        res.status(400).json({ error: 'email is required' });
+        return;
+    }
+
+    try {
+        const normalizedEmail = String(email).toLowerCase().trim();
+        const providedFullName = String(name || '').trim();
+        const fallbackName = normalizedEmail.split('@')[0] || 'google-user';
+        const normalizedName = providedFullName || fallbackName;
+        const profileDataPatch = buildProfileDataPatch(providedFullName || fallbackName);
+
+        const existing = await pool.query(
+            'SELECT id, name, email, role, created_at, updated_at, profile_data FROM users WHERE email = $1 LIMIT 1',
+            [normalizedEmail]
+        );
+
+        if (existing.rows.length === 0) {
+            const created = await pool.query(
+                `INSERT INTO users (name, email, password_hash, role, profile_data)
+                 VALUES ($1, $2, $3, $4, $5::jsonb)
+                 RETURNING id, name, email, role, created_at, updated_at`,
+                [normalizedName, normalizedEmail, '', 'consumer', JSON.stringify(profileDataPatch)]
+            );
+
+            const user = sanitizeUser(created.rows[0]);
+            const token = signToken(user);
+            res.status(201).json({ token, user, isNewUser: true });
+            return;
+        }
+
+        const existingUser = existing.rows[0];
+        const mergedProfileData = {
+            ...(existingUser.profile_data || {}),
+            ...profileDataPatch
+        };
+
+        const updated = await pool.query(
+            `UPDATE users
+             SET name = COALESCE(NULLIF($1, ''), name),
+                 profile_data = COALESCE(profile_data, '{}'::jsonb) || $2::jsonb,
+                 updated_at = NOW()
+             WHERE id = $3
+             RETURNING id, name, email, role, created_at, updated_at`,
+            [providedFullName || normalizedName, JSON.stringify(mergedProfileData), existingUser.id]
+        );
+
+        const user = sanitizeUser(updated.rows[0]);
+        const token = signToken(user);
+        res.json({ token, user });
+    } catch (error) {
+        console.error('Google login error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

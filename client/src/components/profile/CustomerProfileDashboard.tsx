@@ -3,6 +3,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 
@@ -18,6 +19,22 @@ const journeyFeed = [
 const pinnedArticles = [
     { id: 1, title: '10 Anti-Inflammatory Foods to Add This Week', author: 'A. Monroe' },
     { id: 2, title: 'How to Build a Realistic Plant-Forward Plate', author: 'J. Patel, RD' },
+];
+const pinnedVideos = [
+    {
+        id: 1,
+        title: '5 Anti-Inflammatory Foods That Improve Body Pain!',
+        channel: 'Dr. Roberto Yano',
+        href: 'https://www.youtube.com/watch?v=c3MlI45j-rg',
+        previewImage: 'https://i.ytimg.com/vi/c3MlI45j-rg/hqdefault.jpg'
+    },
+    {
+        id: 2,
+        title: 'How to Build a Healthy Plate',
+        channel: 'NutritionFacts.org',
+        href: 'https://www.youtube.com/watch?v=lXXXygDRyBU',
+        previewImage: 'https://i.ytimg.com/vi/lXXXygDRyBU/hqdefault.jpg'
+    }
 ];
 const resourceLinks = [
     { id: 1, label: 'Raw Food Starter Guide', href: '#' },
@@ -181,6 +198,8 @@ function Pill({ label, color }: { label: string; color: string }) {
 }
 
 export default function CustomerProfileDashboard({ user }: Props) {
+    const searchParams = useSearchParams();
+    const router = useRouter();
     const { token, loading: authLoading } = useAuth();
     const [avatar, setAvatar] = useState<string>(user?.avatar_url || '/assets/images/gallery/user_avatar.png');
     const [healthyDays] = useState(42);
@@ -194,6 +213,7 @@ export default function CustomerProfileDashboard({ user }: Props) {
     const [selectedDateKey, setSelectedDateKey] = useState(toDateKey(new Date()));
     const [mealDraft, setMealDraft] = useState<MealEntry>({ breakfast: '', lunch: '', dinner: '', notes: '' });
     const [isHealthProfileOpen, setIsHealthProfileOpen] = useState(true);
+    const [savedChats, setSavedChats] = useState<Array<{ id: string; title: string; updated_at: string }>>([]);
     const weekScrollerRef = useRef<HTMLDivElement | null>(null);
     const todayCardRef = useRef<HTMLButtonElement | null>(null);
 
@@ -255,6 +275,24 @@ export default function CustomerProfileDashboard({ user }: Props) {
         fetchProfile();
     }, [authLoading, token, user]);
 
+    useEffect(() => {
+        if (authLoading || !token) {
+            setSavedChats([]);
+            return;
+        }
+
+        const fetchSavedChats = async () => {
+            try {
+                const res = await api.get('/chat/history');
+                setSavedChats(Array.isArray(res.data) ? res.data.slice(0, 4) : []);
+            } catch {
+                setSavedChats([]);
+            }
+        };
+
+        void fetchSavedChats();
+    }, [authLoading, token]);
+
     const conditions: string[] = profileData?.health_conditions || [];
     const preferences: string[] = profileData?.dietary_preferences || [];
     const allergies: string[] = profileData?.allergies || [];
@@ -271,6 +309,23 @@ export default function CustomerProfileDashboard({ user }: Props) {
         Boolean(profileData?.notes?.trim?.()) ||
         Boolean(profileData?.location);
     const healthSummary = useMemo(() => buildHealthDashboardSummary(profileData, resolvedUser), [profileData, resolvedUser]);
+    const favoritedPlaces = useMemo(() => {
+        const candidates =
+            profileData?.favorite_places ||
+            profileData?.favorited_places ||
+            profileData?.saved_places ||
+            [];
+
+        return Array.isArray(candidates) ? candidates : [];
+    }, [profileData]);
+    const favoritedChats = useMemo(() => {
+        const candidates = profileData?.favorite_chats || profileData?.favorited_chats;
+        if (Array.isArray(candidates) && candidates.length > 0) {
+            return candidates;
+        }
+
+        return savedChats;
+    }, [profileData, savedChats]);
 
     const cartTotal = useMemo(() => foodCart.reduce((s, r) => s + r.price * r.qty, 0), []);
     const weekStart = useMemo(() => startOfWeek(new Date()), []);
@@ -359,6 +414,18 @@ export default function CustomerProfileDashboard({ user }: Props) {
         // Center today's card on initial render for horizontal mobile view.
         todayCard.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
     }, []);
+
+    useEffect(() => {
+        const mealPlanView = searchParams.get('mealPlan');
+        if (mealPlanView !== 'full-month') return;
+
+        setIsCalendarOpen(true);
+
+        const nextParams = new URLSearchParams(searchParams.toString());
+        nextParams.delete('mealPlan');
+        const nextQuery = nextParams.toString();
+        router.replace(nextQuery ? `/?${nextQuery}` : '/', { scroll: false });
+    }, [router, searchParams]);
 
     return (
         <div className="mx-auto w-full max-w-7xl p-4 md:p-8">
@@ -575,57 +642,6 @@ export default function CustomerProfileDashboard({ user }: Props) {
                                 <p className="text-[11px] text-gray-400 mt-1">{item.type.toUpperCase()} • {item.postedAt}</p>
                             </article>
                         ))}
-                    </div>
-                </Card>
-
-                {/* ── Resources ──────────────────────────────────────────── */}
-                <Card title="Resource Area">
-                    <div className="space-y-4">
-                        <div>
-                            <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Links</p>
-                            <ul className="mt-2 space-y-1">
-                                {resourceLinks.map(link => (
-                                    <li key={link.id}><a href={link.href} className="text-sm text-green-700 hover:underline">{link.label}</a></li>
-                                ))}
-                            </ul>
-                        </div>
-                        <div>
-                            <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Pinned Articles</p>
-                            <ul className="mt-2 space-y-1">
-                                {pinnedArticles.map(a => (
-                                    <li key={a.id} className="text-sm text-gray-700">{a.title} <span className="text-xs text-gray-400">by {a.author}</span></li>
-                                ))}
-                            </ul>
-                        </div>
-                    </div>
-                </Card>
-
-                {/* ── Experts ────────────────────────────────────────────── */}
-                <Card title="Favorited Experts">
-                    <ul className="space-y-2">
-                        {favoritedExperts.map(e => (
-                            <li key={e.id} className="rounded-lg border border-gray-200 p-3">
-                                <p className="text-sm font-semibold text-gray-900">{e.name}</p>
-                                <p className="text-xs text-gray-500">{e.specialty}</p>
-                            </li>
-                        ))}
-                    </ul>
-                </Card>
-
-                {/* ── Meal Plan ──────────────────────────────────────────── */}
-                {/* ── Cart ───────────────────────────────────────────────── */}
-                <Card title="Food Cart">
-                    <div className="space-y-2">
-                        {foodCart.map(row => (
-                            <div key={row.id} className="flex items-center justify-between text-sm">
-                                <span className="text-gray-700">{row.item} ({row.qty} {row.unit})</span>
-                                <span className="font-semibold text-gray-900">{row.price * row.qty} PLYT</span>
-                            </div>
-                        ))}
-                        <div className="border-t border-gray-200 pt-2 flex items-center justify-between">
-                            <span className="text-sm font-semibold text-gray-700">Total</span>
-                            <span className="text-sm font-bold text-green-700">{cartTotal} PLYT</span>
-                        </div>
                     </div>
                 </Card>
 

@@ -14,6 +14,7 @@ import growRoutes from './routes/grow';
 import orderRoutes from './routes/orders';
 import walletRoutes from './routes/wallet';
 import chatRoutes from './routes/chat';
+import placeProfileRoutes from './routes/place-profiles';
 import consumerHealthProfileRoutes from './routes/consumer-health-profile';
 import farmerProfileRoutes from './routes/farmer-profiles';
 import expertProfileRoutes from './routes/expert-profiles';
@@ -45,6 +46,7 @@ app.use('/grow', growRoutes);
 app.use('/order', orderRoutes);
 app.use('/wallet', walletRoutes);
 app.use('/chat', chatRoutes);
+app.use('/place-profiles', placeProfileRoutes);
 
 app.get('/health', (req: Request, res: Response) => {
     res.json({

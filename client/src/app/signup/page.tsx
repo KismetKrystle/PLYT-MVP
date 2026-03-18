@@ -11,24 +11,33 @@ import axios from 'axios';
 import KYCForm from '../../components/KYCForm';
 
 function SignupForm() {
-    const [signupStep, setSignupStep] = useState<'creds' | 'kyc'>('creds');
+    const searchParams = useSearchParams();
+    const mode = searchParams.get('mode');
+    const [signupStep, setSignupStep] = useState<'creds' | 'kyc'>(mode === 'kyc' ? 'kyc' : 'creds');
+    const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
-    const { login, isAccessWallEnabled } = useAuth();
+    const { login, isAccessWallEnabled, user } = useAuth();
     const router = useRouter();
-    const searchParams = useSearchParams();
     const redirectPath = searchParams.get('redirect') || '/';
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
     // Auto-logout on visit to ensure clean state
     useEffect(() => {
+        if (mode === 'kyc') return;
         if (typeof window !== 'undefined') {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
         }
-    }, []);
+    }, [mode]);
+
+    useEffect(() => {
+        if (mode === 'kyc') {
+            setSignupStep('kyc');
+        }
+    }, [mode]);
 
     // Initial Signup
     const handleSignup = async (e: React.FormEvent) => {
@@ -36,7 +45,7 @@ function SignupForm() {
         setError('');
         setIsLoading(true);
         try {
-            const res = await api.post('/auth/signup', { email, password });
+            const res = await api.post('/auth/signup', { full_name: fullName, email, password });
             login(res.data.token, res.data.user, undefined);
             setSignupStep('kyc');
         } catch (err: unknown) {
@@ -55,6 +64,27 @@ function SignupForm() {
         // Now redirect to home
         router.push(redirectPath);
     };
+
+    if (mode === 'kyc' && !user) {
+        return (
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100 text-center"
+            >
+                <h1 className="text-2xl font-bold text-gray-900 mb-3">Sign in to continue</h1>
+                <p className="text-gray-500 text-sm mb-6">
+                    We need to reopen your onboarding after sign-in so we can finish setting up your profile.
+                </p>
+                <Link
+                    href={`/login?redirect=${encodeURIComponent('/signup?mode=kyc&redirect=' + redirectPath)}`}
+                    className="inline-flex rounded-full bg-green-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700"
+                >
+                    Go to login
+                </Link>
+            </motion.div>
+        );
+    }
 
     if (signupStep === 'kyc') {
         return <KYCForm onComplete={handleKYCComplete} />;
@@ -90,6 +120,17 @@ function SignupForm() {
                     )}
 
                     <form onSubmit={handleSignup} className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                            <input
+                                type="text"
+                                required
+                                value={fullName}
+                                onChange={(e) => setFullName(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none transition"
+                                placeholder="Your full name"
+                            />
+                        </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
                             <input

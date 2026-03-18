@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 
@@ -271,6 +271,17 @@ function buildHealthInsightSummary(input: {
     ].join(' ');
 }
 
+function getDisplayName(user: any) {
+    const fullName = typeof user?.full_name === 'string' ? user.full_name.trim() : '';
+    if (fullName) return fullName;
+
+    const name = typeof user?.name === 'string' ? user.name.trim() : '';
+    if (name) return name;
+
+    const emailPrefix = typeof user?.email === 'string' ? user.email.split('@')[0].trim() : '';
+    return emailPrefix || 'Member';
+}
+
 function SectionCard({ title, hint, children, className = '' }: { title: string; hint: string; children: React.ReactNode; className?: string }) {
     return (
         <section className={`rounded-2xl border border-gray-200 bg-white p-5 shadow-sm ${className}`}>
@@ -311,6 +322,7 @@ const inputCls =
 
 export default function ProfileWorkspace() {
     const { user } = useAuth();
+    const router = useRouter();
     const searchParams = useSearchParams();
     const mode = getMode(searchParams.get('profile'));
     const route = useMemo(() => getRoute(mode), [mode]);
@@ -328,6 +340,7 @@ export default function ProfileWorkspace() {
     const [consumerTab, setConsumerTab] = useState<'profile' | 'report'>('report');
     const [healthInsightSummary, setHealthInsightSummary] = useState('');
     const [lastSummaryRefreshAt, setLastSummaryRefreshAt] = useState<string | null>(null);
+    const [noteDraft, setNoteDraft] = useState('');
 
     const [consumerForm, setConsumerForm] = useState({
         dietary_preferences: [] as string[],
@@ -367,6 +380,37 @@ export default function ProfileWorkspace() {
         }));
     };
 
+    const addCustomListValues = (
+        listKey: 'dietary_preferences' | 'health_conditions' | 'allergies' | 'wellness_goals',
+        inputKey: 'other_dietary_preferences' | 'other_conditions' | 'other_allergies' | 'other_wellness_goals'
+    ) => {
+        const customValues = fromCsv(consumerForm[inputKey])
+            .map((item) => item.toLowerCase());
+
+        if (customValues.length === 0) return;
+
+        setConsumerForm((prev) => ({
+            ...prev,
+            [listKey]: Array.from(new Set([...prev[listKey], ...customValues])),
+            [inputKey]: ''
+        }));
+    };
+
+    const addCustomConditions = () => addCustomListValues('health_conditions', 'other_conditions');
+    const addCustomAllergies = () => addCustomListValues('allergies', 'other_allergies');
+    const addCustomWellnessGoals = () => addCustomListValues('wellness_goals', 'other_wellness_goals');
+    const addCustomDietaryPreferences = () => addCustomListValues('dietary_preferences', 'other_dietary_preferences');
+    const addPersonalNote = () => {
+        const trimmedDraft = noteDraft.trim();
+        if (!trimmedDraft) return;
+
+        setConsumerForm((prev) => ({
+            ...prev,
+            notes: prev.notes.trim() ? `${prev.notes.trim()}\n${trimmedDraft}` : trimmedDraft
+        }));
+        setNoteDraft('');
+    };
+
     useEffect(() => {
         const loadProfile = async () => {
             if (!user?.id) return;
@@ -384,6 +428,7 @@ export default function ProfileWorkspace() {
 
                 if (mode === 'consumer') {
                     setConsumerForm(toConsumerFormState(data as ConsumerProfile));
+                    setNoteDraft('');
                 } else if (mode === 'business') {
                     const p = data as BusinessProfile;
                     setBusinessForm({
@@ -533,6 +578,15 @@ export default function ProfileWorkspace() {
         return [...consumerForm.wellness_goals, ...fromCsv(consumerForm.other_wellness_goals)];
     }, [consumerForm.wellness_goals, consumerForm.other_wellness_goals]);
 
+    const noteEntries = useMemo(() => {
+        return consumerForm.notes
+            .split('\n')
+            .map((item) => item.trim())
+            .filter(Boolean);
+    }, [consumerForm.notes]);
+
+    const displayName = useMemo(() => getDisplayName(user), [user]);
+
     const aboutYouLocation = useMemo(() => {
         return [user?.location_city, user?.location_address].filter(Boolean).join(', ');
     }, [user?.location_address, user?.location_city]);
@@ -552,7 +606,7 @@ export default function ProfileWorkspace() {
     const refreshHealthInsightSummary = () => {
         setHealthInsightSummary(
             buildHealthInsightSummary({
-                fullName: user?.full_name || user?.email?.split('@')[0],
+                fullName: displayName,
                 aboutYouLocation,
                 conditions: joinLabels(selectedConditionValues, HEALTH_CONDITION_LABELS),
                 diets: joinLabels(selectedDietValues, DIETARY_PREFERENCE_LABELS),
@@ -599,7 +653,7 @@ export default function ProfileWorkspace() {
         refreshHealthInsightSummary();
     }, [
         mode,
-        user?.full_name,
+        displayName,
         user?.email,
         user?.bio,
         aboutYouLocation,
@@ -660,7 +714,16 @@ export default function ProfileWorkspace() {
             </div>
 
             {mode === 'consumer' ? (
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="mt-4 space-y-3">
+                    <button
+                        type="button"
+                        onClick={() => router.push('/?tab=customer_profile')}
+                        className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:border-green-500 hover:text-green-700"
+                    >
+                        <span aria-hidden="true">←</span>
+                        Back to Profile
+                    </button>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                     <div className="min-w-[260px] flex-1">
                         {consumerTab === 'report' ? (
                             <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
@@ -745,6 +808,7 @@ export default function ProfileWorkspace() {
                         ))}
                     </div>
                 </div>
+                </div>
             ) : null}
 
             {mode === 'consumer' && consumerTab === 'report' ? (
@@ -753,7 +817,7 @@ export default function ProfileWorkspace() {
                         <div className="flex flex-wrap items-start justify-between gap-4">
                             <div>
                                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/75">Health Report</p>
-                                <h3 className="mt-2 text-2xl font-bold">{user?.email?.split('@')[0] || 'Member'} Health Summary</h3>
+                                <h3 className="mt-2 text-2xl font-bold">{displayName} Health Summary</h3>
                                 <p className="mt-1 text-sm text-white/80">{consumerForm.location.trim() || 'Location not set'}</p>
                             </div>
                             <p className="text-xs text-white/70">{new Date().toLocaleDateString()}</p>
@@ -920,12 +984,22 @@ export default function ProfileWorkspace() {
                                     </div>
                                 ))}
                             </div>
-                            <input
-                                className={`${inputCls} mt-3`}
-                                placeholder="Other conditions, separated by commas"
-                                value={consumerForm.other_conditions}
-                                onChange={(e) => setConsumerForm({ ...consumerForm, other_conditions: e.target.value })}
-                            />
+                            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                                <input
+                                    className={inputCls}
+                                    placeholder="Other conditions, separated by commas"
+                                    value={consumerForm.other_conditions}
+                                    onChange={(e) => setConsumerForm({ ...consumerForm, other_conditions: e.target.value })}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={addCustomConditions}
+                                    aria-label="Add custom conditions"
+                                    className="rounded-xl border border-green-600 bg-white px-4 py-2 text-base font-bold text-green-600 transition hover:bg-green-50"
+                                >
+                                    +
+                                </button>
+                            </div>
                         </SectionCard>
                         <div className="grid gap-4 lg:col-span-8 lg:grid-cols-2 lg:items-start">
                             <div className="space-y-2">
@@ -944,12 +1018,22 @@ export default function ProfileWorkspace() {
                                             />
                                         ))}
                                     </div>
-                                    <input
-                                        className={inputCls}
-                                        placeholder="Other goals, separated by commas"
-                                        value={consumerForm.other_wellness_goals}
-                                        onChange={(e) => setConsumerForm({ ...consumerForm, other_wellness_goals: e.target.value })}
-                                    />
+                                    <div className="flex flex-col gap-2 sm:flex-row">
+                                        <input
+                                            className={inputCls}
+                                            placeholder="Other goals, separated by commas"
+                                            value={consumerForm.other_wellness_goals}
+                                            onChange={(e) => setConsumerForm({ ...consumerForm, other_wellness_goals: e.target.value })}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={addCustomWellnessGoals}
+                                            aria-label="Add custom health goals"
+                                            className="rounded-xl border border-green-600 bg-white px-4 py-2 text-base font-bold text-green-600 transition hover:bg-green-50"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
                                 </SectionCard>
                                 <SectionCard
                                     title="Allergies"
@@ -966,12 +1050,22 @@ export default function ProfileWorkspace() {
                                             />
                                         ))}
                                     </div>
-                                    <input
-                                        className={`${inputCls} mt-3`}
-                                        placeholder="Other allergies, separated by commas"
-                                        value={consumerForm.other_allergies}
-                                        onChange={(e) => setConsumerForm({ ...consumerForm, other_allergies: e.target.value })}
-                                    />
+                                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                                        <input
+                                            className={inputCls}
+                                            placeholder="Other allergies, separated by commas"
+                                            value={consumerForm.other_allergies}
+                                            onChange={(e) => setConsumerForm({ ...consumerForm, other_allergies: e.target.value })}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={addCustomAllergies}
+                                            aria-label="Add custom allergies"
+                                            className="rounded-xl border border-green-600 bg-white px-4 py-2 text-base font-bold text-green-600 transition hover:bg-green-50"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
                                 </SectionCard>
                             </div>
                             <div className="space-y-4">
@@ -980,13 +1074,34 @@ export default function ProfileWorkspace() {
                                 hint="Add notes and upload supporting health documents for AI context."
                                 className="self-start"
                             >
-                                <textarea
-                                    rows={5}
-                                    className={inputCls}
-                                    placeholder="Add context such as surgery history, medication sensitivities, or anything else the assistant should consider."
-                                    value={consumerForm.notes}
-                                    onChange={(e) => setConsumerForm({ ...consumerForm, notes: e.target.value })}
-                                />
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                                    <textarea
+                                        rows={5}
+                                        className={inputCls}
+                                        placeholder="Add context such as surgery history, medication sensitivities, or anything else the assistant should consider."
+                                        value={noteDraft}
+                                        onChange={(e) => setNoteDraft(e.target.value)}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={addPersonalNote}
+                                        aria-label="Add personal note"
+                                        className="rounded-xl border border-green-600 bg-white px-4 py-2 text-base font-bold text-green-600 transition hover:bg-green-50"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                                {noteEntries.length > 0 ? (
+                                    <div className="space-y-2">
+                                        {noteEntries.map((entry, index) => (
+                                            <div key={`${entry}-${index}`} className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm leading-6 text-gray-700">
+                                                {entry}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-sm text-gray-400">No personal notes recorded yet.</p>
+                                )}
                                 <div className="space-y-3">
                                     <label className="block text-sm font-medium text-gray-700">Health documents</label>
                                     <input
@@ -1034,12 +1149,22 @@ export default function ProfileWorkspace() {
                                         />
                                     ))}
                                 </div>
-                                <input
-                                    className={inputCls}
-                                    placeholder="Other diets, separated by commas"
-                                    value={consumerForm.other_dietary_preferences}
-                                    onChange={(e) => setConsumerForm({ ...consumerForm, other_dietary_preferences: e.target.value })}
-                                />
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                    <input
+                                        className={inputCls}
+                                        placeholder="Other diets, separated by commas"
+                                        value={consumerForm.other_dietary_preferences}
+                                        onChange={(e) => setConsumerForm({ ...consumerForm, other_dietary_preferences: e.target.value })}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={addCustomDietaryPreferences}
+                                        aria-label="Add custom dietary preferences"
+                                        className="rounded-xl border border-green-600 bg-white px-4 py-2 text-base font-bold text-green-600 transition hover:bg-green-50"
+                                    >
+                                        +
+                                    </button>
+                                </div>
                             </SectionCard>
                             </div>
                         </div>

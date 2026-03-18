@@ -42,3 +42,16 @@ export async function fetchRoleProfileData(userId: string | number, role: Role) 
         consumer_health_profile: consumerHealthProfile
     };
 }
+
+export function isProfileComplete(profile: any): boolean {
+    return (
+        Array.isArray(profile?.health_conditions) &&
+        profile.health_conditions.length > 0 &&
+        Array.isArray(profile?.dietary_preferences) &&
+        profile.dietary_preferences.length > 0 &&
+        typeof profile?.full_name === 'string' &&
+        profile.full_name.trim().length > 0 &&
+        typeof profile?.location?.city === 'string' &&
+        profile.location.city.trim().length > 0
+    );
+}

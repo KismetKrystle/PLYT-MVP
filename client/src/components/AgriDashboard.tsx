@@ -273,6 +273,7 @@ export default function AgriDashboard() {
             image?: string;
             followUpOptions?: QuickReplyOption[] | null;
             usedFallback?: boolean;
+            incompleteProfile?: boolean;
         }[]
     }>({
         chat: [{ role: 'assistant', content: DEFAULT_CHAT_GREETING }],
@@ -399,6 +400,7 @@ export default function AgriDashboard() {
 
             const aiResponse = res.data.reply || res.data.response;
             const usedFallback = Boolean(res.data?.usedFallback);
+            const incompleteProfile = Boolean(res.data?.incomplete_profile);
             const newConvId = res.data.conversationId ? String(res.data.conversationId) : null;
 
             if (newConvId && !currentConversationId) {
@@ -406,6 +408,20 @@ export default function AgriDashboard() {
             }
             if (newConvId) {
                 setSkipAutoRestore(false);
+            }
+
+            if (incompleteProfile) {
+                setChatHistory(prev => ({
+                    ...prev,
+                    [targetTab]: [...prev[targetTab], {
+                        role: 'assistant',
+                        content: aiResponse,
+                        followUpOptions: null,
+                        usedFallback: false,
+                        incompleteProfile: true
+                    }]
+                }));
+                return;
             }
 
             await placeSearchPromise;
@@ -971,6 +987,20 @@ export default function AgriDashboard() {
                                                     <p className="mt-2 text-xs text-gray-400">
                                                         ⚠ Navi is having trouble connecting. Please try again in a moment.
                                                     </p>
+                                                ) : null}
+                                                {msg.role === 'assistant' && msg.incompleteProfile ? (
+                                                    <div className="mt-3">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setActiveTab('customer_profile');
+                                                                router.push('/?tab=customer_profile');
+                                                            }}
+                                                            className="rounded-full bg-green-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700"
+                                                        >
+                                                            Complete my profile
+                                                        </button>
+                                                    </div>
                                                 ) : null}
                                                 {msg.role === 'assistant' && msg.followUpOptions?.length && idx === messages.length - 1 ? (
                                                     <div className="mt-3 flex flex-wrap gap-2">

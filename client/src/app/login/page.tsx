@@ -25,7 +25,12 @@ function LoginForm() {
         setIsLoading(true);
         try {
             const res = await api.post('/auth/login', { email, password });
-            login(res.data.token, res.data.user, redirectPath);
+            if (res.data?.isNewUser) {
+                login(res.data.token, res.data.user, undefined);
+                router.push(`/signup?mode=kyc&redirect=${encodeURIComponent(redirectPath)}`);
+            } else {
+                login(res.data.token, res.data.user, redirectPath);
+            }
         } catch (err: any) {
             console.error('Login failed:', err);
             setError(err.response?.data?.error || 'Login failed. Please check your connection.');
@@ -61,10 +66,16 @@ function LoginForm() {
         try {
             // In a real app, this would redirect to Google OAuth
             const mockEmail = prompt("Enter your Google Email (Simulation):", "user@gmail.com");
+            const mockName = prompt("Enter your Google Name (Simulation):", "Google User");
 
             if (mockEmail) {
-                const res = await api.post('/auth/google-login', { email: mockEmail, name: 'Google User' });
-                login(res.data.token, res.data.user, redirectPath);
+                const res = await api.post('/auth/google-login', { email: mockEmail, name: mockName || 'Google User' });
+                if (res.data?.isNewUser) {
+                    login(res.data.token, res.data.user, undefined);
+                    router.push(`/signup?mode=kyc&redirect=${encodeURIComponent(redirectPath)}`);
+                } else {
+                    login(res.data.token, res.data.user, redirectPath);
+                }
             }
         } catch (err: any) {
             setError(err.response?.data?.error || 'Google login failed');

@@ -4,7 +4,7 @@ import axios from 'axios';
 import pool from '../db';
 import { authenticateToken } from '../middleware/auth';
 import { buildNaviSystemInstruction } from '../config/persona';
-import { fetchRoleProfileData } from '../services/profileContext';
+import { fetchRoleProfileData, isProfileComplete } from '../services/profileContext';
 
 const router = express.Router();
 let chatSchemaReady: Promise<void> | null = null;
@@ -648,6 +648,24 @@ Use this profile directly for personalization. Do not ask for details already pr
                 [userId, buildConversationTitle(message)]
             );
             activeConversationId = String(newConversation.rows[0].id);
+        }
+
+        const mergedProfile = {
+            ...profileData,
+            ...(profileData?.consumer_health_profile || {})
+        };
+
+        if (!isProfileComplete(mergedProfile)) {
+            return res.json({
+                reply: `Hey${promptFields.healthProfile?.full_name
+                    ? ' ' + promptFields.healthProfile.full_name.split(' ')[0]
+                    : ''}! Before we dive in, I need a little more info to personalise your experience. Can you complete your profile first?`,
+                response: `Hey${promptFields.healthProfile?.full_name
+                    ? ' ' + promptFields.healthProfile.full_name.split(' ')[0]
+                    : ''}! Before we dive in, I need a little more info to personalise your experience. Can you complete your profile first?`,
+                incomplete_profile: true,
+                conversationId: activeConversationId
+            });
         }
 
         await pool.query(

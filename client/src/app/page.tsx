@@ -2,14 +2,21 @@
 
 import { useAuth } from '../lib/auth';
 import LandingChatInterface from '../components/LandingChatInterface';
-import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect } from 'react';
 import AgriDashboard from '../components/AgriDashboard';
 
 export default function Home() {
   const { user, loading } = useAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const tab = searchParams.get('tab');
+
+  useEffect(() => {
+    if (!loading && !user && tab && tab !== 'landing') {
+      router.replace('/');
+    }
+  }, [loading, router, tab, user]);
 
   if (loading) return <div className="min-h-screen bg-white" />;
 
@@ -19,8 +26,7 @@ export default function Home() {
   }
 
   // 2. User is Logged In -> Default to Dashboard (Profile/Home)
-  //    OR User is Guest but navigating functional tabs
-  if (user || (tab && tab !== 'landing')) {
+  if (user) {
     return (
       <Suspense fallback={<div className="min-h-screen bg-white" />}>
         <AgriDashboard />

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import PlaceContextManager from '../places/PlaceContextManager';
 
 export default function DistributorDashboard() {
     const [activeTab, setActiveTab] = useState<'logistics' | 'processing' | 'dispatch'>('logistics');
@@ -62,6 +63,12 @@ export default function DistributorDashboard() {
                     <p className="text-2xl font-bold text-gray-900">42 <span className="text-sm font-normal text-gray-500">Orders</span></p>
                 </div>
             </div>
+
+            <PlaceContextManager
+                title="Place Menu Context"
+                subtitle="Add restaurants, cafes, juice bars, natural food stores, and raw produce inventories so Navi can recommend exact groceries, ingredients, meals, and drinks."
+                defaultKind="natural_food_store"
+            />
 
             {/* Main Tabs */}
             <div className="border-b border-gray-200 flex gap-6">

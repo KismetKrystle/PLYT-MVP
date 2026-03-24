@@ -27,6 +27,16 @@ type LastPlaceSearch = {
     location: string;
 };
 
+type SavedSuggestionState = {
+    suggestedPlaces: PlaceSuggestion[];
+    suggestedProducts: ProduceItem[];
+    lastPlaceSearch: LastPlaceSearch | null;
+    searchRadiusKm: number;
+    searchAreaLabel: string;
+    locationSourceLabel: string;
+    showPreview: boolean;
+};
+
 type QuickReplyOption = {
     id: string;
     label: string;
@@ -47,7 +57,6 @@ import FarmerDashboard from './dashboards/FarmerDashboard';
 import DistributorDashboard from './dashboards/DistributorDashboard';
 import ServicerDashboard from './dashboards/ServicerDashboard';
 import ProfileWorkspace from './consumer-health-profile/ProfileWorkspace';
-import CustomerProfileDashboard from './profile/CustomerProfileDashboard';
 
 const MOCK_PRODUCE_DB: Omit<ProduceItem, 'quantity'>[] = [
     { id: '1', name: 'Organic Red Tomatoes', price: 25000, unit: 'kg', plyt: '25', image: '/assets/images/store/cherry_tomatoes.png', description: 'Sweet, vine-ripened tomatoes grown in pesticide-free soil.', specs: ['Vitamin C Rich', 'Vine Ripened'], farm: 'Sunrise Farm', growMethod: 'Soil' },
@@ -156,7 +165,7 @@ export default function AgriDashboard() {
     useEffect(() => {
         const tab = searchParams.get('tab');
         if (tab && ['home', 'chat', 'find_produce', 'impact', 'guide', 'health_profiles', 'customer_profile'].includes(tab)) {
-            setActiveTab(tab as any);
+            setActiveTab(tab === 'customer_profile' ? 'home' : tab as Tab);
         }
     }, [searchParams]);
 
@@ -182,6 +191,7 @@ export default function AgriDashboard() {
     const [isRefreshingSuggestions, setIsRefreshingSuggestions] = useState(false);
     const [isSuggestionSettingsOpen, setIsSuggestionSettingsOpen] = useState(false);
     const [skipAutoRestore, setSkipAutoRestore] = useState(false);
+    const [isRestoringConversation, setIsRestoringConversation] = useState(false);
 
     const [selectedProduct, setSelectedProduct] = useState<ProductDetail | null>(null);
 
@@ -239,6 +249,55 @@ export default function AgriDashboard() {
         setSuggestedPlaces(normalizeSuggestedPlaces(incoming));
     };
 
+    const buildSuggestionState = (): SavedSuggestionState => ({
+        suggestedPlaces: normalizeSuggestedPlaces(suggestedPlaces),
+        suggestedProducts,
+        lastPlaceSearch,
+        searchRadiusKm,
+        searchAreaLabel,
+        locationSourceLabel,
+        showPreview
+    });
+
+    const applySuggestionState = (state?: Partial<SavedSuggestionState> | null) => {
+        const nextPlaces = Array.isArray(state?.suggestedPlaces)
+            ? normalizeSuggestedPlaces(state?.suggestedPlaces as PlaceSuggestion[])
+            : [];
+        const nextProducts = Array.isArray(state?.suggestedProducts)
+            ? (state?.suggestedProducts as ProduceItem[])
+            : [];
+        const nextLastPlaceSearch =
+            state?.lastPlaceSearch &&
+            typeof state.lastPlaceSearch === 'object' &&
+            Array.isArray(state.lastPlaceSearch.queries)
+                ? {
+                    message: String(state.lastPlaceSearch.message || ''),
+                    queries: state.lastPlaceSearch.queries.map((query) => String(query || '')).filter(Boolean),
+                    location: String(state.lastPlaceSearch.location || '')
+                }
+                : null;
+        const nextRadiusKm = Number.isFinite(Number(state?.searchRadiusKm))
+            ? Number(state?.searchRadiusKm)
+            : 25;
+
+        setSuggestedPlaces(nextPlaces);
+        setSuggestedProducts(nextProducts);
+        setLastPlaceSearch(nextLastPlaceSearch);
+        setSearchRadiusKm(nextRadiusKm);
+        setSearchAreaLabel(
+            typeof state?.searchAreaLabel === 'string' && state.searchAreaLabel.trim()
+                ? state.searchAreaLabel
+                : 'Current location'
+        );
+        setLocationSourceLabel(
+            typeof state?.locationSourceLabel === 'string' && state.locationSourceLabel.trim()
+                ? state.locationSourceLabel
+                : 'device'
+        );
+        setShowPreview(Boolean(state?.showPreview) || nextPlaces.length > 0 || nextProducts.length > 0);
+        setIsPanelOpen(nextPlaces.length > 0 || nextProducts.length > 0);
+    };
+
     const fetchAndMergePlaces = async (queries: string[], location: string, radiusKm: number, limit = 16) => {
         if (queries.length === 0) return [];
 
@@ -285,22 +344,27 @@ export default function AgriDashboard() {
 
     // Helper: Fetch history from DB
     const fetchConversationHistory = async (convId: string) => {
+        setIsRestoringConversation(true);
         setIsLoading(true);
         try {
             const res = await api.get(`/chat/history/${convId}`);
-            const messages = res.data.map((m: any) => ({
+            const historyData = Array.isArray(res.data) ? { messages: res.data, suggestionState: null } : (res.data || {});
+            const messages = Array.isArray(historyData.messages) ? historyData.messages.map((m: any) => ({
                 role: m.role,
                 content: m.content
-            }));
+            })) : [];
             setChatHistory(prev => ({
                 ...prev,
                 chat: messages.length > 0 ? messages : [{ role: 'assistant', content: DEFAULT_CHAT_GREETING }]
             }));
+            applySuggestionState(historyData.suggestionState);
             setCurrentConversationId(convId);
             setSkipAutoRestore(false);
         } catch (error) {
             console.error('Failed to fetch history:', error);
+            applySuggestionState(null);
         } finally {
+            setIsRestoringConversation(false);
             setIsLoading(false);
         }
     };
@@ -365,7 +429,8 @@ export default function AgriDashboard() {
                 visiblePlaces: suggestedPlaces.slice(0, 12)
             });
             const searchContextPromise = api.post('/chat/search-context', {
-                message: messageText
+                message: messageText,
+                tags: tags || []
             });
 
             let parallelPlaceQueries: string[] = [];
@@ -611,6 +676,35 @@ export default function AgriDashboard() {
             cancelled = true;
         };
     }, [user?.id, searchParams, currentConversationId, skipAutoRestore]);
+
+    useEffect(() => {
+        if (!user?.id || !currentConversationId || isRestoringConversation) {
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            void api.put(`/chat/history/${currentConversationId}/suggestion-state`, {
+                suggestionState: buildSuggestionState()
+            }).catch((error) => {
+                console.warn('Unable to save chat suggestion state.', error);
+            });
+        }, 250);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [
+        user?.id,
+        currentConversationId,
+        isRestoringConversation,
+        suggestedPlaces,
+        suggestedProducts,
+        lastPlaceSearch,
+        searchRadiusKm,
+        searchAreaLabel,
+        locationSourceLabel,
+        showPreview
+    ]);
 
     // Handle History ID Navigation
     useEffect(() => {
@@ -861,10 +955,6 @@ export default function AgriDashboard() {
                             <ImpactMetrics />
                         )}
 
-                        {activeTab === 'customer_profile' && (
-                            <CustomerProfileDashboard user={user} />
-                        )}
-
                         {activeTab === 'health_profiles' && (
                             <ProfileWorkspace />
                         )}
@@ -993,8 +1083,8 @@ export default function AgriDashboard() {
                                                         <button
                                                             type="button"
                                                             onClick={() => {
-                                                                setActiveTab('customer_profile');
-                                                                router.push('/?tab=customer_profile');
+                                                                setActiveTab('health_profiles');
+                                                                router.push('/?tab=health_profiles&profile=consumer');
                                                             }}
                                                             className="rounded-full bg-green-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700"
                                                         >

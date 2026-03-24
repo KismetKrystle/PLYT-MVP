@@ -2,25 +2,105 @@
 
 import { useState } from 'react';
 
-export default function OrdersPage() {
-    const [activeTab, setActiveTab] = useState('All');
-    const TABS = ['All', 'Food', 'Systems', 'Services'];
+type OrderCategory = 'Raw Produce' | 'Meals' | 'Products';
+type OrderTab = 'All' | OrderCategory;
+type SellerRole = 'Farmer' | 'Distributor' | 'Expert';
 
-    const ORDERS = [
-        { id: "#ORD-101", type: "Food", date: "Oct 24, 2024", status: "Delivered", total: 45000, items: "Tomatoes (2kg), Basil (1)" },
-        { id: "#ORD-102", type: "Systems", date: "Oct 20, 2024", status: "Shipped", total: 1250000, items: "Hydro-Starter Kit" },
-        { id: "#ORD-103", type: "Services", date: "Sep 15, 2024", status: "Completed", total: 150000, items: "System Maintenance (1hr)" },
-        { id: "#ORD-104", type: "Food", date: "Sep 10, 2024", status: "Delivered", total: 32000, items: "Kale (1kg)" },
+type OrderRow = {
+    id: string;
+    category: OrderCategory;
+    date: string;
+    status: string;
+    total: number;
+    items: string;
+    sellerName: string;
+    sellerRole: SellerRole;
+};
+
+export default function OrdersPage() {
+    const [activeTab, setActiveTab] = useState<OrderTab>('All');
+    const TABS: OrderTab[] = ['All', 'Raw Produce', 'Meals', 'Products'];
+
+    const ORDERS: OrderRow[] = [
+        {
+            id: '#ORD-101',
+            category: 'Raw Produce',
+            date: 'Oct 24, 2024',
+            status: 'Delivered',
+            total: 45000,
+            items: 'Tomatoes (2kg), Thai basil (1 bundle)',
+            sellerName: 'Sunrise Farm',
+            sellerRole: 'Farmer'
+        },
+        {
+            id: '#ORD-102',
+            category: 'Meals',
+            date: 'Oct 20, 2024',
+            status: 'Shipped',
+            total: 98000,
+            items: 'Green curry bowl (2), veggie wrap (1)',
+            sellerName: 'FreshRoute Foods',
+            sellerRole: 'Distributor'
+        },
+        {
+            id: '#ORD-103',
+            category: 'Products',
+            date: 'Sep 15, 2024',
+            status: 'Completed',
+            total: 150000,
+            items: 'Mineral-rich dressing set, recipe cards',
+            sellerName: 'Coach Amara',
+            sellerRole: 'Expert'
+        },
+        {
+            id: '#ORD-104',
+            category: 'Raw Produce',
+            date: 'Sep 10, 2024',
+            status: 'Delivered',
+            total: 32000,
+            items: 'Kale (1kg), bok choy (2 bundles)',
+            sellerName: 'GreenBridge Distribution',
+            sellerRole: 'Distributor'
+        },
+        {
+            id: '#ORD-105',
+            category: 'Products',
+            date: 'Sep 04, 2024',
+            status: 'Delivered',
+            total: 275000,
+            items: 'Starter sprouting kit, nutrition guide',
+            sellerName: 'Bali Harvest Co.',
+            sellerRole: 'Farmer'
+        },
     ];
 
-    const filtered = activeTab === 'All' ? ORDERS : ORDERS.filter(o => o.type === activeTab);
+    const filtered = activeTab === 'All'
+        ? ORDERS
+        : ORDERS.filter((order) => order.category === activeTab);
+
+    const categoryBadgeClass: Record<OrderCategory, string> = {
+        'Raw Produce': 'bg-green-100 text-green-700',
+        Meals: 'bg-amber-100 text-amber-700',
+        Products: 'bg-blue-100 text-blue-700'
+    };
+
+    const sellerBadgeClass: Record<SellerRole, string> = {
+        Farmer: 'bg-emerald-50 text-emerald-700',
+        Distributor: 'bg-slate-100 text-slate-700',
+        Expert: 'bg-violet-100 text-violet-700'
+    };
 
     return (
         <div className="container mx-auto px-4 py-8 max-w-5xl">
-            <h1 className="text-3xl font-bold text-gray-900 mb-6">Your Orders</h1>
+            <div className="mb-6">
+                <h1 className="text-3xl font-bold text-gray-900">Your Orders</h1>
+                <p className="mt-2 max-w-3xl text-sm text-gray-500">
+                    Raw produce and meals connect buyers with farmers and distributors. Products can also be listed by verified experts who have built community standing and hold the right certificates.
+                </p>
+            </div>
 
             {/* Filter Tabs */}
-            <div className="flex border-b border-gray-200 mb-6">
+            <div className="mb-6 flex border-b border-gray-200 overflow-x-auto">
                 {TABS.map(tab => (
                     <button
                         key={tab}
@@ -35,12 +115,13 @@ export default function OrdersPage() {
                 ))}
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
                 <table className="min-w-full divide-y divide-gray-100">
                     <thead className="bg-gray-50/50">
                         <tr>
                             <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Order ID</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Category</th>
+                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Seller</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Items</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
                             <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
@@ -52,12 +133,17 @@ export default function OrdersPage() {
                             <tr key={order.id} className="hover:bg-gray-50 transition">
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{order.id}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${order.type === 'Food' ? 'bg-green-100 text-green-700' :
-                                            order.type === 'Systems' ? 'bg-blue-100 text-blue-700' :
-                                                'bg-purple-100 text-purple-700'
-                                        }`}>
-                                        {order.type}
+                                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${categoryBadgeClass[order.category]}`}>
+                                        {order.category}
                                     </span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                    <div className="flex flex-col gap-1">
+                                        <span className="font-medium text-gray-900">{order.sellerName}</span>
+                                        <span className={`inline-flex w-fit rounded-full px-2 py-1 text-xs font-semibold ${sellerBadgeClass[order.sellerRole]}`}>
+                                            {order.sellerRole}
+                                        </span>
+                                    </div>
                                 </td>
                                 <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate" title={order.items}>
                                     {order.items}

@@ -2,8 +2,10 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 import { formatCurrency, Currency } from '../../lib/currency';
 import { useAuth } from '../../lib/auth';
+import { MOCK_DIGITAL_ASSETS, type DigitalAsset } from '../../lib/mockDigitalAssets';
 
 // -- Mock Data --
 const MOCK_TRANSACTIONS = [
@@ -18,19 +20,14 @@ const CONNECTED_ACCOUNTS = [
     { id: 3, type: 'E-Wallet', name: 'OVO', number: '', connected: false },
 ];
 
-// -- Mock NFTs --
-const MOCK_NFTS = [
-    { id: 'nft-001', name: 'VertiGrow Tower V2 #8839', type: 'System Identity', image: '/assets/images/systems/tower.jpg', hash: '0x71C...9A23', status: 'Active' },
-    { id: 'nft-002', name: 'Hydro Starter Kit #102', type: 'System Identity', image: '/assets/images/gallery/hydro_system.png', hash: '0x82B...1B44', status: 'Inactive' }
-];
-
 export default function WalletPage() {
     const { user } = useAuth();
+    const router = useRouter();
     const [currency, setCurrency] = useState<Currency>('IDR');
     const [activeTab, setActiveTab] = useState<'overview' | 'methods' | 'history' | 'assets'>('overview');
     const [showTopUpModal, setShowTopUpModal] = useState(false);
     const [showTransferModal, setShowTransferModal] = useState(false);
-    const [selectedAsset, setSelectedAsset] = useState<any>(null);
+    const [selectedAsset, setSelectedAsset] = useState<DigitalAsset | null>(null);
 
     // Mock Balances
     const balancePLYT = 1250;
@@ -42,7 +39,7 @@ export default function WalletPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Wallet</h1>
-                    <p className="text-gray-500">Manage your funds, payments, connected accounts, and digital assets.</p>
+                    <p className="text-gray-500">Manage your funds, payments, connected accounts, and minted resource NFTs.</p>
                 </div>
                 {/* Currency Toggler */}
                 <div className="bg-white p-1 rounded-xl border border-gray-200 shadow-sm flex self-start">
@@ -130,7 +127,10 @@ export default function WalletPage() {
 
                         {activeTab === 'assets' && (
                             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                                {MOCK_NFTS.map(nft => (
+                                <div className="rounded-2xl border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-800">
+                                    Recipes, books, and research uploads can be minted into NFTs and managed here.
+                                </div>
+                                {MOCK_DIGITAL_ASSETS.map(nft => (
                                     <div key={nft.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white rounded-xl border border-gray-100 shadow-sm gap-4 transition hover:shadow-md">
                                         <div className="flex items-center gap-4">
                                             <div className="w-16 h-16 rounded-lg bg-gray-100 relative overflow-hidden shrink-0">
@@ -140,13 +140,17 @@ export default function WalletPage() {
                                             <div>
                                                 <h4 className="font-bold text-gray-900">{nft.name}</h4>
                                                 <p className="text-xs text-gray-500 mb-1">{nft.type}</p>
+                                                <p className="text-xs text-gray-500 mb-2">{nft.mintedFrom} • Uploaded {nft.uploadedAt}</p>
                                                 <span className="inline-block px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-mono rounded">
                                                     {nft.hash}
                                                 </span>
                                             </div>
                                         </div>
                                         <div className="flex gap-2">
-                                            <button className="flex-1 sm:flex-none px-4 py-2 text-sm font-bold text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg transition">
+                                            <button
+                                                onClick={() => router.push(`/wallet/assets/${nft.id}`)}
+                                                className="flex-1 sm:flex-none px-4 py-2 text-sm font-bold text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg transition"
+                                            >
                                                 View
                                             </button>
                                             <button
@@ -161,7 +165,7 @@ export default function WalletPage() {
                                         </div>
                                     </div>
                                 ))}
-                                {MOCK_NFTS.length === 0 && (
+                                {MOCK_DIGITAL_ASSETS.length === 0 && (
                                     <div className="text-center py-12 text-gray-400">
                                         <p>No digital assets found.</p>
                                     </div>

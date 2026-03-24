@@ -452,7 +452,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                 {/* -- Box 6: Knowledge Bank (Row 3, Col 3-4) -- */}
                 <div
-                    onClick={() => setActiveModal('learn')}
+                    onClick={() => router.push('/knowledge-bank')}
                     className="col-span-2 md:col-span-2 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group"
                 >
                     <ActionButton type={isOwner ? 'edit' : 'like'} />

@@ -5,7 +5,9 @@ import {
     ensurePlaceProfileSchema,
     getPlaceProfileByExternalId,
     getPlaceProfileById,
-    listPlaceFeedback
+    listManagedPlaceProfiles,
+    listPlaceFeedback,
+    normalizeManagedPlaceKind
 } from '../services/placeProfiles';
 
 const router = express.Router();
@@ -13,6 +15,167 @@ const router = express.Router();
 function isAdmin(req: AuthRequest) {
     return req.user?.role === 'admin';
 }
+
+function canManagePlaces(req: AuthRequest) {
+    return ['admin', 'farmer', 'distributor'].includes(String(req.user?.role || '').trim());
+}
+
+router.get('/manage/mine', authenticateToken, async (req: AuthRequest, res: Response) => {
+    if (!canManagePlaces(req)) {
+        res.status(403).json({ error: 'Farmer or distributor access required' });
+        return;
+    }
+
+    try {
+        const rows = await listManagedPlaceProfiles(req.user?.id as string | number);
+        res.json(rows);
+    } catch (error) {
+        console.error('List managed place profiles error:', error);
+        res.status(500).json({ error: 'Failed to fetch managed place profiles' });
+    }
+});
+
+router.post('/manage', authenticateToken, async (req: AuthRequest, res: Response) => {
+    if (!canManagePlaces(req)) {
+        res.status(403).json({ error: 'Farmer or distributor access required' });
+        return;
+    }
+
+    try {
+        const userId = req.user?.id as string | number;
+        const {
+            placeProfileId,
+            name,
+            place_kind,
+            address,
+            website,
+            mapsUrl,
+            phone,
+            menu_context,
+            menu_sources,
+            raw_inventory_context,
+            raw_inventory_items
+        } = req.body || {};
+
+        const trimmedName = String(name || '').trim();
+        const trimmedAddress = String(address || '').trim();
+
+        if (!trimmedName) {
+            res.status(400).json({ error: 'Place name is required' });
+            return;
+        }
+
+        await ensurePlaceProfileSchema();
+
+        const normalizedKind = normalizeManagedPlaceKind(place_kind);
+        const normalizedSources = Array.isArray(menu_sources)
+            ? menu_sources
+                .filter((source) => source && typeof source === 'object')
+                .map((source) => ({
+                    id: String(source.id || '').trim() || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    name: String(source.name || '').trim(),
+                    type: String(source.type || 'text/plain').trim(),
+                    excerpt: String(source.excerpt || '').trim()
+                }))
+                .filter((source) => source.name || source.excerpt)
+            : [];
+        const normalizedInventoryItems = Array.isArray(raw_inventory_items)
+            ? raw_inventory_items
+                .filter((item) => item && typeof item === 'object')
+                .map((item, index) => ({
+                    id: String(item.id || '').trim() || `inventory-${Date.now()}-${index}`,
+                    name: String(item.name || '').trim(),
+                    detail: String(item.detail || '').trim()
+                }))
+                .filter((item) => item.name || item.detail)
+            : [];
+
+        if (placeProfileId) {
+            const existing = await pool.query(
+                `SELECT *
+                 FROM place_profiles
+                 WHERE id = $1
+                 LIMIT 1`,
+                [placeProfileId]
+            );
+
+            const row = existing.rows[0];
+            if (!row) {
+                res.status(404).json({ error: 'Place profile not found' });
+                return;
+            }
+
+            if (!isAdmin(req) && String(row.owner_user_id || row.created_by_user_id || '') !== String(userId)) {
+                res.status(403).json({ error: 'You do not manage this place profile' });
+                return;
+            }
+        }
+
+        const externalPlaceId = String(placeProfileId || `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+        const result = await pool.query(
+            `INSERT INTO place_profiles (
+                id,
+                external_source,
+                external_place_id,
+                name,
+                place_kind,
+                network_status,
+                owner_user_id,
+                created_by_user_id,
+                claimed_at,
+                profile_data,
+                updated_at
+            )
+             VALUES (
+                COALESCE($1::uuid, gen_random_uuid()),
+                'plyt_manual',
+                $2,
+                $3,
+                $4,
+                'on_network',
+                $5,
+                $5,
+                NOW(),
+                $6::jsonb,
+                NOW()
+             )
+             ON CONFLICT (id)
+             DO UPDATE SET
+                name = EXCLUDED.name,
+                place_kind = EXCLUDED.place_kind,
+                network_status = 'on_network',
+                owner_user_id = EXCLUDED.owner_user_id,
+                claimed_at = COALESCE(place_profiles.claimed_at, NOW()),
+                profile_data = COALESCE(place_profiles.profile_data, '{}'::jsonb) || EXCLUDED.profile_data,
+                updated_at = NOW()
+             RETURNING *`,
+            [
+                placeProfileId || null,
+                externalPlaceId,
+                trimmedName,
+                normalizedKind,
+                userId,
+                JSON.stringify({
+                    address: trimmedAddress,
+                    website: String(website || '').trim(),
+                    mapsUrl: String(mapsUrl || '').trim(),
+                    phone: String(phone || '').trim(),
+                    menu_context: String(menu_context || '').trim(),
+                    menu_sources: normalizedSources,
+                    raw_inventory_context: String(raw_inventory_context || '').trim(),
+                    raw_inventory_items: normalizedInventoryItems,
+                    place_type: normalizedKind,
+                    is_on_network: true
+                })
+            ]
+        );
+
+        res.status(placeProfileId ? 200 : 201).json(result.rows[0]);
+    } catch (error) {
+        console.error('Manage place profile save error:', error);
+        res.status(500).json({ error: 'Failed to save managed place profile' });
+    }
+});
 
 router.get('/external/:externalPlaceId', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {

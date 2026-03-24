@@ -2,6 +2,18 @@ import type { PoolClient } from 'pg';
 import pool from '../db';
 
 let placeProfileSchemaReady: Promise<void> | null = null;
+const ALLOWED_PLACE_KINDS = new Set([
+    'restaurant',
+    'cafe',
+    'juice_bar',
+    'natural_food_store',
+    'grocery',
+    'farm_stand',
+    'prepared_food',
+    'farm',
+    'distributor',
+    'other'
+]);
 
 async function getUsersIdType(client: PoolClient) {
     const usersIdTypeRes = await client.query(`
@@ -86,7 +98,7 @@ export async function ensurePlaceProfileSchema(client?: PoolClient) {
 
 export function inferPlaceKind(place: any) {
     const explicitKind = String(place?.place_kind || place?.kind || '').trim().toLowerCase();
-    if (explicitKind === 'restaurant' || explicitKind === 'farm' || explicitKind === 'distributor') {
+    if (ALLOWED_PLACE_KINDS.has(explicitKind)) {
         return explicitKind;
     }
 
@@ -102,9 +114,132 @@ export function inferPlaceKind(place: any) {
         .join(' ')
         .toLowerCase();
 
+    if (/(juice|smoothie|tonic|elixir)/.test(haystack)) return 'juice_bar';
+    if (/(cafe|coffee)/.test(haystack)) return 'cafe';
+    if (/(natural food|organic store|health store|wholefood)/.test(haystack)) return 'natural_food_store';
+    if (/(grocery|grocer|market|co-op|coop)/.test(haystack)) return 'grocery';
+    if (/(farm stand|stand)/.test(haystack)) return 'farm_stand';
     if (/(farm|farmer|orchard|grower|nursery|hydroponic|agro)/.test(haystack)) return 'farm';
-    if (/(distributor|distribution|wholesale|supplier|market|grocer|grocery|co-op|coop)/.test(haystack)) return 'distributor';
+    if (/(distributor|distribution|wholesale|supplier)/.test(haystack)) return 'distributor';
     return 'restaurant';
+}
+
+export function normalizeManagedPlaceKind(value: string | null | undefined) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return ALLOWED_PLACE_KINDS.has(normalized) ? normalized : 'other';
+}
+
+function combineMenuContext(profileData: any) {
+    const baseContext = typeof profileData?.menu_context === 'string' ? profileData.menu_context.trim() : '';
+    const sourceContext = Array.isArray(profileData?.menu_sources)
+        ? profileData.menu_sources
+            .map((source: any) => {
+                const name = String(source?.name || '').trim();
+                const excerpt = String(source?.excerpt || '').trim();
+                if (!excerpt) return '';
+                return name ? `${name}: ${excerpt}` : excerpt;
+            })
+            .filter(Boolean)
+            .join('\n\n')
+        : '';
+
+    return [baseContext, sourceContext].filter(Boolean).join('\n\n').trim();
+}
+
+function normalizeRawInventoryItems(profileData: any) {
+    if (!Array.isArray(profileData?.raw_inventory_items)) {
+        return [];
+    }
+
+    return profileData.raw_inventory_items
+        .map((item: any, index: number) => ({
+            id: String(item?.id || `inventory-${index + 1}`).trim() || `inventory-${index + 1}`,
+            name: String(item?.name || '').trim(),
+            detail: String(item?.detail || '').trim()
+        }))
+        .filter((item: { name: string; detail: string }) => item.name || item.detail);
+}
+
+function combineRawInventoryContext(profileData: any) {
+    const baseContext = typeof profileData?.raw_inventory_context === 'string'
+        ? profileData.raw_inventory_context.trim()
+        : '';
+    const itemContext = normalizeRawInventoryItems(profileData)
+        .map((item: { name: string; detail: string }) => item.detail ? `${item.name}: ${item.detail}` : item.name)
+        .filter(Boolean)
+        .join('\n');
+
+    return [baseContext, itemContext].filter(Boolean).join('\n').trim();
+}
+
+function countMatches(text: string, queries: string[]) {
+    const haystack = text.toLowerCase();
+    return queries.reduce((score, query) => (haystack.includes(query) ? score + 1 : score), 0);
+}
+
+function hasProduceIntent(queries: string[]) {
+    return queries.some((query) => /(ingredient|ingredients|produce|vegetable|vegetables|fruit|fruits|grocery|grocer|market|farm|farm stand|recipe|cook|cooking|meal prep|smoothie|juice|herb|spice)/.test(query));
+}
+
+function computePlaceSearchPriority(place: any, queries: string[]) {
+    const normalizedQueries = queries
+        .map((query) => String(query || '').trim().toLowerCase())
+        .filter(Boolean);
+
+    if (normalizedQueries.length === 0) {
+        return 0;
+    }
+
+    const inventoryContext = String(place?.raw_inventory_context || '').trim();
+    const menuContext = String(place?.menu_context || '').trim();
+    const name = String(place?.name || '').trim();
+    const address = String(place?.address || '').trim();
+
+    let score = 0;
+    score += countMatches(name, normalizedQueries) * 6;
+    score += countMatches(address, normalizedQueries) * 2;
+    score += countMatches(menuContext, normalizedQueries) * 4;
+    score += countMatches(inventoryContext, normalizedQueries) * 8;
+
+    if (inventoryContext && hasProduceIntent(normalizedQueries)) {
+        score += 18;
+    }
+
+    if (inventoryContext && /(farm|farm_stand|grocery|natural_food_store|distributor)/.test(String(place?.place_kind || ''))) {
+        score += 6;
+    }
+
+    return score;
+}
+
+function toSearchablePlaceResult(row: any) {
+    const profileData = row?.profile_data || {};
+    const googleMetadata = profileData?.google_metadata || {};
+    const rawInventoryItems = normalizeRawInventoryItems(profileData);
+
+    return {
+        id: row.external_source === 'plyt_manual' ? String(row.id) : String(row.external_place_id || row.id),
+        place_profile_id: String(row.id),
+        name: row.name,
+        address: String(profileData?.address || googleMetadata?.address || ''),
+        phone: String(profileData?.phone || googleMetadata?.phone || ''),
+        rating: Number.isFinite(Number(googleMetadata?.rating))
+            ? Number(googleMetadata.rating)
+            : (Number.isFinite(Number(row.average_rating)) ? Number(row.average_rating) : null),
+        reviewsCount: Number.isFinite(Number(googleMetadata?.reviewsCount))
+            ? Number(googleMetadata.reviewsCount)
+            : (Number.isFinite(Number(row.feedback_count)) ? Number(row.feedback_count) : 0),
+        website: String(profileData?.website || googleMetadata?.website || ''),
+        mapsUrl: String(profileData?.mapsUrl || googleMetadata?.mapsUrl || ''),
+        image: profileData?.image || googleMetadata?.image || null,
+        distance_km: null,
+        place_kind: row.place_kind,
+        network_status: row.network_status,
+        menu_context: combineMenuContext(profileData),
+        raw_inventory_context: combineRawInventoryContext(profileData),
+        raw_inventory_items: rawInventoryItems,
+        search_priority: 0
+    };
 }
 
 export function normalizePlaceProfileInput(place: any) {
@@ -312,4 +447,136 @@ export async function listPlaceFeedback(placeProfileId: string) {
         [placeProfileId]
     );
     return result.rows;
+}
+
+export async function listManagedPlaceProfiles(userId: string | number) {
+    await ensurePlaceProfileSchema();
+    const result = await pool.query(
+        `SELECT *
+         FROM place_profiles
+         WHERE owner_user_id = $1 OR created_by_user_id = $1
+         ORDER BY updated_at DESC, created_at DESC`,
+        [userId]
+    );
+
+    return result.rows;
+}
+
+export async function searchManagedPlaceProfiles(queries: string[], limit = 8) {
+    await ensurePlaceProfileSchema();
+    const normalizedQueries = Array.from(
+        new Set(
+            queries
+                .map((query) => String(query || '').trim().toLowerCase())
+                .filter((query) => query.length >= 2)
+        )
+    );
+
+    if (normalizedQueries.length === 0) {
+        return [];
+    }
+
+    const patterns = normalizedQueries.map((query) => `%${query}%`);
+    const result = await pool.query(
+        `SELECT *
+         FROM place_profiles
+         WHERE external_source = 'plyt_manual'
+           AND owner_user_id IS NOT NULL
+           AND (
+                 lower(name) LIKE ANY($1::text[])
+                 OR lower(COALESCE(profile_data->>'address', '')) LIKE ANY($1::text[])
+                 OR lower(COALESCE(profile_data->>'menu_context', '')) LIKE ANY($1::text[])
+                 OR lower(COALESCE(profile_data->>'raw_inventory_context', '')) LIKE ANY($1::text[])
+            )
+          ORDER BY updated_at DESC, created_at DESC
+          LIMIT $2`,
+        [patterns, Math.max(limit * 3, 12)]
+    );
+
+    return result.rows
+        .map((row) => {
+            const mapped = toSearchablePlaceResult(row);
+            return {
+                ...mapped,
+                search_priority: computePlaceSearchPriority(mapped, normalizedQueries)
+            };
+        })
+        .sort((a, b) => {
+            if (b.search_priority !== a.search_priority) {
+                return b.search_priority - a.search_priority;
+            }
+            return String(a.name || '').localeCompare(String(b.name || ''));
+        })
+        .slice(0, limit);
+}
+
+export async function hydratePlacesWithProfileData(places: any[]) {
+    await ensurePlaceProfileSchema();
+
+    if (!Array.isArray(places) || places.length === 0) {
+        return [];
+    }
+
+    const externalPlaceIds = Array.from(
+        new Set(
+            places
+                .map((place) => String(place?.id || '').trim())
+                .filter(Boolean)
+        )
+    );
+    const mapsUrls = Array.from(
+        new Set(
+            places
+                .map((place) => String(place?.mapsUrl || '').trim())
+                .filter(Boolean)
+        )
+    );
+
+    const result = await pool.query(
+        `SELECT *
+         FROM place_profiles
+         WHERE (array_length($1::text[], 1) IS NOT NULL AND external_place_id = ANY($1::text[]))
+            OR (array_length($2::text[], 1) IS NOT NULL AND profile_data->'google_metadata'->>'mapsUrl' = ANY($2::text[]))`,
+        [externalPlaceIds, mapsUrls]
+    );
+
+    const byExternalId = new Map<string, any>();
+    const byMapsUrl = new Map<string, any>();
+
+    result.rows.forEach((row) => {
+        if (row?.external_place_id) {
+            byExternalId.set(String(row.external_place_id), row);
+        }
+
+        const mapsUrl = String(row?.profile_data?.google_metadata?.mapsUrl || '').trim();
+        if (mapsUrl) {
+            byMapsUrl.set(mapsUrl, row);
+        }
+    });
+
+    return places.map((place) => {
+        const profile =
+            byExternalId.get(String(place?.id || '').trim()) ||
+            byMapsUrl.get(String(place?.mapsUrl || '').trim());
+
+        if (!profile) {
+            return place;
+        }
+
+        const profileData = profile?.profile_data || {};
+        const googleMetadata = profileData?.google_metadata || {};
+
+        return {
+            ...place,
+            place_profile_id: String(profile.id),
+            place_kind: profile.place_kind || place.place_kind || inferPlaceKind(place),
+            network_status: profile.network_status || place.network_status || 'not_on_network',
+            website: place.website || profileData.website || googleMetadata.website || '',
+            mapsUrl: place.mapsUrl || profileData.mapsUrl || googleMetadata.mapsUrl || '',
+            phone: place.phone || profileData.phone || googleMetadata.phone || '',
+            menu_context: combineMenuContext(profileData),
+            raw_inventory_context: combineRawInventoryContext(profileData),
+            raw_inventory_items: normalizeRawInventoryItems(profileData)
+        };
+    });
 }

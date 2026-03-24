@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import PlaceContextManager from '../places/PlaceContextManager';
 
 export default function FarmerDashboard() {
     const [activeTab, setActiveTab] = useState<'overview' | 'harvest' | 'orders' | 'systems'>('overview');
@@ -58,6 +59,12 @@ export default function FarmerDashboard() {
                     <p className="text-gray-500 text-xs font-medium mt-1">Lifetime</p>
                 </div>
             </div>
+
+            <PlaceContextManager
+                title="Farm Stand Context"
+                subtitle="Add your farm stand, harvest table, produce inventory, or prepared-food pickup context so chat can name exact ingredients, produce, drinks, and ready items from your place."
+                defaultKind="farm_stand"
+            />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Harvest Logs */}

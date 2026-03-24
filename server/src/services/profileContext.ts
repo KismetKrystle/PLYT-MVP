@@ -2,13 +2,39 @@ import pool from '../db';
 
 type Role = 'consumer' | 'farmer' | 'expert' | 'distributor' | string;
 
+function normalizeProfileLocation(profile: any) {
+    const rawLocation = profile?.location;
+
+    if (rawLocation && typeof rawLocation === 'object' && !Array.isArray(rawLocation)) {
+        return {
+            city: String(rawLocation.city || profile?.location_city || '').trim(),
+            address: String(rawLocation.address || profile?.location_address || '').trim()
+        };
+    }
+
+    const stringLocation = typeof rawLocation === 'string' ? rawLocation.trim() : '';
+    return {
+        city: String(profile?.location_city || '').trim(),
+        address: String(profile?.location_address || stringLocation).trim()
+    };
+}
+
 export async function fetchRoleProfileData(userId: string | number, role: Role) {
-    const userResult = await pool.query('SELECT profile_data FROM users WHERE id = $1 LIMIT 1', [userId]);
+    const userResult = await pool.query('SELECT name, profile_data FROM users WHERE id = $1 LIMIT 1', [userId]);
     const userProfile = userResult.rows[0]?.profile_data || {};
+    const accountName = String(userResult.rows[0]?.name || '').trim();
 
     const consumerResult = await pool.query('SELECT profile_data FROM consumer_profiles WHERE user_id = $1 LIMIT 1', [userId]);
     const consumerProfile = consumerResult.rows[0]?.profile_data || {};
-    const consumerHealthProfile = { ...userProfile, ...consumerProfile };
+    const mergedProfile = { ...userProfile, ...consumerProfile };
+    const normalizedLocation = normalizeProfileLocation(mergedProfile);
+    const consumerHealthProfile = {
+        ...mergedProfile,
+        full_name: String(mergedProfile?.full_name || accountName || '').trim(),
+        location: normalizedLocation,
+        location_city: normalizedLocation.city,
+        location_address: normalizedLocation.address
+    };
 
     if (role === 'consumer') {
         return consumerHealthProfile;
@@ -44,14 +70,15 @@ export async function fetchRoleProfileData(userId: string | number, role: Role) 
 }
 
 export function isProfileComplete(profile: any): boolean {
+    const normalizedLocation = normalizeProfileLocation(profile);
+    const fullName = String(profile?.full_name || profile?.name || '').trim();
+
     return (
         Array.isArray(profile?.health_conditions) &&
         profile.health_conditions.length > 0 &&
         Array.isArray(profile?.dietary_preferences) &&
         profile.dietary_preferences.length > 0 &&
-        typeof profile?.full_name === 'string' &&
-        profile.full_name.trim().length > 0 &&
-        typeof profile?.location?.city === 'string' &&
-        profile.location.city.trim().length > 0
+        fullName.length > 0 &&
+        (normalizedLocation.city.length > 0 || normalizedLocation.address.length > 0)
     );
 }

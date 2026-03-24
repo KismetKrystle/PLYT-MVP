@@ -16,6 +16,8 @@ type ConsumerProfile = {
     notes?: string;
     health_documents?: HealthDocument[];
     location: string | { city?: string; address?: string };
+    location_city?: string;
+    location_address?: string;
 };
 
 type BusinessProfile = {
@@ -176,14 +178,25 @@ function normalizeLocation(value: ConsumerProfile['location']) {
 }
 
 function toConsumerFormState(data: Partial<ConsumerProfile> | Record<string, any>) {
+    const rawData = data as Record<string, any>;
     const knownAllergyIds = new Set<string>(COMMON_ALLERGIES.map((item) => item.id));
     const knownConditionIds = new Set<string>(HEALTH_CONDITIONS.map((item) => item.id));
     const knownDietIds = new Set<string>(DIETARY_PREFERENCES.map((item) => item.id));
     const knownGoalIds = new Set<string>(HEALTH_GOALS.map((item) => item.id));
-    const allergies = Array.isArray(data?.allergies) ? data.allergies : [];
-    const conditions = Array.isArray(data?.health_conditions) ? data.health_conditions : [];
-    const dietaryPreferences = Array.isArray(data?.dietary_preferences) ? data.dietary_preferences : [];
-    const wellnessGoals = Array.isArray(data?.wellness_goals) ? data.wellness_goals : [];
+    const allergies = Array.isArray(rawData?.allergies) ? rawData.allergies : [];
+    const conditions = Array.isArray(rawData?.health_conditions) ? rawData.health_conditions : [];
+    const dietaryPreferences = Array.isArray(rawData?.dietary_preferences) ? rawData.dietary_preferences : [];
+    const wellnessGoals = Array.isArray(rawData?.wellness_goals) ? rawData.wellness_goals : [];
+
+    const rawLocation = rawData?.location;
+    const locationAddress =
+        typeof rawLocation === 'string'
+            ? rawLocation
+            : (rawLocation?.address || rawData?.location_address || '');
+    const locationCity =
+        typeof rawLocation === 'object' && rawLocation
+            ? (rawLocation.city || rawData?.location_city || '')
+            : (rawData?.location_city || '');
 
     return {
         dietary_preferences: dietaryPreferences.filter((item) => knownDietIds.has(item)),
@@ -194,9 +207,10 @@ function toConsumerFormState(data: Partial<ConsumerProfile> | Record<string, any
         other_allergies: allergies.filter((item) => !knownAllergyIds.has(item)).join(', '),
         wellness_goals: wellnessGoals.filter((item) => knownGoalIds.has(item)),
         other_wellness_goals: wellnessGoals.filter((item) => !knownGoalIds.has(item)).join(', '),
-        location: normalizeLocation((data?.location || '') as ConsumerProfile['location']),
-        notes: typeof data?.notes === 'string' ? data.notes : '',
-        health_documents: Array.isArray(data?.health_documents) ? data.health_documents : []
+        location: normalizeLocation(locationAddress as ConsumerProfile['location']),
+        location_city: String(locationCity || '').trim(),
+        notes: typeof rawData?.notes === 'string' ? rawData.notes : '',
+        health_documents: Array.isArray(rawData?.health_documents) ? rawData.health_documents : []
     };
 }
 
@@ -321,7 +335,7 @@ const inputCls =
     'w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500';
 
 export default function ProfileWorkspace() {
-    const { user } = useAuth();
+    const { user, login } = useAuth();
     const router = useRouter();
     const searchParams = useSearchParams();
     const mode = getMode(searchParams.get('profile'));
@@ -335,6 +349,7 @@ export default function ProfileWorkspace() {
     const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
     const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestion[]>([]);
     const [isLocationSearching, setIsLocationSearching] = useState(false);
+    const [isLocatingHome, setIsLocatingHome] = useState(false);
     const [locationStatus, setLocationStatus] = useState<string | null>(null);
     const [isEditingLocation, setIsEditingLocation] = useState(false);
     const [consumerTab, setConsumerTab] = useState<'profile' | 'report'>('report');
@@ -352,6 +367,7 @@ export default function ProfileWorkspace() {
         wellness_goals: [] as string[],
         other_wellness_goals: '',
         location: '',
+        location_city: '',
         notes: '',
         health_documents: [] as HealthDocument[]
     });
@@ -427,7 +443,12 @@ export default function ProfileWorkspace() {
                 }
 
                 if (mode === 'consumer') {
-                    setConsumerForm(toConsumerFormState(data as ConsumerProfile));
+                    setConsumerForm(
+                        toConsumerFormState({
+                            ...((user as any)?.profile_data || {}),
+                            ...(data as ConsumerProfile)
+                        })
+                    );
                     setNoteDraft('');
                 } else if (mode === 'business') {
                     const p = data as BusinessProfile;
@@ -545,7 +566,12 @@ export default function ProfileWorkspace() {
                 ...consumerForm.wellness_goals,
                 ...fromCsv(consumerForm.other_wellness_goals.toLowerCase())
             ],
-            location: consumerForm.location,
+            location: {
+                city: consumerForm.location_city.trim(),
+                address: consumerForm.location.trim()
+            },
+            location_city: consumerForm.location_city.trim(),
+            location_address: consumerForm.location.trim(),
             notes: consumerForm.notes.trim(),
             health_documents: consumerForm.health_documents
         };
@@ -642,6 +668,50 @@ export default function ProfileWorkspace() {
         }));
     };
 
+    const handleUseCurrentLocation = async () => {
+        setIsLocatingHome(true);
+        setLocationStatus('Detecting your current location...');
+        setLocationSuggestions([]);
+
+        try {
+            const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(
+                    resolve,
+                    reject,
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+                );
+            });
+
+            const res = await api.get('/consumer-health-profile/location-suggestions/reverse-geocode', {
+                params: {
+                    lat: pos.coords.latitude,
+                    lng: pos.coords.longitude
+                }
+            });
+
+            const detectedAddress = String(res.data?.address || '').trim();
+            const detectedCity = String(res.data?.city || '').trim();
+
+            if (!detectedAddress) {
+                setLocationStatus('We found your location, but could not turn it into an address. You can still type it manually.');
+                return;
+            }
+
+            setConsumerForm((prev) => ({
+                ...prev,
+                location: detectedAddress,
+                location_city: detectedCity
+            }));
+            setIsEditingLocation(false);
+            setLocationStatus('Home location pinned from your current location.');
+        } catch (error) {
+            console.error('Pin current location failed:', error);
+            setLocationStatus('Could not access your current location. Please allow location access or type your home address.');
+        } finally {
+            setIsLocatingHome(false);
+        }
+    };
+
     useEffect(() => {
         if (!consumerForm.location.trim()) {
             setIsEditingLocation(true);
@@ -677,6 +747,15 @@ export default function ProfileWorkspace() {
                 user_id: user.id,
                 profile_data: buildProfileData()
             });
+            try {
+                const meRes = await api.get('/user/me');
+                const currentToken = localStorage.getItem('token') || '';
+                if (currentToken && meRes.data) {
+                    login(currentToken, meRes.data, undefined);
+                }
+            } catch (refreshError) {
+                console.warn('Unable to refresh user session after health profile save.', refreshError);
+            }
             setHasProfile(true);
             setLastUpdatedAt(new Date().toLocaleString());
             setStatus('Saved successfully.');
@@ -752,12 +831,27 @@ export default function ProfileWorkspace() {
                             </div>
                         ) : (
                             <div>
+                                <div className="mb-2 flex items-center justify-between gap-3">
+                                    <p className="text-xs text-gray-500">Set the home area PLYT should use when live location is unavailable.</p>
+                                    <button
+                                        type="button"
+                                        onClick={handleUseCurrentLocation}
+                                        disabled={isLocatingHome}
+                                        className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-[11px] font-semibold text-green-700 transition hover:bg-green-100 disabled:opacity-60"
+                                    >
+                                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v3m0 12v3m9-9h-3M6 12H3m15.364 6.364-2.121-2.121M8.757 8.757 6.636 6.636m11.728 0-2.121 2.121M8.757 15.243l-2.121 2.121" />
+                                            <circle cx="12" cy="12" r="3" strokeWidth="2" />
+                                        </svg>
+                                        {isLocatingHome ? 'Pinning home...' : 'Use current location'}
+                                    </button>
+                                </div>
                                 <div className="flex items-center gap-2">
                                     <input
                                         className={inputCls}
                                         placeholder="Address, area, ZIP code, or postcode"
                                         value={consumerForm.location}
-                                        onChange={(e) => setConsumerForm({ ...consumerForm, location: e.target.value })}
+                                        onChange={(e) => setConsumerForm({ ...consumerForm, location: e.target.value, location_city: '' })}
                                     />
                                     <button
                                         type="button"
@@ -778,7 +872,11 @@ export default function ProfileWorkspace() {
                                                 key={`${suggestion.placeId}-${suggestion.description}`}
                                                 type="button"
                                                 onClick={() => {
-                                                    setConsumerForm({ ...consumerForm, location: suggestion.description });
+                                                    setConsumerForm({
+                                                        ...consumerForm,
+                                                        location: suggestion.description,
+                                                        location_city: suggestion.secondaryText.split(',')[0]?.trim() || ''
+                                                    });
                                                     setLocationSuggestions([]);
                                                     setIsEditingLocation(false);
                                                 }}
@@ -789,6 +887,9 @@ export default function ProfileWorkspace() {
                                             </button>
                                         ))}
                                     </div>
+                                ) : null}
+                                {consumerForm.location_city ? (
+                                    <p className="mt-2 text-xs text-gray-400">Detected area: {consumerForm.location_city}</p>
                                 ) : null}
                             </div>
                         )}

@@ -15,9 +15,12 @@ import orderRoutes from './routes/orders';
 import walletRoutes from './routes/wallet';
 import chatRoutes from './routes/chat';
 import placeProfileRoutes from './routes/place-profiles';
+import digitalAssetRoutes from './routes/digital-assets';
+import profileLibraryRoutes from './routes/profile-library';
 import consumerHealthProfileRoutes from './routes/consumer-health-profile';
 import farmerProfileRoutes from './routes/farmer-profiles';
 import expertProfileRoutes from './routes/expert-profiles';
+import messagesToAdminRoutes from './routes/messages-to-admin';
 import { softAuthenticateToken } from './middleware/softAuth';
 import { checkGatekeeper } from './middleware/gatekeeper';
 
@@ -25,7 +28,7 @@ const app: Express = express();
 const port = process.env.PORT || 4000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
 
 // Global Middleware (Order matters!)
 app.use(softAuthenticateToken);
@@ -45,6 +48,9 @@ app.use('/inventory', inventoryRoutes);
 app.use('/grow', growRoutes);
 app.use('/order', orderRoutes);
 app.use('/wallet', walletRoutes);
+app.use('/digital-assets', digitalAssetRoutes);
+app.use('/profile-library', profileLibraryRoutes);
+app.use('/messages-to-admin', messagesToAdminRoutes);
 app.use('/chat', chatRoutes);
 app.use('/place-profiles', placeProfileRoutes);
 

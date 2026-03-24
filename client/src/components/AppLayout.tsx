@@ -1,12 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../lib/auth';
 import { useLessons } from '../context/LessonContext';
 import { useCart } from '../context/CartContext';
 import Logo from './Logo';
-import { useEffect, useState } from 'react';
+import { MouseEvent, useEffect, useState } from 'react';
 import RightSidebar from './RightSidebar';
 import api from '../lib/api';
 
@@ -20,8 +20,21 @@ type ChatConversationSummary = {
     updated_at: string;
 };
 
+function extractFavoriteConversationIds(favoriteChats: unknown): string[] {
+    if (!Array.isArray(favoriteChats)) return [];
+
+    return favoriteChats
+        .map((entry) => {
+            if (typeof entry === 'string') return entry.trim();
+            if (!entry || typeof entry !== 'object') return '';
+            return String((entry as { id?: unknown }).id || '').trim();
+        })
+        .filter(Boolean);
+}
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
+    const router = useRouter();
     const searchParams = useSearchParams();
     const { logout, user, loading, openLoginModal } = useAuth();
     const { totalItems } = useCart();
@@ -35,7 +48,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [currency, setCurrency] = useState<Currency>('IDR');
     const [isSearchTipOpen, setIsSearchTipOpen] = useState(false);
     const [conversationList, setConversationList] = useState<ChatConversationSummary[]>([]);
+    const [favoriteConversationIds, setFavoriteConversationIds] = useState<string[]>([]);
+    const [conversationActionIds, setConversationActionIds] = useState<string[]>([]);
     const { savedLessons, activeLesson, setActiveLesson } = useLessons();
+
+    const requestSignIn = () => {
+        setLeftSidebarOpen(false);
+        setIsProfileOpen(false);
+        openLoginModal();
+    };
+
+    const handleProtectedNavigation = (event: MouseEvent<HTMLElement>) => {
+        if (user) return false;
+        event.preventDefault();
+        requestSignIn();
+        return true;
+    };
 
     useEffect(() => {
         if (searchParams.get('tab') === 'chat') {
@@ -46,20 +74,117 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         if (!user?.id) {
             setConversationList([]);
+            setFavoriteConversationIds([]);
             return;
         }
 
         const fetchConversationList = async () => {
-            try {
-                const res = await api.get('/chat/history');
-                setConversationList(Array.isArray(res.data) ? res.data : []);
-            } catch (error) {
-                console.warn('Unable to load chat history list in sidebar.', error);
+            const [historyResult, favoritesResult] = await Promise.allSettled([
+                api.get('/chat/history'),
+                api.get('/favorites')
+            ]);
+
+            if (historyResult.status === 'fulfilled') {
+                setConversationList(Array.isArray(historyResult.value.data) ? historyResult.value.data : []);
+            } else {
+                console.warn('Unable to load chat history list in sidebar.', historyResult.reason);
+            }
+
+            if (favoritesResult.status === 'fulfilled') {
+                setFavoriteConversationIds(
+                    extractFavoriteConversationIds(favoritesResult.value.data?.favorite_chats)
+                );
+            } else {
+                console.warn('Unable to load favorite chats in sidebar.', favoritesResult.reason);
             }
         };
 
         void fetchConversationList();
     }, [user?.id, searchParams]);
+
+    const updateConversationBusyState = (conversationId: string, isBusy: boolean) => {
+        setConversationActionIds((current) => {
+            if (isBusy) {
+                return current.includes(conversationId) ? current : [...current, conversationId];
+            }
+
+            return current.filter((id) => id !== conversationId);
+        });
+    };
+
+    const handleToggleFavoriteConversation = async (
+        event: MouseEvent<HTMLButtonElement>,
+        conversation: ChatConversationSummary
+    ) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (!user) {
+            requestSignIn();
+            return;
+        }
+
+        if (conversationActionIds.includes(conversation.id)) {
+            return;
+        }
+
+        const isFavorite = favoriteConversationIds.includes(conversation.id);
+        updateConversationBusyState(conversation.id, true);
+
+        try {
+            const response = isFavorite
+                ? await api.delete(`/favorites/chats/${conversation.id}`)
+                : await api.post('/favorites/chats', {
+                    conversationId: conversation.id,
+                    title: conversation.title
+                });
+
+            setFavoriteConversationIds(
+                extractFavoriteConversationIds(response.data?.favorite_chats)
+            );
+        } catch (error) {
+            console.warn('Unable to update favorite chat state.', error);
+        } finally {
+            updateConversationBusyState(conversation.id, false);
+        }
+    };
+
+    const handleDeleteConversation = async (
+        event: MouseEvent<HTMLButtonElement>,
+        conversation: ChatConversationSummary
+    ) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (!user) {
+            requestSignIn();
+            return;
+        }
+
+        if (conversationActionIds.includes(conversation.id)) {
+            return;
+        }
+
+        if (!window.confirm(`Delete "${conversation.title}" from your chat history?`)) {
+            return;
+        }
+
+        updateConversationBusyState(conversation.id, true);
+
+        try {
+            await api.delete(`/chat/history/${conversation.id}`);
+            setConversationList((current) => current.filter((entry) => entry.id !== conversation.id));
+            setFavoriteConversationIds((current) => current.filter((id) => id !== conversation.id));
+
+            if (searchParams.get('conversationId') === conversation.id) {
+                router.push('/?tab=chat&newChat=1');
+            }
+        } catch (error) {
+            console.warn('Unable to delete chat history item.', error);
+        } finally {
+            updateConversationBusyState(conversation.id, false);
+        }
+    };
 
     useEffect(() => {
         if (!user?.id) {
@@ -86,11 +211,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (pathname === '/signup') return <>{children}</>;
 
     const NAV_ITEMS = [
-        {
-            name: 'Community', href: '/?tab=home', icon: (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-            )
-        },
         {
             name: 'About You', href: '/?tab=customer_profile', icon: (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
@@ -261,7 +381,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 return (
                                     <div key={item.name} className="flex flex-col">
                                         <button
-                                            onClick={() => setIsChatsOpen(!isChatsOpen)}
+                                            onClick={(event) => {
+                                                if (handleProtectedNavigation(event)) return;
+                                                setIsChatsOpen(!isChatsOpen);
+                                            }}
                                             className={`flex items-center justify-between w-full px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 group ${isActive || isChatsOpen
                                                 ? 'bg-green-50 text-green-700 shadow-sm border border-green-100'
                                                 : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 border border-transparent'
@@ -286,14 +409,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                             <div className="pl-11 pr-2 space-y-1">
                                                 <Link
                                                     href="/?tab=chat&newChat=1"
-                                                    onClick={() => setLeftSidebarOpen(false)}
+                                                    onClick={(event) => {
+                                                        if (handleProtectedNavigation(event)) return;
+                                                        setLeftSidebarOpen(false);
+                                                    }}
                                                     className="block px-3 py-2 text-xs font-medium rounded-lg text-gray-500 hover:bg-gray-50 hover:text-green-600 transition-colors border border-transparent hover:border-gray-100"
                                                 >
                                                     New chat
                                                 </Link>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setIsChatHistoryOpen((prev) => !prev)}
+                                                    onClick={(event) => {
+                                                        if (handleProtectedNavigation(event)) return;
+                                                        setIsChatHistoryOpen((prev) => !prev);
+                                                    }}
                                                     className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium rounded-lg text-gray-500 hover:bg-gray-50 hover:text-green-600 transition-colors border border-transparent hover:border-gray-100"
                                                 >
                                                     <span>History</span>
@@ -310,21 +439,68 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                     <div className="pl-2 space-y-1">
                                                         {conversationList.length > 0 ? (
                                                             conversationList.map((conversation) => (
-                                                                <Link
+                                                                <div
                                                                     key={conversation.id}
-                                                                    href={`/?tab=chat&conversationId=${conversation.id}`}
-                                                                    onClick={() => setLeftSidebarOpen(false)}
                                                                     className={`block rounded-lg px-3 py-2 text-xs transition-colors border ${
                                                                         searchParams.get('conversationId') === conversation.id
                                                                             ? 'border-green-200 bg-green-50 text-green-700'
                                                                             : 'border-transparent text-gray-500 hover:bg-gray-50 hover:text-green-600 hover:border-gray-100'
                                                                     }`}
                                                                 >
-                                                                    <p className="truncate font-medium">{conversation.title}</p>
-                                                                    <p className="mt-0.5 text-[10px] text-gray-400">
-                                                                        {new Date(conversation.updated_at).toLocaleDateString()}
-                                                                    </p>
-                                                                </Link>
+                                                                    <div className="flex items-start gap-2">
+                                                                        <Link
+                                                                            href={`/?tab=chat&conversationId=${conversation.id}`}
+                                                                            onClick={(event) => {
+                                                                                if (handleProtectedNavigation(event)) return;
+                                                                                setLeftSidebarOpen(false);
+                                                                            }}
+                                                                            className="min-w-0 flex-1"
+                                                                        >
+                                                                            <p className="truncate font-medium">{conversation.title}</p>
+                                                                            <p className="mt-0.5 text-[10px] text-gray-400">
+                                                                                {new Date(conversation.updated_at).toLocaleDateString()}
+                                                                            </p>
+                                                                        </Link>
+                                                                        <div className="flex shrink-0 items-center gap-1">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(event) => handleToggleFavoriteConversation(event, conversation)}
+                                                                                disabled={conversationActionIds.includes(conversation.id)}
+                                                                                className={`rounded-full p-1 transition-colors ${
+                                                                                    favoriteConversationIds.includes(conversation.id)
+                                                                                        ? 'text-amber-500 hover:bg-amber-50'
+                                                                                        : 'text-gray-400 hover:bg-gray-100 hover:text-amber-500'
+                                                                                } disabled:cursor-not-allowed disabled:opacity-50`}
+                                                                                aria-label={
+                                                                                    favoriteConversationIds.includes(conversation.id)
+                                                                                        ? `Remove ${conversation.title} from favorites`
+                                                                                        : `Add ${conversation.title} to favorites`
+                                                                                }
+                                                                                title={
+                                                                                    favoriteConversationIds.includes(conversation.id)
+                                                                                        ? 'Remove favorite'
+                                                                                        : 'Favorite chat'
+                                                                                }
+                                                                            >
+                                                                                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.12 3.445a1 1 0 00.95.69h3.622c.969 0 1.371 1.24.588 1.81l-2.931 2.13a1 1 0 00-.364 1.118l1.12 3.445c.3.921-.755 1.688-1.538 1.118l-2.931-2.13a1 1 0 00-1.176 0l-2.931 2.13c-.783.57-1.838-.197-1.539-1.118l1.12-3.445a1 1 0 00-.363-1.118l-2.93-2.13c-.784-.57-.381-1.81.587-1.81h3.623a1 1 0 00.95-.69l1.12-3.445z" />
+                                                                                </svg>
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(event) => handleDeleteConversation(event, conversation)}
+                                                                                disabled={conversationActionIds.includes(conversation.id)}
+                                                                                className="rounded-full p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                                                                aria-label={`Delete ${conversation.title}`}
+                                                                                title="Delete chat"
+                                                                            >
+                                                                                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7 18.133 19.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3M4 7h16" />
+                                                                                </svg>
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
                                                             ))
                                                         ) : (
                                                             <p className="px-3 py-2 text-[11px] text-gray-400">No saved chats yet.</p>
@@ -341,7 +517,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 <Link
                                     key={item.name}
                                     href={item.href}
-                                    onClick={() => setLeftSidebarOpen(false)}
+                                    onClick={(event) => {
+                                        if (handleProtectedNavigation(event)) return;
+                                        setLeftSidebarOpen(false);
+                                    }}
                                     className={`flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 group ${isActive
                                         ? 'bg-green-50 text-green-700 shadow-sm border border-green-100'
                                         : item.name === 'Guide'
@@ -506,7 +685,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                 className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
                                             >
                                                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A10 10 0 1118.88 17.8M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                Customer Profile Page
+                                                About You
                                             </Link>
                                             <Link
                                                 href={user ? "/?tab=health_profiles&profile=consumer" : "#"}
@@ -583,21 +762,47 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
                 {/* Mobile Navigation Footer (Fixed Bottom) */}
                 <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-100 md:hidden z-50 flex items-center justify-around px-2">
-                    <Link href="/systems" className={`flex flex-col items-center p-2 ${pathname === '/systems' ? 'text-green-600' : 'text-gray-400'}`}>
+                    <Link
+                        href="/systems"
+                        onClick={(event) => {
+                            if (handleProtectedNavigation(event)) return;
+                        }}
+                        className={`flex flex-col items-center p-2 ${pathname === '/systems' ? 'text-green-600' : 'text-gray-400'}`}
+                    >
                         <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m8-10a2 2 0 11-4 0 2 2 0 014 0zm0 6a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                     </Link>
 
-                    <Link href="/?tab=chat" className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'chat' ? 'text-green-600' : 'text-gray-400'}`}>
+                    <Link
+                        href="/?tab=chat"
+                        onClick={(event) => {
+                            if (handleProtectedNavigation(event)) return;
+                        }}
+                        className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'chat' ? 'text-green-600' : 'text-gray-400'}`}
+                    >
                         <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
                     </Link>
 
                     <div className="relative -top-5">
-                        <Link href="/?tab=home" className="w-14 h-14 bg-green-600 rounded-full flex items-center justify-center text-white shadow-lg border-4 border-gray-50">
+                        <Link
+                            href={user ? "/?tab=home" : "/"}
+                            onClick={(event) => {
+                                if (user) return;
+                                event.preventDefault();
+                                setLeftSidebarOpen(false);
+                            }}
+                            className="w-14 h-14 bg-green-600 rounded-full flex items-center justify-center text-white shadow-lg border-4 border-gray-50"
+                        >
                             <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
                         </Link>
                     </div>
 
-                    <Link href="/?tab=find_produce" className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'find_produce' ? 'text-green-600' : 'text-gray-400'}`}>
+                    <Link
+                        href="/?tab=find_produce"
+                        onClick={(event) => {
+                            if (handleProtectedNavigation(event)) return;
+                        }}
+                        className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'find_produce' ? 'text-green-600' : 'text-gray-400'}`}
+                    >
                         <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
                     </Link>
 

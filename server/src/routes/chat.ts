@@ -5,6 +5,7 @@ import pool from '../db';
 import { authenticateToken } from '../middleware/auth';
 import { buildNaviSystemInstruction } from '../config/persona';
 import { fetchRoleProfileData, isProfileComplete } from '../services/profileContext';
+import { hydratePlacesWithProfileData, searchManagedPlaceProfiles } from '../services/placeProfiles';
 
 const router = express.Router();
 let chatSchemaReady: Promise<void> | null = null;
@@ -33,6 +34,11 @@ async function ensureChatConversationSchema() {
             await pool.query(`
                 ALTER TABLE chat_history
                 ADD COLUMN IF NOT EXISTS conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE;
+            `);
+
+            await pool.query(`
+                ALTER TABLE conversations
+                ADD COLUMN IF NOT EXISTS suggestion_state JSONB;
             `);
 
             await pool.query(`
@@ -139,12 +145,66 @@ function detectFulfillmentFollowUp(responseText: string) {
     ];
 }
 
-function inferFulfillmentMode(message: string) {
+const TAG_INTENT_HINTS: Record<string, { mode: 'raw_produce' | 'ready_to_eat' | 'prepared_for_later' | 'recipe_ideas' | 'advice'; hints: string[] }> = {
+    fresh: {
+        mode: 'raw_produce',
+        hints: ['fresh produce', 'market', 'grocery', 'farm stand', 'raw ingredients']
+    },
+    cooked: {
+        mode: 'ready_to_eat',
+        hints: ['ready to eat', 'restaurant', 'cafe', 'cooked meal', 'prepared dish']
+    },
+    'meal prep': {
+        mode: 'prepared_for_later',
+        hints: ['meal prep', 'prepared for later', 'healthy meal prep', 'prepared meals']
+    },
+    receipes: {
+        mode: 'recipe_ideas',
+        hints: ['recipe ideas', 'cook at home', 'ingredients for recipes', 'what should I cook']
+    },
+    recipes: {
+        mode: 'recipe_ideas',
+        hints: ['recipe ideas', 'cook at home', 'ingredients for recipes', 'what should I cook']
+    },
+    advice: {
+        mode: 'advice',
+        hints: ['nutrition advice', 'food advice', 'what is best for me', 'guidance']
+    }
+};
+
+function normalizeChatTags(tags: any): string[] {
+    if (!Array.isArray(tags)) return [];
+    return Array.from(new Set(
+        tags
+            .map((tag) => String(tag || '').trim())
+            .filter(Boolean)
+    ));
+}
+
+function getTagSearchHints(tags: string[]) {
+    return normalizeChatTags(tags)
+        .flatMap((tag) => TAG_INTENT_HINTS[String(tag).toLowerCase()]?.hints || []);
+}
+
+function buildChatMessageFallback(message: string, tags: string[]) {
+    const trimmed = String(message || '').trim();
+    if (trimmed) return trimmed;
+    const normalizedTags = normalizeChatTags(tags);
+    if (normalizedTags.length === 0) return '';
+    return `Subject: ${normalizedTags.join(', ')}`;
+}
+
+function inferFulfillmentMode(message: string, tags: string[] = []) {
     const text = message.toLowerCase();
     if (/(recipe|cook|make|prepare at home|how do i make)/.test(text)) return 'recipe_ideas';
     if (/(meal prep|prepared for later|prep ahead|for later)/.test(text)) return 'prepared_for_later';
     if (/(produce|market|grocer|grocery|ingredients|farmers market|vegetable|fruit)/.test(text)) return 'raw_produce';
     if (/(restaurant|cafe|takeout|delivery|ready to eat|eat out|meal near me|salad|smoothie|juice|bowl)/.test(text)) return 'ready_to_eat';
+    const normalizedTags = normalizeChatTags(tags);
+    for (const tag of normalizedTags) {
+        const config = TAG_INTENT_HINTS[String(tag).toLowerCase()];
+        if (config) return config.mode;
+    }
     return 'unknown';
 }
 
@@ -198,9 +258,11 @@ function buildCravingUpgradeQueries(baseFood: string, profileData: any) {
     return Array.from(queries);
 }
 
-function buildSearchQueries(message: string, profileData: any) {
-    const mode = inferFulfillmentMode(message);
-    const foods = extractFoodTerms(message);
+function buildSearchQueries(message: string, profileData: any, tags: string[] = []) {
+    const normalizedTags = normalizeChatTags(tags);
+    const augmentedMessage = [String(message || '').trim(), ...getTagSearchHints(normalizedTags)].filter(Boolean).join(' ');
+    const mode = inferFulfillmentMode(augmentedMessage, normalizedTags);
+    const foods = extractFoodTerms(augmentedMessage);
     const modifiers = buildDietModifiers(profileData);
     const baseFood = foods[0] || 'healthy food';
     const queries = new Set<string>();
@@ -236,6 +298,8 @@ function buildSearchQueries(message: string, profileData: any) {
         withModifiers('prepared meals');
     } else if (mode === 'recipe_ideas') {
         return [];
+    } else if (mode === 'advice') {
+        return [];
     } else {
         withModifiers(`${baseFood} restaurant`);
         withModifiers(`${baseFood} cafe`);
@@ -243,6 +307,48 @@ function buildSearchQueries(message: string, profileData: any) {
     }
 
     return Array.from(queries).slice(0, 6);
+}
+
+function queryHasProduceIntent(queries: string[]) {
+    return queries.some((query) => /(ingredient|ingredients|produce|vegetable|vegetables|fruit|fruits|grocery|grocer|market|farmer|farm stand|recipe|cook|cooking|meal prep|herb|spice)/.test(String(query).toLowerCase()));
+}
+
+function inferSearchPlaceKind(place: any) {
+    const explicitKind = String(place?.place_kind || '').trim().toLowerCase();
+    if (explicitKind) return explicitKind;
+
+    const haystack = [
+        place?.name,
+        place?.address,
+        place?.website,
+        Array.isArray(place?.types) ? place.types.join(' ') : ''
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+    if (/(farmer.?s market|farm stand|produce stand)/.test(haystack)) return 'farm_stand';
+    if (/(grocery|supermarket|market|food store|health food|organic store|co-op|coop)/.test(haystack)) return 'grocery';
+    if (/(natural food|wholefood)/.test(haystack)) return 'natural_food_store';
+    if (/(farm|orchard|grower)/.test(haystack)) return 'farm';
+    if (/(restaurant|meal_takeaway|meal_delivery|bar|bakery)/.test(haystack)) return 'restaurant';
+    if (/(cafe|coffee|juice|smoothie)/.test(haystack)) return 'cafe';
+    return 'other';
+}
+
+function placeKindIntentBias(place: any, queries: string[]) {
+    if (!queryHasProduceIntent(queries)) {
+        return 0;
+    }
+
+    const kind = inferSearchPlaceKind(place);
+    if (kind === 'farm_stand' || kind === 'farm') return 26;
+    if (kind === 'grocery' || kind === 'natural_food_store') return 22;
+    if (kind === 'distributor') return 18;
+    if (kind === 'prepared_food') return 4;
+    if (kind === 'restaurant') return -16;
+    if (kind === 'cafe') return -12;
+    return 0;
 }
 
 function buildFallbackChatResponse(message: string, profileData: any, location?: string) {
@@ -409,7 +515,14 @@ async function searchGooglePlaces(query: string, location?: string, maxRadiusKm?
             website: detail.website || '',
             mapsUrl: detail.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
             image,
-            distance_km: km
+            distance_km: km,
+            types: Array.isArray(result.types) ? result.types : [],
+            place_kind: inferSearchPlaceKind({
+                name: detail.name || result.name || query,
+                address: detail.formatted_address || result.formatted_address || '',
+                website: detail.website || '',
+                types: Array.isArray(result.types) ? result.types : []
+            })
         };
     }));
 
@@ -433,7 +546,7 @@ async function buildPlaceRecommendationReply(message: string, places: any[], pro
         return '';
     }
 
-        const topPlaces = places.slice(0, 12).map((place: any, index: number) => ({
+    const topPlaces = places.slice(0, 12).map((place: any, index: number) => ({
         rank: index + 1,
         name: place.name,
         address: place.address,
@@ -441,7 +554,10 @@ async function buildPlaceRecommendationReply(message: string, places: any[], pro
         rating: place.rating,
         reviewsCount: place.reviewsCount,
         website: place.website || '',
-        mapsUrl: place.mapsUrl
+        mapsUrl: place.mapsUrl,
+        place_kind: place.place_kind || '',
+        menu_context: typeof place.menu_context === 'string' ? place.menu_context : '',
+        raw_inventory_context: typeof place.raw_inventory_context === 'string' ? place.raw_inventory_context : ''
     }));
 
     const promptFields = getPromptProfileFields(profileData, userRole);
@@ -462,7 +578,12 @@ async function buildPlaceRecommendationReply(message: string, places: any[], pro
 - Pick the best 2 or 3 options based on likely fit, convenience, and quality.
 - Mention that there are more options in the suggestions panel.
 - Keep the tone warm, practical, and companion-like.
-- Use the user's health profile naturally when choosing which places or drinks to highlight.
+- Use the user's health profile quietly in the background when choosing what to highlight.
+- Do not repeatedly explain, summarize, or restate the user's health conditions unless they directly ask for that reasoning.
+- If raw_inventory_context is available for a place and the user is asking for groceries, produce, or recipe ingredients, prioritize that place first.
+- Use raw_inventory_context to name exact produce, pantry ingredients, herbs, or grocery items when available.
+- If menu_context is available for a place, use it to recommend specific meals or drinks by name.
+- Prefer exact item suggestions from menu_context over generic place-only suggestions when possible.
 - Do not invent places that are not in the list.
 - Keep the response concise: usually 2 short paragraphs plus a short bullet list at most.
 - If distance is available, prefer nearer places when quality seems comparable.`
@@ -484,12 +605,14 @@ ${JSON.stringify(topPlaces, null, 2)}
 
 Write a short reply using this structure:
 1. Acknowledge the craving warmly.
-2. Explain in one sentence what would address that craving better through the user's health profile.
-3. Name the best 2 or 3 places from this exact list that fit that upgraded direction best.
+2. Name the best 2 or 3 places from this exact list that fit the request best.
+3. If raw_inventory_context is available for a place, name a specific produce item or ingredient from that context when relevant.
+4. If menu_context is available for a place, name a specific meal or drink from that context.
 
 Rules:
 - Do not turn this into a generic ratings summary.
 - Do not recommend a conflicting option just because it is nearby or highly rated.
+- Only mention the user's health conditions if it materially changes the recommendation and adds clear value in that exact reply.
 - If the craving is burger, coffee, sweets, fried food, or alcohol, steer toward the upgrade version of it.
 - Mention that there are more options in the suggestions panel.
 - Keep it to 2 or 3 sentences total.`;
@@ -536,7 +659,10 @@ async function buildSuggestionAwareReply(message: string, places: any[], profile
         rating: place.rating,
         reviewsCount: place.reviewsCount,
         website: place.website || '',
-        mapsUrl: place.mapsUrl
+        mapsUrl: place.mapsUrl,
+        place_kind: place.place_kind || '',
+        menu_context: typeof place.menu_context === 'string' ? place.menu_context : '',
+        raw_inventory_context: typeof place.raw_inventory_context === 'string' ? place.raw_inventory_context : ''
     }));
 
     const promptFields = getPromptProfileFields(profileData, userRole);
@@ -556,7 +682,10 @@ async function buildSuggestionAwareReply(message: string, places: any[], profile
 - Treat the list as the source of truth.
 - If the user asks whether these places have a specific item, be honest when you cannot confirm exact menu availability.
 - In that case, say which places are the best candidates from the current list instead of pretending to know.
-- Use the user's health profile naturally when deciding what to highlight.
+- If raw_inventory_context is available, use it to name specific produce or ingredient items.
+- If menu_context is available, use it to name specific dishes or drinks.
+- Use the user's health profile quietly in the background when deciding what to highlight.
+- Do not restate the user's health conditions unless it is necessary to avoid a clear conflict or they explicitly ask why.
 - Keep the tone warm, natural, and companion-like.
 - Keep it concise.`
         ]
@@ -568,7 +697,7 @@ ${message}
 Current displayed suggestions:
 ${JSON.stringify(topPlaces, null, 2)}
 
-Answer the user's follow-up using this exact list. If exact menu availability is unknown, say that clearly and point them to the best candidates from the current list.`;
+Answer the user's follow-up using this exact list. If exact menu availability is unknown, say that clearly and point them to the best candidates from the current list. If a place has raw_inventory_context or menu_context, use that to be more specific.`;
 
     try {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -587,13 +716,15 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
 
     await ensureChatConversationSchema();
 
-    const { message, location, visiblePlaces, conversationId } = req.body || {};
+    const { message, location, visiblePlaces, conversationId, tags } = req.body || {};
     const user = (req as any).user;
     const userId = user?.id;
     const userRole = user?.role || 'consumer';
+    const normalizedTags = normalizeChatTags(tags);
+    const effectiveMessage = buildChatMessageFallback(String(message || ''), normalizedTags);
 
-    if (!message) {
-        res.status(400).json({ error: 'Message is required' });
+    if (!effectiveMessage) {
+        res.status(400).json({ error: 'Message or subject tag is required' });
         return;
     }
 
@@ -645,7 +776,7 @@ Use this profile directly for personalization. Do not ask for details already pr
                 `INSERT INTO conversations (user_id, title)
                  VALUES ($1, $2)
                  RETURNING id`,
-                [userId, buildConversationTitle(message)]
+                [userId, buildConversationTitle(effectiveMessage)]
             );
             activeConversationId = String(newConversation.rows[0].id);
         }
@@ -671,7 +802,7 @@ Use this profile directly for personalization. Do not ask for details already pr
         await pool.query(
             `INSERT INTO chat_history (user_id, conversation_id, role, message)
              VALUES ($1, $2, $3, $4)`,
-            [userId, activeConversationId, 'user', message]
+            [userId, activeConversationId, 'user', effectiveMessage]
         );
 
         const historyRes = await pool.query(
@@ -700,7 +831,7 @@ Use this profile directly for personalization. Do not ask for details already pr
 
         const currentVisiblePlaces = Array.isArray(visiblePlaces) ? visiblePlaces.slice(0, 12) : [];
         const isSuggestionFollowUp = currentVisiblePlaces.length > 0 && messageReferencesCurrentPlaces(message);
-        const searchQueries = isSuggestionFollowUp ? [] : buildSearchQueries(message, profileData);
+        const searchQueries = isSuggestionFollowUp ? [] : buildSearchQueries(effectiveMessage, profileData, normalizedTags);
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         let aiResponse = '';
         let modelName = 'fallback-local';
@@ -708,11 +839,11 @@ Use this profile directly for personalization. Do not ask for details already pr
         let usedFallback = false;
 
         if (isSuggestionFollowUp) {
-            aiResponse = await buildSuggestionAwareReply(message, currentVisiblePlaces, profileData, userRole);
+            aiResponse = await buildSuggestionAwareReply(effectiveMessage, currentVisiblePlaces, profileData, userRole);
             modelName = 'suggestion-aware';
         } else {
             try {
-                const completion = await generateWithFallbackModels(genAI, message, systemInstruction, cleanHistory);
+                const completion = await generateWithFallbackModels(genAI, effectiveMessage, systemInstruction, cleanHistory);
                 aiResponse = completion.text;
                 modelName = completion.modelName;
                 triedModels = completion.tried;
@@ -724,7 +855,7 @@ Use this profile directly for personalization. Do not ask for details already pr
                     stack: generationError?.stack?.split('\n')[0]
                 });
                 console.warn('AI generation failed, using local fallback reply:', generationError?.message || generationError);
-                aiResponse = buildSmartFallbackChatResponse(message, profileData, location);
+                aiResponse = buildSmartFallbackChatResponse(effectiveMessage, profileData, location);
                 triedModels = generationError?.triedModels || [];
                 usedFallback = true;
             }
@@ -741,7 +872,7 @@ Use this profile directly for personalization. Do not ask for details already pr
              SET updated_at = NOW(),
                  title = COALESCE(NULLIF(title, ''), $1)
              WHERE id = $2 AND user_id = $3`,
-            [buildConversationTitle(message), activeConversationId, userId]
+            [buildConversationTitle(effectiveMessage), activeConversationId, userId]
         );
 
         res.json({
@@ -765,24 +896,56 @@ Use this profile directly for personalization. Do not ask for details already pr
 });
 
 router.post('/search-context', authenticateToken, async (req: Request, res: Response) => {
-    const { message } = req.body || {};
+    const { message, tags } = req.body || {};
     const user = (req as any).user;
     const userId = user?.id;
     const userRole = user?.role || 'consumer';
+    const normalizedTags = normalizeChatTags(tags);
+    const effectiveMessage = buildChatMessageFallback(String(message || ''), normalizedTags);
 
-    if (!message) {
-        res.status(400).json({ error: 'Message is required' });
+    if (!effectiveMessage) {
+        res.status(400).json({ error: 'Message or subject tag is required' });
         return;
     }
 
     try {
         const profileData = await fetchRoleProfileData(userId, userRole);
-        const searchQueries = buildSearchQueries(String(message), profileData);
+        const searchQueries = buildSearchQueries(effectiveMessage, profileData, normalizedTags);
         res.json({ searchQueries });
     } catch (error: any) {
         res.status(500).json({ error: 'Failed to build search context', details: error.message });
     }
 });
+
+function queryHasInventoryIntent(queries: string[]) {
+    return queries.some((query) => /(ingredient|ingredients|produce|vegetable|vegetables|fruit|fruits|grocery|grocer|market|recipe|cook|cooking|meal prep|farm|farm stand|herb|spice)/.test(String(query).toLowerCase()));
+}
+
+function placeInventoryPriority(place: any, queries: string[]) {
+    const normalizedQueries = queries
+        .map((query) => String(query || '').trim().toLowerCase())
+        .filter(Boolean);
+    const inventoryContext = String(place?.raw_inventory_context || '').toLowerCase();
+    const menuContext = String(place?.menu_context || '').toLowerCase();
+    const name = String(place?.name || '').toLowerCase();
+    const address = String(place?.address || '').toLowerCase();
+
+    let score = Number(place?.search_priority || 0);
+    score += placeKindIntentBias(place, normalizedQueries);
+
+    if (inventoryContext && queryHasInventoryIntent(normalizedQueries)) {
+        score += 20;
+    }
+
+    normalizedQueries.forEach((query) => {
+        if (inventoryContext.includes(query)) score += 8;
+        if (menuContext.includes(query)) score += 4;
+        if (name.includes(query)) score += 4;
+        if (address.includes(query)) score += 1;
+    });
+
+    return score;
+}
 
 router.post('/places', authenticateToken, async (req: Request, res: Response) => {
     const { queries, location, radiusKm, limit } = req.body || {};
@@ -799,6 +962,7 @@ router.post('/places', authenticateToken, async (req: Request, res: Response) =>
         )).slice(0, 8);
 
         const keyConfigured = Boolean(process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY);
+        const managedPlaces = await searchManagedPlaceProfiles(uniqueQueries, 8);
         const grouped = await Promise.all(uniqueQueries.map(async (query) => {
             try {
                 const places = await searchGooglePlaces(query, location, Number(radiusKm));
@@ -835,6 +999,27 @@ router.post('/places', authenticateToken, async (req: Request, res: Response) =>
 
         const places = Array.from(deduped.values())
             .sort((a, b) => {
+                const priorityDiff = placeKindIntentBias(b, uniqueQueries) - placeKindIntentBias(a, uniqueQueries);
+                if (priorityDiff !== 0) return priorityDiff;
+                if (a.distance_km == null && b.distance_km == null) return 0;
+                if (a.distance_km == null) return 1;
+                if (b.distance_km == null) return -1;
+                return a.distance_km - b.distance_km;
+            })
+            .slice(0, requestedLimit);
+        const hydratedPlaces = await hydratePlacesWithProfileData(places);
+        let mergedPlaces = Array.from<any>(
+            [...managedPlaces, ...hydratedPlaces].reduce((map, place) => {
+                const key = String(place.place_profile_id || `${place.name}-${place.address}-${place.mapsUrl || ''}`);
+                if (!map.has(key)) {
+                    map.set(key, place);
+                }
+                return map;
+            }, new Map<string, any>()).values()
+        )
+            .sort((a, b) => {
+                const priorityDiff = placeInventoryPriority(b, uniqueQueries) - placeInventoryPriority(a, uniqueQueries);
+                if (priorityDiff !== 0) return priorityDiff;
                 if (a.distance_km == null && b.distance_km == null) return 0;
                 if (a.distance_km == null) return 1;
                 if (b.distance_km == null) return -1;
@@ -842,7 +1027,14 @@ router.post('/places', authenticateToken, async (req: Request, res: Response) =>
             })
             .slice(0, requestedLimit);
 
-        res.json({ places, enriched: keyConfigured });
+        if (queryHasProduceIntent(uniqueQueries)) {
+            const produceFirst = mergedPlaces.filter((place) => placeKindIntentBias(place, uniqueQueries) >= 0);
+            if (produceFirst.length >= 3) {
+                mergedPlaces = produceFirst.slice(0, requestedLimit);
+            }
+        }
+
+        res.json({ places: mergedPlaces, enriched: keyConfigured });
     } catch (error: any) {
         res.status(500).json({ error: 'Failed to fetch places', details: error.message });
     }
@@ -916,7 +1108,10 @@ router.get('/history/:id', authenticateToken, async (req: Request, res: Response
     const historyId = String(req.params.id);
 
     const conversationRes = await pool.query(
-        `SELECT id FROM conversations WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        `SELECT id, suggestion_state
+         FROM conversations
+         WHERE id = $1 AND user_id = $2
+         LIMIT 1`,
         [historyId, userId]
     );
 
@@ -932,10 +1127,133 @@ router.get('/history/:id', authenticateToken, async (req: Request, res: Response
              ORDER BY created_at ASC`,
             [userId, historyId]
         );
-        res.json(messages.rows);
+        res.json({
+            messages: messages.rows,
+            suggestionState: conversationRes.rows[0]?.suggestion_state || null
+        });
     } catch (error) {
         console.error('History detail error:', error);
         res.status(500).json({ error: 'Failed to fetch messages' });
+    }
+});
+
+router.put('/history/:id/suggestion-state', authenticateToken, async (req: Request, res: Response) => {
+    await ensureChatConversationSchema();
+    const userId = String((req as any).user.id);
+    const historyId = String(req.params.id || '').trim();
+    const suggestionState = req.body?.suggestionState ?? null;
+
+    if (!historyId) {
+        res.status(400).json({ error: 'conversationId is required' });
+        return;
+    }
+
+    try {
+        const updateResult = await pool.query(
+            `UPDATE conversations
+             SET suggestion_state = $1::jsonb
+             WHERE id = $2 AND user_id = $3
+             RETURNING id, suggestion_state`,
+            [JSON.stringify(suggestionState), historyId, userId]
+        );
+
+        if (updateResult.rows.length === 0) {
+            res.status(404).json({ error: 'Conversation not found' });
+            return;
+        }
+
+        res.json({
+            success: true,
+            conversationId: historyId,
+            suggestionState: updateResult.rows[0]?.suggestion_state || null
+        });
+    } catch (error) {
+        console.error('Suggestion state save error:', error);
+        res.status(500).json({ error: 'Failed to save suggestion state' });
+    }
+});
+
+router.delete('/history/:id', authenticateToken, async (req: Request, res: Response) => {
+    await ensureChatConversationSchema();
+    const userId = String((req as any).user.id);
+    const historyId = String(req.params.id || '').trim();
+
+    if (!historyId) {
+        res.status(400).json({ error: 'conversationId is required' });
+        return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        const conversationRes = await client.query(
+            `SELECT id
+             FROM conversations
+             WHERE id = $1 AND user_id = $2
+             LIMIT 1`,
+            [historyId, userId]
+        );
+
+        if (conversationRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            res.status(404).json({ error: 'Conversation not found' });
+            return;
+        }
+
+        await client.query(
+            `DELETE FROM conversations
+             WHERE id = $1 AND user_id = $2`,
+            [historyId, userId]
+        );
+
+        const userRes = await client.query(
+            `SELECT profile_data
+             FROM users
+             WHERE id = $1
+             LIMIT 1`,
+            [userId]
+        );
+
+        if (userRes.rows.length > 0) {
+            const profileData = userRes.rows[0]?.profile_data || {};
+            const currentFavoriteChats = Array.isArray(profileData.favorite_chats)
+                ? profileData.favorite_chats
+                : [];
+            const nextFavoriteChats = currentFavoriteChats.filter((entry: any) => {
+                if (typeof entry === 'string') return entry !== historyId;
+                if (!entry || typeof entry !== 'object') return false;
+                return String(entry.id || '').trim() !== historyId;
+            });
+
+            await client.query(
+                `UPDATE users
+                 SET profile_data = $2::jsonb,
+                     updated_at = NOW()
+                 WHERE id = $1`,
+                [
+                    userId,
+                    JSON.stringify({
+                        ...profileData,
+                        favorite_chats: nextFavoriteChats
+                    })
+                ]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true, conversationId: historyId });
+    } catch (error) {
+        try {
+            await client.query('ROLLBACK');
+        } catch {
+            // Ignore rollback errors after the original failure.
+        }
+        console.error('History delete error:', error);
+        res.status(500).json({ error: 'Failed to delete conversation' });
+    } finally {
+        client.release();
     }
 });
 

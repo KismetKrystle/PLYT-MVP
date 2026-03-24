@@ -8,13 +8,13 @@ import Logo from './Logo';
 import api from '../lib/api';
 import { useAuth } from '../lib/auth';
 
-// Preset tags for the suggestion chips
+// Preset tags for the subject chips
 const PRESET_TAGS = [
-    'Find Produce',
-    'Learn to Grow',
-    'Pick a System',
-    'Sell Produce',
-    'Get Service',
+    'Fresh',
+    'Cooked',
+    'Meal Prep',
+    'Receipes',
+    'Advice',
 ];
 
 export default function LandingChatInterface() {
@@ -159,9 +159,9 @@ export default function LandingChatInterface() {
                         animate={{ opacity: 1, y: 0 }}
                         className="text-3xl md:text-6xl font-extrabold text-gray-900 tracking-tight leading-tight"
                     >
-                        What are you looking for, <br />
+                        What's your <br />
                         <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-600 to-emerald-600">
-                            food or advice?
+                            craving?
                         </span>
                     </motion.h1>
                     <motion.p
@@ -170,7 +170,7 @@ export default function LandingChatInterface() {
                         transition={{ delay: 0.2 }}
                         className="text-sm md:text-lg text-gray-500 font-light max-w-xl mx-auto hidden md:block" // Hide subtitle on small mobile to save space? Or just make it smaller.
                     >
-                        Your intelligent network for local food independence.
+                        Food advice that actually knows you.
                     </motion.p>
                     <motion.p // Mobile subtitle
                         initial={{ opacity: 0 }}
@@ -178,8 +178,11 @@ export default function LandingChatInterface() {
                         transition={{ delay: 0.2 }}
                         className="text-sm text-gray-500 font-light max-w-xs mx-auto md:hidden"
                     >
-                        Your network for food independence.
+                        Know what you eat. Own how you feel.
                     </motion.p>
+                    <p className="text-xs text-gray-400 max-w-xl mx-auto">
+                        Mention a city, area, ZIP code, or neighborhood if you want search outside your current location.
+                    </p>
                 </div>
 
                 {/* Chat Interface Container */}
@@ -254,7 +257,7 @@ export default function LandingChatInterface() {
                     </div>
                 </motion.div>
 
-                {/* Prescription Tags (Quick Select) */}
+                {/* Subject Chips */}
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -291,7 +294,7 @@ export default function LandingChatInterface() {
 
             {/* Simple Footer */}
             <footer className="w-full py-4 text-center text-xs text-gray-300 relative z-10">
-                © 2025 PLYT Network. All rights reserved.
+                © 2026 PLYT Network. All rights reserved.
             </footer>
         </div>
     );

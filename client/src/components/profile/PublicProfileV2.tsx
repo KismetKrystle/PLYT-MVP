@@ -370,7 +370,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                 {/* -- Box 3: Stats (Row 2, Col 1) -- */}
                 {/* -- Box 3: Stats (Row 2, Col 1) -- */}
-                <Link href="/?tab=customer_profile" className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex flex-col justify-center items-center text-center hover:border-green-400 cursor-pointer group">
+                <Link href="/health-challenges" className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex flex-col justify-center items-center text-center hover:border-green-400 cursor-pointer group">
                     <p className="text-gray-400 text-xs font-bold uppercase tracking-wider group-hover:text-green-600 transition-colors">Health Streak</p>
                     <p className="text-5xl font-extrabold text-gray-900 mt-2 group-hover:scale-110 transition-transform">{healthyDays}</p>
                     <p className="text-xs text-green-600 font-medium mt-2 bg-green-50 px-2 py-1 rounded-full">Improving Daily</p>

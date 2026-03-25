@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import MarketTicker from './MarketTicker';
 import Logo from './Logo';
-import api from '../lib/api';
 import { useAuth } from '../lib/auth';
 
 // Preset tags for the subject chips
@@ -88,29 +87,21 @@ export default function LandingChatInterface() {
 
         setIsLoading(true);
         try {
-            console.log('Sending chat request...'); // Debug log
-            const res = await api.post('/chat', {
-                message: prompt,
-                tags: selectedTags,
-                scope: 'local',
-                location: finalLocation
-            });
-            console.log('Chat response success:', res.data); // Debug log
-            router.push(`/?tab=chat&conversationId=${res.data.conversationId}`);
-        } catch (error: any) {
-            console.error('Chat error:', error);
-            // Alert the user so they see what's wrong
-            alert(`Chat Error: ${error.response?.data?.error || error.message || 'Unknown error'}`);
-
             localStorage.setItem('pendingChatPrompt', JSON.stringify({
                 tags: selectedTags,
                 text: prompt,
                 scope: 'local',
                 location: finalLocation
             }));
-            // Still try to redirect to chat tab in case it's just a partial failure? 
-            // Or maybe stay here so they can retry? 
-            // Let's redirect as fallback behavior, but the alert helps debugging.
+            router.push('/?tab=chat');
+        } catch (error: any) {
+            console.error('Chat error:', error);
+            localStorage.setItem('pendingChatPrompt', JSON.stringify({
+                tags: selectedTags,
+                text: prompt,
+                scope: 'local',
+                location: finalLocation
+            }));
             router.push('/?tab=chat');
         } finally {
             setIsLoading(false);

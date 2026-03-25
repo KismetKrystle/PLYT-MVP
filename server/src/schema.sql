@@ -127,10 +127,17 @@ CREATE TABLE IF NOT EXISTS profile_items (
   title TEXT NOT NULL,
   media_url TEXT,
   media_type TEXT DEFAULT 'image',
+  document_type TEXT,
   description TEXT,
+  content_markdown TEXT,
+  content_json JSONB,
   tags TEXT[],
   source TEXT,
   source_ref TEXT,
+  source_conversation_id TEXT,
+  source_message_index INT,
+  selection_text TEXT,
+  metadata JSONB DEFAULT '{}'::jsonb,
   is_private BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now()
 );

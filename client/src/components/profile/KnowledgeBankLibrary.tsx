@@ -1,9 +1,11 @@
 'use client';
 
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { downloadTextFile, renderMarkdownToHtml, slugifyFilename, stripMarkdownToPlainText } from '../../lib/markdownDocument';
 
 type LibraryCategory = {
     id: string;
@@ -19,23 +21,47 @@ type LibraryItem = {
     category_id: string;
     title: string;
     media_url?: string | null;
-    media_type: 'image' | 'video' | 'pdf';
+    media_type: 'image' | 'video' | 'pdf' | 'markdown';
+    document_type?: string | null;
     description?: string | null;
+    content_markdown?: string | null;
+    content_json?: Record<string, unknown> | null;
     tags?: string[] | null;
     source?: string | null;
     source_ref?: string | null;
+    source_conversation_id?: string | null;
+    source_message_index?: number | null;
+    selection_text?: string | null;
+    metadata?: Record<string, unknown> | null;
     is_private?: boolean;
     created_at?: string;
 };
 
-type ChatSummary = {
-    id: string;
-    title: string;
-    created_at?: string;
-    updated_at?: string;
+type AddMethod = 'url' | 'upload' | 'chat' | 'manual' | null;
+
+type LibraryInitResponse = {
+    categories?: LibraryCategory[];
+    activeCategory?: LibraryCategory | null;
+    activeItems?: LibraryItem[];
 };
 
-type AddMethod = 'url' | 'upload' | 'chat' | 'manual' | null;
+type ArchiveCache = {
+    userId: string;
+    categories: LibraryCategory[] | null;
+    itemsByCategory: Record<string, LibraryItem[]>;
+    aiChatItems: LibraryItem[] | null;
+    aiChatItemsLoaded: boolean;
+};
+
+function createArchiveCache(userId = ''): ArchiveCache {
+    return {
+        userId,
+        categories: null,
+        itemsByCategory: {},
+        aiChatItems: null,
+        aiChatItemsLoaded: false
+    };
+}
 
 const SOURCE_META: Record<string, { label: string; tint: string; ring: string }> = {
     ai_chat: { label: 'AI Chat', tint: 'bg-sky-50 text-sky-700', ring: 'border-sky-200' },
@@ -66,10 +92,13 @@ const DEFAULT_LIBRARY_ITEMS: Record<
     Array<{
         title: string;
         media_url: string;
-        media_type: 'image' | 'video' | 'pdf';
+        media_type: 'image' | 'video' | 'pdf' | 'markdown';
         description: string;
         tags: string[];
         source: string;
+        document_type?: string | null;
+        content_markdown?: string | null;
+        content_json?: Record<string, unknown> | null;
         source_ref?: string | null;
         is_private: boolean;
     }>
@@ -418,6 +447,17 @@ function MediaViewer({
         );
     }
 
+    if (item.media_type === 'markdown' || item.content_markdown) {
+        return (
+            <div className="h-full w-full overflow-y-auto bg-[linear-gradient(180deg,#fbfaf6_0%,#f4efe5_100%)] px-6 py-6">
+                <article
+                    className="prose prose-sm max-w-none text-slate-700"
+                    dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(item.content_markdown || item.description || '') }}
+                />
+            </div>
+        );
+    }
+
     if (item.media_url) {
         return (
             // eslint-disable-next-line @next/next/no-img-element
@@ -436,15 +476,18 @@ function MediaViewer({
 }
 
 export default function KnowledgeBankLibrary() {
+    const router = useRouter();
     const { user, loading, openLoginModal } = useAuth();
     const addItemMenuRef = useRef<HTMLDivElement | null>(null);
+    const archiveCacheRef = useRef<ArchiveCache>(createArchiveCache());
     const [categories, setCategories] = useState<LibraryCategory[]>([]);
     const [items, setItems] = useState<LibraryItem[]>([]);
     const [activeCategoryId, setActiveCategoryId] = useState<string>('');
     const [activeItem, setActiveItem] = useState<LibraryItem | null>(null);
-    const [chatHistory, setChatHistory] = useState<ChatSummary[]>([]);
+    const [aiChatItems, setAiChatItems] = useState<LibraryItem[]>([]);
     const [isLoadingCategories, setIsLoadingCategories] = useState(true);
     const [isLoadingItems, setIsLoadingItems] = useState(false);
+    const [isLoadingAiChatItems, setIsLoadingAiChatItems] = useState(false);
     const [isCreatingCategory, setIsCreatingCategory] = useState(false);
     const [isCreatingItem, setIsCreatingItem] = useState(false);
     const [showAddCategory, setShowAddCategory] = useState(false);
@@ -460,7 +503,7 @@ export default function KnowledgeBankLibrary() {
     const [itemUrlType, setItemUrlType] = useState<'image' | 'video' | 'pdf'>('image');
     const [itemUploadName, setItemUploadName] = useState('');
     const [itemUploadData, setItemUploadData] = useState<string | null>(null);
-    const [selectedChat, setSelectedChat] = useState<ChatSummary | null>(null);
+    const [selectedAiChatItem, setSelectedAiChatItem] = useState<LibraryItem | null>(null);
     const [itemVisibility, setItemVisibility] = useState<'private' | 'public'>('private');
     const [activePdfOpenUrl, setActivePdfOpenUrl] = useState('');
     const [statusMessage, setStatusMessage] = useState('');
@@ -469,7 +512,6 @@ export default function KnowledgeBankLibrary() {
         () => categories.find((category) => category.id === activeCategoryId) || null,
         [categories, activeCategoryId]
     );
-    const isPreviewMode = useMemo(() => categories.length > 0 && categories.every((category) => isMockCategory(category.id)), [categories]);
     const displayName = user?.full_name || user?.email?.split('@')[0] || 'Your Profile';
     const avatarUrl = user?.avatar_url || '/assets/images/gallery/user_avatar.png';
 
@@ -477,149 +519,55 @@ export default function KnowledgeBankLibrary() {
         if (loading || !user) return;
 
         let cancelled = false;
+        const userId = String(user.id || '');
+        const cache = archiveCacheRef.current;
 
-        const hydrateDuplicateCategories = async (existing: LibraryCategory[]) => {
-            const grouped = new Map<string, LibraryCategory[]>();
+        if (cache.userId !== userId) {
+            archiveCacheRef.current = createArchiveCache(userId);
+        }
 
-            existing.forEach((category) => {
-                const key = normalizeCategoryLabel(category.label);
-                const bucket = grouped.get(key) || [];
-                bucket.push(category);
-                grouped.set(key, bucket);
-            });
+        if (archiveCacheRef.current.categories) {
+            setCategories(archiveCacheRef.current.categories || []);
+            setActiveCategoryId((current) => current || archiveCacheRef.current.categories?.[0]?.id || '');
+            setIsLoadingCategories(false);
+        }
 
-            const cleanedCategories: LibraryCategory[] = [];
-
-            for (const [, duplicates] of grouped) {
-                if (duplicates.length === 1) {
-                    cleanedCategories.push(duplicates[0]);
-                    continue;
-                }
-
-                const categoryDetails = await Promise.all(
-                    duplicates.map(async (category) => {
-                        const itemRes = await api.get(`/profile-library/items/${category.id}`);
-                        const categoryItems = Array.isArray(itemRes.data) ? (itemRes.data as LibraryItem[]) : [];
-                        return { category, items: categoryItems };
-                    })
-                );
-
-                categoryDetails.sort((a, b) => {
-                    if (b.items.length !== a.items.length) return b.items.length - a.items.length;
-                    return (a.category.sort_order || 0) - (b.category.sort_order || 0);
-                });
-
-                const keeper = categoryDetails[0];
-                cleanedCategories.push(keeper.category);
-
-                for (const duplicate of categoryDetails.slice(1)) {
-                    if (duplicate.items.length > 0) {
-                        await Promise.all(
-                            duplicate.items.map(async (item) => {
-                                await api.post('/profile-library/items', {
-                                    category_id: keeper.category.id,
-                                    title: item.title,
-                                    media_url: item.media_url,
-                                    media_type: item.media_type,
-                                    description: item.description,
-                                    tags: item.tags || [],
-                                    source: item.source,
-                                    source_ref: item.source_ref,
-                                    is_private: item.is_private ?? true
-                                });
-                                await api.delete(`/profile-library/items/${item.id}`);
-                            })
-                        );
-                    }
-
-                    await api.delete(`/profile-library/categories/${duplicate.category.id}`);
-                }
+        const loadArchive = async () => {
+            if (!archiveCacheRef.current.categories) {
+                setIsLoadingCategories(true);
             }
-
-            return cleanedCategories;
-        };
-
-        const ensureDefaultCategories = async (existing: LibraryCategory[]) => {
-            const existingLabels = new Set(existing.map((category) => normalizeCategoryLabel(category.label)));
-            const missingDefaults = DEFAULT_CATEGORIES.filter((category) => !existingLabels.has(normalizeCategoryLabel(category.label)));
-
-            if (missingDefaults.length === 0) {
-                return existing;
-            }
-
-            const created = await Promise.all(
-                missingDefaults.map((category) =>
-                    api.post('/profile-library/categories', category).then((res) => res.data as LibraryCategory)
-                )
-            );
-
-            return [...existing, ...created].sort((a, b) => {
-                if ((a.sort_order || 0) !== (b.sort_order || 0)) return (a.sort_order || 0) - (b.sort_order || 0);
-                return String(a.created_at || '').localeCompare(String(b.created_at || ''));
-            });
-        };
-
-        const seedMockItemsIfNeeded = async (existing: LibraryCategory[]) => {
-            for (const category of existing) {
-                const starterItems = DEFAULT_LIBRARY_ITEMS[normalizeCategoryLabel(category.label)];
-                if (!starterItems?.length) continue;
-
-                const itemRes = await api.get(`/profile-library/items/${category.id}`);
-                const categoryItems = Array.isArray(itemRes.data) ? itemRes.data : [];
-                if (categoryItems.length > 0) continue;
-
-                await Promise.all(
-                    starterItems.map((item) =>
-                        api.post('/profile-library/items', {
-                            category_id: category.id,
-                            ...item
-                        })
-                    )
-                );
-            }
-        };
-
-        const loadChats = async () => {
             try {
-                const res = await api.get('/chat/history');
-                if (!cancelled) {
-                    setChatHistory(Array.isArray(res.data) ? res.data : []);
-                }
-            } catch (error) {
-                console.warn('Failed to load chat history for knowledge bank.', error);
-            }
-        };
-
-        const loadCategories = async () => {
-            setIsLoadingCategories(true);
-            try {
-                const res = await api.get('/profile-library/categories');
-                const existingCategories = Array.isArray(res.data) ? (res.data as LibraryCategory[]) : [];
-                const dedupedCategories = await hydrateDuplicateCategories(existingCategories);
-                const seededCategories = await ensureDefaultCategories(dedupedCategories);
-                await seedMockItemsIfNeeded(seededCategories);
+                const res = await api.get('/profile-library/init');
+                const payload = (res.data || {}) as LibraryInitResponse;
+                const nextCategories = Array.isArray(payload.categories) ? payload.categories : [];
+                const nextActiveCategoryId = String(payload.activeCategory?.id || nextCategories[0]?.id || '');
+                const nextItems = Array.isArray(payload.activeItems) ? payload.activeItems : [];
                 if (cancelled) return;
 
-                const categoriesToShow = seededCategories.length > 0 ? seededCategories : MOCK_PREVIEW_CATEGORIES;
-                setCategories(categoriesToShow);
-                setActiveCategoryId((current) => current || categoriesToShow[0]?.id || '');
-                if (seededCategories.length === 0) {
-                    setStatusMessage('Showing preview library content while your saved categories are empty.');
+                archiveCacheRef.current.categories = nextCategories;
+                if (nextActiveCategoryId) {
+                    archiveCacheRef.current.itemsByCategory[nextActiveCategoryId] = nextItems;
                 }
+
+                setCategories(nextCategories);
+                setItems(nextItems);
+                setActiveCategoryId(nextActiveCategoryId);
+                setActiveItem(nextItems[0] || null);
             } catch (error) {
                 console.warn('Failed to load profile library categories.', error);
                 if (!cancelled) {
-                    setCategories(MOCK_PREVIEW_CATEGORIES);
-                    setActiveCategoryId((current) => current || MOCK_PREVIEW_CATEGORIES[0]?.id || '');
-                    setStatusMessage('Showing preview library content while your saved categories load.');
+                    setCategories([]);
+                    setItems([]);
+                    setActiveItem(null);
+                    setActiveCategoryId('');
+                    setStatusMessage('Could not load your archive right now.');
                 }
             } finally {
                 if (!cancelled) setIsLoadingCategories(false);
             }
         };
 
-        void loadCategories();
-        void loadChats();
+        void loadArchive();
 
         return () => {
             cancelled = true;
@@ -630,24 +578,38 @@ export default function KnowledgeBankLibrary() {
         if (!user || !activeCategoryId) return;
 
         let cancelled = false;
+        const cachedItems = archiveCacheRef.current.itemsByCategory[activeCategoryId];
 
-        if (isMockCategory(activeCategoryId)) {
-            const previewItems = MOCK_PREVIEW_ITEMS[activeCategoryId] || [];
-            setItems(previewItems);
-            setActiveItem(previewItems[0] || null);
+        if (cachedItems) {
+            setItems(cachedItems);
+            setActiveItem((current) => {
+                if (current) {
+                    const matchingItem = cachedItems.find((item) => item.id === current.id);
+                    if (matchingItem) return matchingItem;
+                }
+                return cachedItems[0] || null;
+            });
             setIsLoadingItems(false);
-            return;
         }
 
         const loadItems = async () => {
-            setIsLoadingItems(true);
+            if (!cachedItems) {
+                setIsLoadingItems(true);
+            }
             try {
                 const res = await api.get(`/profile-library/items/${activeCategoryId}`);
-                const nextItems = Array.isArray(res.data) ? res.data : [];
+                const nextItems: LibraryItem[] = Array.isArray(res.data?.items) ? res.data.items : [];
                 if (cancelled) return;
 
+                archiveCacheRef.current.itemsByCategory[activeCategoryId] = nextItems;
                 setItems(nextItems);
-                setActiveItem(nextItems[0] || null);
+                setActiveItem((current) => {
+                    if (current) {
+                        const matchingItem = nextItems.find((item) => item.id === current.id);
+                        if (matchingItem) return matchingItem;
+                    }
+                    return nextItems[0] || null;
+                });
             } catch (error) {
                 console.warn('Failed to load profile library items.', error);
                 if (!cancelled) setStatusMessage('Could not load the items in this category.');
@@ -662,6 +624,53 @@ export default function KnowledgeBankLibrary() {
             cancelled = true;
         };
     }, [activeCategoryId, user]);
+
+    useEffect(() => {
+        if (!user || !showAddItem || addMethod !== 'chat') return;
+
+        let cancelled = false;
+        const cache = archiveCacheRef.current;
+
+        if (cache.aiChatItemsLoaded) {
+            setAiChatItems(cache.aiChatItems || []);
+            return;
+        }
+
+        const loadAiChatItems = async () => {
+            setIsLoadingAiChatItems(true);
+
+            try {
+                const res = await api.get('/profile-library/items', {
+                    params: {
+                        source: 'ai_chat',
+                        limit: 10
+                    }
+                });
+                const nextAiChatItems = Array.isArray(res.data) ? (res.data as LibraryItem[]) : [];
+                if (cancelled) return;
+
+                cache.aiChatItems = nextAiChatItems;
+                cache.aiChatItemsLoaded = true;
+                setAiChatItems(nextAiChatItems);
+            } catch (error) {
+                console.warn('Failed to load archived AI chat items for knowledge bank.', error);
+                if (!cancelled) {
+                    setAiChatItems([]);
+                    setStatusMessage('Could not load saved AI chat items right now.');
+                }
+            } finally {
+                if (!cancelled) {
+                    setIsLoadingAiChatItems(false);
+                }
+            }
+        };
+
+        void loadAiChatItems();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [addMethod, showAddItem, user]);
 
     useEffect(() => {
         if (!showAddItem) return;
@@ -704,13 +713,22 @@ export default function KnowledgeBankLibrary() {
         setItemUrlType('image');
         setItemUploadName('');
         setItemUploadData(null);
-        setSelectedChat(null);
+        setSelectedAiChatItem(null);
         setItemVisibility('private');
     };
 
     const closeAddItem = () => {
         setShowAddItem(false);
         resetAddItem();
+    };
+
+    const handleMobileBack = () => {
+        if (typeof window !== 'undefined' && window.history.length > 1) {
+            router.back();
+            return;
+        }
+
+        router.push('/');
     };
 
     const openAddItem = () => {
@@ -735,7 +753,9 @@ export default function KnowledgeBankLibrary() {
                 if (prev.some((category) => category.id === nextCategory.id)) {
                     return prev;
                 }
-                return [...prev, nextCategory];
+                const nextCategories = [...prev, nextCategory];
+                archiveCacheRef.current.categories = nextCategories;
+                return nextCategories;
             });
             setActiveCategoryId(nextCategory.id);
             setShowAddCategory(false);
@@ -771,17 +791,20 @@ export default function KnowledgeBankLibrary() {
         }
     };
 
-    const handleSelectChat = (chat: ChatSummary) => {
-        setSelectedChat(chat);
-        if (!itemTitle.trim()) setItemTitle(chat.title);
-        if (!itemDescription.trim()) setItemDescription(`Saved from AI chat: ${chat.title}`);
+    const handleSelectAiChatItem = (item: LibraryItem) => {
+        setSelectedAiChatItem(item);
+        if (!itemTitle.trim()) setItemTitle(item.title);
+        if (!itemDescription.trim()) setItemDescription(item.description || `Saved from AI chat: ${item.title}`);
+        if (!itemTags.trim() && Array.isArray(item.tags) && item.tags.length > 0) {
+            setItemTags(item.tags.join(', '));
+        }
     };
 
     const canSaveItem = () => {
         if (!itemTitle.trim()) return false;
         if (addMethod === 'url') return itemUrl.trim().length > 0;
         if (addMethod === 'upload') return Boolean(itemUploadData);
-        if (addMethod === 'chat') return Boolean(selectedChat);
+        if (addMethod === 'chat') return Boolean(selectedAiChatItem);
         if (addMethod === 'manual') return itemDescription.trim().length > 0;
         return false;
     };
@@ -816,12 +839,38 @@ export default function KnowledgeBankLibrary() {
         }
 
         if (addMethod === 'chat') {
+            const sourceItem = selectedAiChatItem;
+            const markdown = sourceItem?.content_markdown
+                || `# ${itemTitle.trim()}\n\n${itemDescription.trim() || `Saved from AI chat: ${sourceItem?.title || 'Chat response'}`}`;
             payload = {
                 ...payload,
-                media_url: '/assets/images/gallery/indoor_garden.png',
-                media_type: 'image',
+                media_url: sourceItem?.media_url || null,
+                media_type: sourceItem?.media_type || 'markdown',
+                document_type: sourceItem?.document_type || 'chat_reference',
+                content_markdown: markdown,
+                content_json: sourceItem?.content_json || {
+                    version: 1,
+                    documentType: 'chat_reference',
+                    title: itemTitle.trim(),
+                    description: itemDescription.trim(),
+                    markdown,
+                    plainText: stripMarkdownToPlainText(markdown),
+                    tags,
+                    source: {
+                        type: 'ai_chat',
+                        conversationId: sourceItem?.source_conversation_id || sourceItem?.source_ref || null
+                    }
+                },
                 source: 'ai_chat',
-                source_ref: selectedChat?.id || null
+                source_ref: sourceItem?.source_ref || sourceItem?.id || null,
+                source_conversation_id: sourceItem?.source_conversation_id || sourceItem?.source_ref || null,
+                source_message_index: sourceItem?.source_message_index ?? null,
+                selection_text: sourceItem?.selection_text || null,
+                metadata: {
+                    ...(sourceItem?.metadata || {}),
+                    saved_from: 'knowledge_bank_chat_picker',
+                    copied_from_item_id: sourceItem?.id || null
+                }
             };
         }
 
@@ -838,7 +887,17 @@ export default function KnowledgeBankLibrary() {
         try {
             const res = await api.post('/profile-library/items', payload);
             const nextItem = res.data as LibraryItem;
-            setItems((prev) => [nextItem, ...prev]);
+            setItems((prev) => {
+                const nextItems = [nextItem, ...prev];
+                archiveCacheRef.current.itemsByCategory[activeCategoryId] = nextItems;
+                return nextItems;
+            });
+            if (nextItem.source === 'ai_chat') {
+                const nextAiChatItems = [nextItem, ...(archiveCacheRef.current.aiChatItems || []).filter((item) => item.id !== nextItem.id)].slice(0, 10);
+                archiveCacheRef.current.aiChatItems = nextAiChatItems;
+                archiveCacheRef.current.aiChatItemsLoaded = true;
+                setAiChatItems(nextAiChatItems);
+            }
             setActiveItem(nextItem);
             closeAddItem();
             setStatusMessage('Saved to your library.');
@@ -882,6 +941,16 @@ export default function KnowledgeBankLibrary() {
         <div className="min-h-screen overflow-x-hidden bg-white text-slate-900">
             <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-10">
                 <div className="mb-6 flex items-center gap-4">
+                    <button
+                        type="button"
+                        onClick={handleMobileBack}
+                        aria-label="Go back"
+                        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#ddd2c1] bg-white text-slate-700 shadow-sm transition hover:bg-[#f7f1e7] md:hidden"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true">
+                            <path d="M15 18L9 12L15 6" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                    </button>
                     <div className="relative h-16 w-16 overflow-hidden rounded-full border border-[#e5dccd] bg-white shadow-sm">
                         <Image src={avatarUrl} alt={displayName} fill className="object-cover" />
                     </div>
@@ -914,7 +983,7 @@ export default function KnowledgeBankLibrary() {
                                         : undefined
                                 }
                             />
-                            {activeItem && activeItem.media_type !== 'pdf' ? (
+                            {activeItem && activeItem.media_type !== 'pdf' && activeItem.media_type !== 'markdown' && !activeItem.content_markdown ? (
                                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-6 pb-6 pt-20 text-white">
                                     <h2 className="mt-4 text-2xl font-bold">{activeItem.title}</h2>
                                     <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -927,6 +996,21 @@ export default function KnowledgeBankLibrary() {
                                         ))}
                                     </div>
                                     <p className="mt-2 max-w-2xl text-sm text-white/70">{activeItem.description || 'No description added yet.'}</p>
+                                </div>
+                            ) : null}
+                            {activeItem && (activeItem.media_type === 'markdown' || activeItem.content_markdown) ? (
+                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0f1410]/88 via-[#0f1410]/50 to-transparent px-6 pb-6 pt-24 text-white">
+                                    <h2 className="mt-4 text-2xl font-bold">{activeItem.title}</h2>
+                                    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                                        <SourceBadge source={activeItem.source} />
+                                        {(activeItem.tags || []).map((tag, index) => (
+                                            <div key={tag} className="flex items-center gap-3 text-[11px] font-semibold text-white/85">
+                                                {index > 0 ? <span className="h-3 w-px bg-white/35" aria-hidden="true" /> : null}
+                                                <span>{tag}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="mt-2 max-w-2xl text-sm text-white/70">{activeItem.description || 'Saved markdown document.'}</p>
                                 </div>
                             ) : null}
                         </div>
@@ -961,6 +1045,45 @@ export default function KnowledgeBankLibrary() {
                                 </div>
                             </div>
                         ) : null}
+                        {activeItem && (activeItem.media_type === 'markdown' || activeItem.content_markdown) ? (
+                            <div className="border-t border-[#efe6d8] px-5 py-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-900">{activeItem.title}</h2>
+                                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-slate-600">
+                                            <SourceBadge source={activeItem.source} />
+                                            {(activeItem.tags || []).map((tag, index) => (
+                                                <div key={tag} className="flex items-center gap-3 text-[11px] font-semibold text-slate-600">
+                                                    {index > 0 ? <span className="h-3 w-px bg-slate-300" aria-hidden="true" /> : null}
+                                                    <span>{tag}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <p className="mt-3 max-w-3xl text-sm text-slate-600">{activeItem.description || 'Saved markdown document.'}</p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => downloadTextFile(`${slugifyFilename(activeItem.title)}.md`, activeItem.content_markdown || '', 'text/markdown')}
+                                            className="rounded-xl border border-[#d8cfbf] bg-[#f7f2e8] px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-[#efe6d8]"
+                                        >
+                                            Download MD
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => downloadTextFile(
+                                                `${slugifyFilename(activeItem.title)}.json`,
+                                                JSON.stringify(activeItem.content_json || activeItem.metadata || {}, null, 2),
+                                                'application/json'
+                                            )}
+                                            className="rounded-xl border border-[#d8cfbf] bg-[#f7f2e8] px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-[#efe6d8]"
+                                        >
+                                            Download JSON
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : null}
                         <div className="border-t border-[#efe6d8] px-5 py-4">
                             <div className="flex flex-wrap gap-2 pb-2 md:flex-nowrap md:gap-3 md:overflow-x-auto">
                                 {categories.map((category) => {
@@ -981,15 +1104,14 @@ export default function KnowledgeBankLibrary() {
                                         </button>
                                     );
                                 })}
-                                <button
-                                    type="button"
-                                    onClick={() => setShowAddCategory(true)}
-                                    disabled={isPreviewMode}
-                                    aria-label="Add category"
-                                    className="flex min-w-[68px] items-center justify-center rounded-xl border border-dashed border-[#d7ccb9] bg-[#fff9ef] px-2 py-2 text-2xl font-light text-slate-500 transition hover:border-green-300 hover:bg-[#eef9f1] hover:text-green-700 disabled:cursor-not-allowed disabled:opacity-50 md:min-w-[88px] md:rounded-2xl md:px-3 md:py-3 md:text-3xl"
-                                >
-                                    +
-                                </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAddCategory(true)}
+                                        aria-label="Add category"
+                                        className="flex min-w-[68px] items-center justify-center rounded-xl border border-dashed border-[#d7ccb9] bg-[#fff9ef] px-2 py-2 text-2xl font-light text-slate-500 transition hover:border-green-300 hover:bg-[#eef9f1] hover:text-green-700 md:min-w-[88px] md:rounded-2xl md:px-3 md:py-3 md:text-3xl"
+                                    >
+                                        +
+                                    </button>
                             </div>
                         </div>
                     </div>
@@ -1007,7 +1129,7 @@ export default function KnowledgeBankLibrary() {
                                 <button
                                     type="button"
                                     onClick={() => (showAddItem ? closeAddItem() : openAddItem())}
-                                    disabled={!activeCategoryId || isPreviewMode}
+                                    disabled={!activeCategoryId}
                                     className="rounded-xl border border-[#d8cfbf] bg-[#f7f2e8] px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-[#efe6d8] disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     + Add
@@ -1087,22 +1209,31 @@ export default function KnowledgeBankLibrary() {
 
                                             {addMethod === 'chat' ? (
                                                 <div className="max-h-60 space-y-2 overflow-y-auto">
-                                                    {chatHistory.length === 0 ? (
+                                                    <p className="rounded-2xl border border-[#e9dfd0] bg-white px-4 py-3 text-xs text-slate-500">
+                                                        Only AI chat documents already saved in your archive appear here.
+                                                    </p>
+                                                    {isLoadingAiChatItems ? (
                                                         <div className="rounded-2xl border border-dashed border-[#ddd2c1] px-4 py-6 text-center text-sm text-slate-500">
-                                                            No saved chats found yet.
+                                                            Loading saved AI chat items...
+                                                        </div>
+                                                    ) : aiChatItems.length === 0 ? (
+                                                        <div className="rounded-2xl border border-dashed border-[#ddd2c1] px-4 py-6 text-center text-sm text-slate-500">
+                                                            No archived AI chat items found yet.
                                                         </div>
                                                     ) : (
-                                                        chatHistory.map((chat) => (
+                                                        aiChatItems.map((item) => (
                                                             <button
-                                                                key={chat.id}
+                                                                key={item.id}
                                                                 type="button"
-                                                                onClick={() => handleSelectChat(chat)}
+                                                                onClick={() => handleSelectAiChatItem(item)}
                                                                 className={`w-full rounded-2xl border p-4 text-left transition ${
-                                                                    selectedChat?.id === chat.id ? 'border-green-300 bg-green-50' : 'border-[#e3d9c9] bg-white'
+                                                                    selectedAiChatItem?.id === item.id ? 'border-green-300 bg-green-50' : 'border-[#e3d9c9] bg-white'
                                                                 }`}
                                                             >
-                                                                <p className="text-sm font-bold text-slate-900">{chat.title}</p>
-                                                                <p className="mt-1 text-xs text-slate-500">Conversation ID: {chat.id}</p>
+                                                                <p className="text-sm font-bold text-slate-900">{item.title}</p>
+                                                                <p className="mt-1 text-xs text-slate-500">
+                                                                    {item.source_conversation_id ? `Conversation ID: ${item.source_conversation_id}` : `Archive item: ${item.id}`}
+                                                                </p>
                                                             </button>
                                                         ))
                                                     )}
@@ -1201,6 +1332,10 @@ export default function KnowledgeBankLibrary() {
                                             {item.media_type === 'pdf' ? (
                                                 <div className="flex h-full w-full items-center justify-center bg-[#f4efe5] text-xs font-bold uppercase tracking-[0.18em] text-slate-600">
                                                     PDF
+                                                </div>
+                                            ) : item.media_type === 'markdown' || item.content_markdown ? (
+                                                <div className="flex h-full w-full items-center justify-center bg-[#eef6ee] text-xs font-bold uppercase tracking-[0.18em] text-green-700">
+                                                    MD
                                                 </div>
                                             ) : item.media_url ? (
                                                 // eslint-disable-next-line @next/next/no-img-element

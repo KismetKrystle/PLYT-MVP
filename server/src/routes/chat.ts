@@ -4,6 +4,7 @@ import axios from 'axios';
 import pool from '../db';
 import { authenticateToken } from '../middleware/auth';
 import { buildNaviSystemInstruction } from '../config/persona';
+import { buildIntentSystemSection, classifyIntent } from '../lib/intentClassifier';
 import { fetchRoleProfileData, isProfileComplete } from '../services/profileContext';
 import { hydratePlacesWithProfileData, searchManagedPlaceProfiles } from '../services/placeProfiles';
 
@@ -737,6 +738,7 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
             profileData = {};
         }
 
+        const intentClassification = classifyIntent(effectiveMessage, normalizedTags);
         const promptFields = getPromptProfileFields(profileData, userRole);
         const locationLinkRule = buildLocationLinkRule(profileData, location);
         const allergySection = promptFields.allergies.length > 0
@@ -749,6 +751,7 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
             extraSections: [
                 allergySection,
                 locationLinkRule,
+                buildIntentSystemSection(intentClassification),
                 `## CURRENT USER PROFILE
 User role: ${userRole}
 Full profile data:
@@ -795,7 +798,10 @@ Use this profile directly for personalization. Do not ask for details already pr
                     ? ' ' + promptFields.healthProfile.full_name.split(' ')[0]
                     : ''}! Before we dive in, I need a little more info to personalise your experience. Can you complete your profile first?`,
                 incomplete_profile: true,
-                conversationId: activeConversationId
+                conversationId: activeConversationId,
+                intent: intentClassification.intent,
+                intentConfidence: intentClassification.confidence,
+                mixedIntent: intentClassification.mixed
             });
         }
 
@@ -880,6 +886,9 @@ Use this profile directly for personalization. Do not ask for details already pr
             response: aiResponse,
             usedFallback,
             conversationId: activeConversationId,
+            intent: intentClassification.intent,
+            intentConfidence: intentClassification.confidence,
+            mixedIntent: intentClassification.mixed,
             model: modelName,
             followUpOptions: detectFulfillmentFollowUp(aiResponse),
             searchQueries,

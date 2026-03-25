@@ -206,10 +206,17 @@ async function migrate() {
                 title TEXT NOT NULL,
                 media_url TEXT,
                 media_type TEXT DEFAULT 'image',
+                document_type TEXT,
                 description TEXT,
+                content_markdown TEXT,
+                content_json JSONB,
                 tags TEXT[],
                 source TEXT,
                 source_ref TEXT,
+                source_conversation_id TEXT,
+                source_message_index INT,
+                selection_text TEXT,
+                metadata JSONB DEFAULT '{}'::jsonb,
                 is_private BOOLEAN DEFAULT true,
                 created_at TIMESTAMPTZ DEFAULT now()
             );
@@ -220,10 +227,17 @@ async function migrate() {
         await pool.query(`ALTER TABLE profile_categories ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0;`);
         await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS media_url TEXT;`);
         await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS media_type TEXT DEFAULT 'image';`);
+        await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS document_type TEXT;`);
         await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS description TEXT;`);
+        await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS content_markdown TEXT;`);
+        await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS content_json JSONB;`);
         await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS tags TEXT[];`);
         await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS source TEXT;`);
         await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS source_ref TEXT;`);
+        await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS source_conversation_id TEXT;`);
+        await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS source_message_index INT;`);
+        await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS selection_text TEXT;`);
+        await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;`);
         await pool.query(`ALTER TABLE profile_items ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT true;`);
 
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_profile_categories_user_id ON profile_categories(user_id, sort_order, created_at);`);

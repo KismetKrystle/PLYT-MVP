@@ -1,6 +1,7 @@
 node_modules
 dist
 .next
+client/.next-cache-*
 out
 build
 .env

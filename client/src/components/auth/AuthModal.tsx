@@ -1,165 +1,74 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../lib/auth';
-import api from '../../lib/api';
-import axios from 'axios';
 
 export default function AuthModal() {
-    const { isLoginModalOpen, closeLoginModal, login, isAccessWallEnabled } = useAuth();
-    const [mode, setMode] = useState<'signin' | 'signup'>('signin');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
-    const [name, setName] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState('');
+    const { isLoginModalOpen, closeLoginModal, isAccessWallEnabled } = useAuth();
 
     if (!isLoginModalOpen) return null;
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError('');
-        setIsLoading(true);
-
-        try {
-            if (mode === 'signin') {
-                const res = await api.post('/auth/login', { email, password });
-                login(res.data.token, res.data.user);
-            } else {
-                // SignUp Logic
-                const res = await api.post('/auth/signup', {
-                    email,
-                    password,
-                    name,
-                    role: 'consumer' // Default to consumer for quick signup
-                });
-                login(res.data.token, res.data.user);
-            }
-            closeLoginModal();
-        } catch (err: unknown) {
-            if (axios.isAxiosError(err) && err.response?.status === 409) {
-                setError('That email is already registered. Sign in instead or use a different email.');
-            } else {
-                console.error('Auth failed:', err);
-                setError(axios.isAxiosError(err) ? err.response?.data?.error || 'Authentication failed. Please check your credentials.' : 'Authentication failed. Please check your credentials.');
-            }
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
     return (
         <AnimatePresence>
-            {isLoginModalOpen && (
+            {isLoginModalOpen ? (
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 sm:p-6">
-                    {/* Backdrop */}
                     <motion.div
-                        initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={closeLoginModal}
                         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                        exit={{ opacity: 0 }}
+                        initial={{ opacity: 0 }}
+                        onClick={closeLoginModal}
                     />
 
-                    {/* Modal */}
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
+                        className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl bg-white p-8 shadow-xl"
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                        className="relative w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden z-10 p-8"
+                        initial={{ opacity: 0, scale: 0.95, y: 20 }}
                     >
                         <button
+                            className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
                             onClick={closeLoginModal}
-                            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
                         >
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+                            </svg>
                         </button>
 
-                        <div className="text-center mb-8">
-                            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                                {mode === 'signin' ? 'Welcome Back' : 'Create Account'}
-                            </h2>
+                        <div className="mb-8 text-center">
+                            <h2 className="mb-2 text-2xl font-bold text-gray-900">Secure Sign In</h2>
                             <p className="text-gray-500">
-                                {mode === 'signin' ? 'Sign in to save your progress.' : 'Join the community to track your impact.'}
+                                Use the new Clerk-powered sign-in flow to access your profile, archive, and saved progress.
                             </p>
                         </div>
 
-                        {error && (
-                            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-6 text-center">
-                                {error}
-                            </div>
-                        )}
-
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            {mode === 'signup' && (
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        value={name}
-                                        onChange={(e) => setName(e.target.value)}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none transition"
-                                        placeholder="John Doe"
-                                    />
-                                </div>
-                            )}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                                <input
-                                    type="email"
-                                    required
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none transition"
-                                    placeholder="you@example.com"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                                <div className="relative">
-                                    <input
-                                        type={showPassword ? 'text' : 'password'}
-                                        required
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full px-4 py-2 pr-16 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none transition"
-                                        placeholder="********"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowPassword((v) => !v)}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-500 hover:text-gray-700"
-                                    >
-                                        {showPassword ? 'Hide' : 'Show'}
-                                    </button>
-                                </div>
-                            </div>
-
-                            <button
-                                type="submit"
-                                disabled={isLoading}
-                                className="w-full bg-green-600 text-white py-2.5 rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50 mt-2"
+                        <div className="space-y-3">
+                            <Link
+                                className="flex w-full items-center justify-center rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-green-700"
+                                href="/login"
+                                onClick={closeLoginModal}
                             >
-                                {isLoading ? 'Processing...' : (mode === 'signin' ? 'Sign In' : 'Sign Up')}
-                            </button>
-                        </form>
-
-                        <div className="mt-6 text-center">
-                            {!isAccessWallEnabled && (
-                                <button
-                                    onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
-                                    className="text-sm text-green-600 font-medium hover:underline"
+                                Go to sign in
+                            </Link>
+                            {!isAccessWallEnabled ? (
+                                <Link
+                                    className="flex w-full items-center justify-center rounded-lg border border-green-600/20 bg-white px-4 py-2.5 text-sm font-medium text-green-700 transition hover:bg-green-50"
+                                    href="/signup"
+                                    onClick={closeLoginModal}
                                 >
-                                    {mode === 'signin' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
-                                </button>
-                            )}
+                                    Create account
+                                </Link>
+                            ) : null}
                         </div>
+
+                        <p className="mt-6 text-center text-sm text-gray-500">
+                            Your existing PLYT data stays connected after sign-in.
+                        </p>
                     </motion.div>
                 </div>
-            )}
+            ) : null}
         </AnimatePresence>
     );
 }

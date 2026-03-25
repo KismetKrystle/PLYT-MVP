@@ -12,6 +12,8 @@ export const metadata: Metadata = {
 import NavBar from '../components/NavBar';
 import AppLayout from '../components/AppLayout';
 import AuthModal from '../components/auth/AuthModal';
+import ClerkProviderShell from '../components/auth/ClerkProviderShell';
+import ClerkSessionBridge from '../components/auth/ClerkSessionBridge';
 
 import { LessonProvider } from '../context/LessonContext';
 import { CartProvider } from '../context/CartContext';
@@ -24,20 +26,23 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="flex flex-col min-h-screen" suppressHydrationWarning>
-        <AuthProvider>
-          <LessonProvider>
-            <CartProvider>
-              <ProtectedRoute>
-                <AppLayout>
-                  <main className="flex-1 h-full">
-                    {children}
-                  </main>
-                </AppLayout>
-              </ProtectedRoute>
-            </CartProvider>
-          </LessonProvider>
-          <AuthModal />
-        </AuthProvider>
+        <ClerkProviderShell>
+          <AuthProvider>
+            {process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ? <ClerkSessionBridge /> : null}
+            <LessonProvider>
+              <CartProvider>
+                <ProtectedRoute>
+                  <AppLayout>
+                    <main className="flex-1 h-full">
+                      {children}
+                    </main>
+                  </AppLayout>
+                </ProtectedRoute>
+              </CartProvider>
+            </LessonProvider>
+            <AuthModal />
+          </AuthProvider>
+        </ClerkProviderShell>
       </body>
     </html>
   );

@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { createClerkClient, verifyToken } from '@clerk/backend';
 import pool from '../db';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 
@@ -29,6 +30,24 @@ function signToken(user: { id: string | number; email: string; role: string }) {
         process.env.JWT_SECRET || 'fallback_secret',
         { expiresIn: '24h' }
     );
+}
+
+function getClerkClient() {
+    const secretKey = process.env.CLERK_SECRET_KEY;
+    if (!secretKey) {
+        throw new Error('CLERK_SECRET_KEY is not configured');
+    }
+
+    return createClerkClient({ secretKey });
+}
+
+function getPrimaryClerkEmail(clerkUser: any) {
+    const emailAddresses = Array.isArray(clerkUser?.emailAddresses) ? clerkUser.emailAddresses : [];
+    const primaryId = clerkUser?.primaryEmailAddressId;
+    const primaryEmail = emailAddresses.find((email: any) => email?.id === primaryId) || emailAddresses[0];
+    const emailAddress = String(primaryEmail?.emailAddress || '').trim().toLowerCase();
+
+    return emailAddress || null;
 }
 
 router.post('/signup', async (req: Request, res: Response) => {
@@ -130,6 +149,108 @@ router.post('/google-login', async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Google login error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.post('/clerk-login', async (req: Request, res: Response) => {
+    const clerkToken = String(req.body?.clerkToken || req.body?.token || '').trim();
+
+    if (!clerkToken) {
+        res.status(400).json({ error: 'clerkToken is required' });
+        return;
+    }
+
+    if (!process.env.CLERK_SECRET_KEY) {
+        res.status(500).json({ error: 'CLERK_SECRET_KEY is not configured' });
+        return;
+    }
+
+    try {
+        const payload = await verifyToken(clerkToken, {
+            secretKey: process.env.CLERK_SECRET_KEY,
+            jwtKey: process.env.CLERK_JWT_KEY,
+            authorizedParties: process.env.CLERK_AUTHORIZED_PARTIES
+                ? process.env.CLERK_AUTHORIZED_PARTIES.split(',').map((value) => value.trim()).filter(Boolean)
+                : undefined
+        });
+
+        const clerkUserId = String(payload?.sub || '').trim();
+        if (!clerkUserId) {
+            res.status(401).json({ error: 'Invalid Clerk session token' });
+            return;
+        }
+
+        const clerkClient = getClerkClient();
+        const clerkUser = await clerkClient.users.getUser(clerkUserId);
+        const email = getPrimaryClerkEmail(clerkUser);
+
+        if (!email) {
+            res.status(400).json({ error: 'Clerk user does not have a primary email address' });
+            return;
+        }
+
+        const fullName = [
+            String(clerkUser.firstName || '').trim(),
+            String(clerkUser.lastName || '').trim()
+        ].filter(Boolean).join(' ') || String(clerkUser.fullName || '').trim();
+        const fallbackName = email.split('@')[0] || 'clerk-user';
+        const normalizedName = fullName || fallbackName;
+        const profileDataPatch = {
+            ...buildProfileDataPatch(normalizedName),
+            auth_provider: 'clerk',
+            clerk_user_id: clerkUserId
+        };
+
+        const existing = await pool.query(
+            `SELECT id, name, email, role, created_at, updated_at, profile_data
+             FROM users
+             WHERE profile_data->>'clerk_user_id' = $1
+                OR email = $2
+             ORDER BY CASE WHEN profile_data->>'clerk_user_id' = $1 THEN 0 ELSE 1 END
+             LIMIT 1`,
+            [clerkUserId, email]
+        );
+
+        let appUser;
+        let isNewUser = false;
+
+        if (existing.rows.length === 0) {
+            const created = await pool.query(
+                `INSERT INTO users (name, email, password_hash, role, profile_data)
+                 VALUES ($1, $2, $3, $4, $5::jsonb)
+                 RETURNING id, name, email, role, created_at, updated_at`,
+                [normalizedName, email, '', 'consumer', JSON.stringify(profileDataPatch)]
+            );
+
+            appUser = created.rows[0];
+            isNewUser = true;
+        } else {
+            const existingUser = existing.rows[0];
+            const mergedProfileData = {
+                ...(existingUser.profile_data || {}),
+                ...profileDataPatch
+            };
+
+            const updated = await pool.query(
+                `UPDATE users
+                 SET name = COALESCE(NULLIF($1, ''), name),
+                     email = $2,
+                     profile_data = COALESCE(profile_data, '{}'::jsonb) || $3::jsonb,
+                     updated_at = NOW()
+                 WHERE id = $4
+                 RETURNING id, name, email, role, created_at, updated_at`,
+                [normalizedName, email, JSON.stringify(mergedProfileData), existingUser.id]
+            );
+
+            appUser = updated.rows[0];
+        }
+
+        const user = sanitizeUser(appUser);
+        const token = signToken(user);
+        res.json({ token, user, isNewUser });
+    } catch (error) {
+        console.error('Clerk login error:', error);
+        res.status(401).json({ error: 'Failed to verify Clerk session' });
     }
 });
 

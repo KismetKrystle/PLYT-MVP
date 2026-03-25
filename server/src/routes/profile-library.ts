@@ -16,18 +16,83 @@ async function getOwnedCategory(categoryId: string, userId: string | number) {
     return result.rows[0] || null;
 }
 
+async function getUserCategories(userId: string | number) {
+    const result = await pool.query(
+        `SELECT id, label, emoji, color, sort_order, created_at
+         FROM profile_categories
+         WHERE user_id = $1
+         ORDER BY sort_order ASC, created_at ASC`,
+        [userId]
+    );
+
+    return result.rows;
+}
+
+async function getUserItems(
+    userId: string | number,
+    options: {
+        categoryId?: string;
+        source?: string;
+        limit?: number;
+    } = {}
+) {
+    const clauses = ['user_id = $1'];
+    const values: Array<string | number> = [userId];
+
+    if (options.categoryId) {
+        values.push(options.categoryId);
+        clauses.push(`category_id = $${values.length}`);
+    }
+
+    if (options.source) {
+        values.push(options.source);
+        clauses.push(`source = $${values.length}`);
+    }
+
+    let limitClause = '';
+    if (options.limit && Number.isFinite(options.limit) && options.limit > 0) {
+        values.push(options.limit);
+        limitClause = ` LIMIT $${values.length}`;
+    }
+
+    const result = await pool.query(
+        `SELECT id, category_id, title, media_url, media_type, document_type, description, content_markdown, content_json,
+                tags, source, source_ref, source_conversation_id, source_message_index, selection_text, metadata, is_private, created_at
+         FROM profile_items
+         WHERE ${clauses.join(' AND ')}
+         ORDER BY created_at DESC${limitClause}`,
+        values
+    );
+
+    return result.rows;
+}
+
+router.get('/init', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const requestedCategoryId = String(req.query.activeCategoryId || '').trim();
+        const categories = await getUserCategories(userId as string | number);
+        const activeCategory = categories.find((category: any) => String(category.id) === requestedCategoryId) || categories[0] || null;
+        const activeItems = activeCategory
+            ? await getUserItems(userId as string | number, { categoryId: String(activeCategory.id) })
+            : [];
+
+        res.json({
+            categories,
+            activeCategory,
+            activeItems
+        });
+    } catch (error) {
+        console.error('Init profile library error:', error);
+        res.status(500).json({ error: 'Failed to initialize profile library' });
+    }
+});
+
 router.get('/categories', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const result = await pool.query(
-            `SELECT id, label, emoji, color, sort_order, created_at
-             FROM profile_categories
-             WHERE user_id = $1
-             ORDER BY sort_order ASC, created_at ASC`,
-            [userId]
-        );
-
-        res.json(result.rows);
+        const categories = await getUserCategories(userId as string | number);
+        res.json(categories);
     } catch (error) {
         console.error('Get profile categories error:', error);
         res.status(500).json({ error: 'Failed to fetch categories' });
@@ -147,26 +212,52 @@ router.delete('/categories/:id', authenticateToken, async (req: AuthRequest, res
     }
 });
 
+router.get('/items', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const categoryId = String(req.query.categoryId || '').trim();
+        const source = String(req.query.source || '').trim();
+        const rawLimit = Number.parseInt(String(req.query.limit || ''), 10);
+        const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 50) : undefined;
+
+        if (categoryId) {
+            const owned = await getOwnedCategory(categoryId, userId as string | number);
+            if (!owned) {
+                res.sendStatus(404);
+                return;
+            }
+        }
+
+        const items = await getUserItems(userId as string | number, {
+            categoryId: categoryId || undefined,
+            source: source || undefined,
+            limit
+        });
+
+        res.json(items);
+    } catch (error) {
+        console.error('Get filtered profile items error:', error);
+        res.status(500).json({ error: 'Failed to fetch items' });
+    }
+});
+
 router.get('/items/:categoryId', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
         const categoryId = String(req.params.categoryId || '').trim();
-        const owned = await getOwnedCategory(categoryId, userId as string | number);
-
-        if (!owned) {
-            res.sendStatus(404);
-            return;
-        }
-
         const result = await pool.query(
-            `SELECT id, category_id, title, media_url, media_type, description, tags, source, source_ref, is_private, created_at
-             FROM profile_items
-             WHERE user_id = $1 AND category_id = $2
-             ORDER BY created_at DESC`,
-            [userId, categoryId]
+            `SELECT pi.id, pi.category_id, pi.title, pi.media_url, pi.media_type, pi.document_type, pi.description, pi.content_markdown,
+                    pi.content_json, pi.tags, pi.source, pi.source_ref, pi.source_conversation_id, pi.source_message_index,
+                    pi.selection_text, pi.metadata, pi.is_private, pi.created_at
+             FROM profile_items pi
+             JOIN profile_categories pc ON pc.id = pi.category_id
+             WHERE pi.category_id = $1
+               AND pc.user_id = $2
+             ORDER BY pi.created_at DESC`,
+            [categoryId, userId]
         );
 
-        res.json(result.rows);
+        res.json({ items: result.rows });
     } catch (error) {
         console.error('Get profile items error:', error);
         res.status(500).json({ error: 'Failed to fetch items' });
@@ -181,10 +272,17 @@ router.post('/items', authenticateToken, async (req: AuthRequest, res: Response)
             title,
             media_url,
             media_type,
+            document_type,
             description,
+            content_markdown,
+            content_json,
             tags,
             source,
             source_ref,
+            source_conversation_id,
+            source_message_index,
+            selection_text,
+            metadata,
             is_private
         } = req.body || {};
 
@@ -202,9 +300,9 @@ router.post('/items', authenticateToken, async (req: AuthRequest, res: Response)
             return;
         }
 
-        const normalizedMediaType = String(media_type || 'image').trim().toLowerCase();
-        if (!['image', 'video', 'pdf'].includes(normalizedMediaType)) {
-            res.status(400).json({ error: 'media_type must be image, video, or pdf' });
+        const normalizedMediaType = String(media_type || (content_markdown ? 'markdown' : 'image')).trim().toLowerCase();
+        if (!['image', 'video', 'pdf', 'markdown'].includes(normalizedMediaType)) {
+            res.status(400).json({ error: 'media_type must be image, video, pdf, or markdown' });
             return;
         }
 
@@ -214,20 +312,29 @@ router.post('/items', authenticateToken, async (req: AuthRequest, res: Response)
 
         const result = await pool.query(
             `INSERT INTO profile_items (
-                user_id, category_id, title, media_url, media_type, description, tags, source, source_ref, is_private
+                user_id, category_id, title, media_url, media_type, document_type, description, content_markdown, content_json,
+                tags, source, source_ref, source_conversation_id, source_message_index, selection_text, metadata, is_private
              )
-             VALUES ($1, $2, $3, $4, $5, $6, $7::text[], $8, $9, $10)
-             RETURNING id, category_id, title, media_url, media_type, description, tags, source, source_ref, is_private, created_at`,
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::text[], $11, $12, $13, $14, $15, $16::jsonb, $17)
+             RETURNING id, category_id, title, media_url, media_type, document_type, description, content_markdown, content_json,
+                       tags, source, source_ref, source_conversation_id, source_message_index, selection_text, metadata, is_private, created_at`,
             [
                 userId,
                 categoryId,
                 normalizedTitle,
                 media_url ? String(media_url) : null,
                 normalizedMediaType,
+                document_type ? String(document_type) : null,
                 description ? String(description) : null,
+                content_markdown ? String(content_markdown) : null,
+                content_json ? JSON.stringify(content_json) : null,
                 normalizedTags,
                 source ? String(source) : null,
                 source_ref ? String(source_ref) : null,
+                source_conversation_id ? String(source_conversation_id) : null,
+                Number.isFinite(Number(source_message_index)) ? Number(source_message_index) : null,
+                selection_text ? String(selection_text) : null,
+                metadata ? JSON.stringify(metadata) : JSON.stringify({}),
                 is_private === undefined ? true : Boolean(is_private)
             ]
         );

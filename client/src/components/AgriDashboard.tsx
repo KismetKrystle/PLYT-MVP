@@ -3,7 +3,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ProductPreviewPanel, { ProductDetail } from './ProductPreviewPanel';
+import IntentLoader from './chat/IntentLoader';
 import { useLessons } from '../context/LessonContext';
+import { classifyIntent, IntentClassification, IntentConfidence, IntentName } from '../lib/intentClassifier';
+import { renderMarkdownToHtml, stripMarkdownToPlainText } from '../lib/markdownDocument';
 
 interface ProduceItem extends ProductDetail {
     quantity: number;
@@ -43,6 +46,15 @@ type QuickReplyOption = {
     prompt: string;
 };
 
+type LibraryCategory = {
+    id: string;
+    label: string;
+    emoji?: string | null;
+    color?: string | null;
+    sort_order?: number;
+    created_at?: string;
+};
+
 type Tab = 'home' | 'chat' | 'find_produce' | 'pick_system' | 'learn' | 'impact' | 'guide' | 'health_profiles' | 'customer_profile';
 
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -76,6 +88,65 @@ const MOCK_SYSTEMS_DB: Omit<ProduceItem, 'quantity'>[] = [
 
 const SEARCH_RADIUS_OPTIONS_KM = [5, 10, 25, 50, 80, 120];
 const DEFAULT_CHAT_GREETING = 'Hello! I can help you find fresh food, nearby places, recipes, and practical nutrition guidance. What are you looking for?';
+const DEFAULT_LIBRARY_CATEGORIES = [
+    { label: 'Recipes', emoji: '🍽️', color: '#4ade80', sort_order: 0 },
+    { label: 'Foods', emoji: '🥦', color: '#facc15', sort_order: 1 },
+    { label: 'Health Tips', emoji: '💡', color: '#60a5fa', sort_order: 2 },
+    { label: 'Research', emoji: '📄', color: '#c084fc', sort_order: 3 }
+];
+
+type SaveMode = 'full' | 'selection';
+
+function normalizeIntentName(value: unknown): IntentName | null {
+    switch (value) {
+        case 'food_search':
+        case 'recipe_search':
+        case 'health_advice':
+        case 'meal_suggestion':
+        case 'research':
+        case 'library_action':
+        case 'general':
+            return value;
+        default:
+            return null;
+    }
+}
+
+function normalizeLibraryLabel(value?: string | null) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function getSuggestedLibraryCategoryLabel(intent?: IntentName) {
+    if (intent === 'recipe_search') return 'recipes';
+    if (intent === 'food_search' || intent === 'meal_suggestion') return 'foods';
+    if (intent === 'health_advice' || intent === 'library_action') return 'health tips';
+    if (intent === 'research') return 'research';
+    return 'recipes';
+}
+
+function deriveDocumentType(intent?: IntentName) {
+    if (intent === 'recipe_search') return 'recipe';
+    if (intent === 'food_search' || intent === 'meal_suggestion') return 'food_note';
+    if (intent === 'health_advice') return 'health_note';
+    if (intent === 'research') return 'research_note';
+    if (intent === 'library_action') return 'library_note';
+    return 'chat_note';
+}
+
+function deriveChatSaveTitle(content: string, intent?: IntentName) {
+    const headingMatch = String(content || '').match(/^#{1,3}\s+(.+)$/m);
+    if (headingMatch?.[1]) {
+        return headingMatch[1].trim().slice(0, 80);
+    }
+
+    const plain = stripMarkdownToPlainText(content).replace(/\s+/g, ' ').trim();
+    if (!plain) {
+        return intent === 'recipe_search' ? 'Saved Recipe' : 'Saved Chat Note';
+    }
+
+    const clipped = plain.length > 72 ? `${plain.slice(0, 69).trim()}...` : plain;
+    return clipped;
+}
 
 function FoodChatMascot() {
     return (
@@ -192,8 +263,23 @@ export default function AgriDashboard() {
     const [isSuggestionSettingsOpen, setIsSuggestionSettingsOpen] = useState(false);
     const [skipAutoRestore, setSkipAutoRestore] = useState(false);
     const [isRestoringConversation, setIsRestoringConversation] = useState(false);
+    const [pendingIntent, setPendingIntent] = useState<IntentClassification | null>(null);
+    const [knowledgeBankCategories, setKnowledgeBankCategories] = useState<LibraryCategory[]>([]);
+    const [selectedAssistantMessageIndex, setSelectedAssistantMessageIndex] = useState<number | null>(null);
+    const [isSaveChatModalOpen, setIsSaveChatModalOpen] = useState(false);
+    const [isLoadingKnowledgeBankCategories, setIsLoadingKnowledgeBankCategories] = useState(false);
+    const [isSavingChatDocument, setIsSavingChatDocument] = useState(false);
+    const [chatSaveStatus, setChatSaveStatus] = useState('');
+    const [chatSaveTargetIndex, setChatSaveTargetIndex] = useState<number | null>(null);
+    const [chatSaveMode, setChatSaveMode] = useState<SaveMode>('full');
+    const [chatSaveSelectionText, setChatSaveSelectionText] = useState('');
+    const [chatSaveTitle, setChatSaveTitle] = useState('');
+    const [chatSaveDescription, setChatSaveDescription] = useState('');
+    const [chatSaveTags, setChatSaveTags] = useState('');
+    const [chatSaveCategoryId, setChatSaveCategoryId] = useState('');
 
     const [selectedProduct, setSelectedProduct] = useState<ProductDetail | null>(null);
+    const assistantMessageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
     // Calculate Total Price (Produce + Systems + Containers)
     const produceTotal = produceItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -333,6 +419,9 @@ export default function AgriDashboard() {
             followUpOptions?: QuickReplyOption[] | null;
             usedFallback?: boolean;
             incompleteProfile?: boolean;
+            intent?: IntentName;
+            intentConfidence?: IntentConfidence;
+            mixedIntent?: IntentName | null;
         }[]
     }>({
         chat: [{ role: 'assistant', content: DEFAULT_CHAT_GREETING }],
@@ -402,17 +491,21 @@ export default function AgriDashboard() {
 
     const handleSend = async (overridePrompt?: string, tags?: string[], overrideScope?: 'local' | 'global', overrideLocation?: string) => {
         const messageText = overridePrompt || prompt;
-        if (!messageText.trim() && (!tags || tags.length === 0)) return;
+        const normalizedTags = tags || [];
+        if (!messageText.trim() && normalizedTags.length === 0) return;
 
         const targetTab: 'chat' | 'find_produce' | 'pick_system' | 'learn' = activeTab === 'home' || activeTab === 'impact' || activeTab === 'guide' || activeTab === 'health_profiles' || activeTab === 'customer_profile' ? 'chat' : activeTab as any;
+        const predictedIntent = classifyIntent(messageText, normalizedTags);
 
         setChatHistory(prev => ({
             ...prev,
-            [targetTab]: [...prev[targetTab], { role: 'user', content: messageText, tags }]
+            [targetTab]: [...prev[targetTab], { role: 'user', content: messageText, tags: normalizedTags }]
         }));
 
         if (!overridePrompt) setPrompt('');
         if (activeTab === 'home') setActiveTab('chat');
+        setSelectedAssistantMessageIndex(null);
+        setPendingIntent(targetTab === 'chat' ? predictedIntent : null);
 
         setIsLoading(true);
         try {
@@ -423,14 +516,14 @@ export default function AgriDashboard() {
             const chatPromise = api.post('/chat', {
                 message: messageText,
                 conversationId: currentConversationId,
-                tags: tags || [],
+                tags: normalizedTags,
                 scope: overrideScope || 'local',
                 location: finalLocation,
                 visiblePlaces: suggestedPlaces.slice(0, 12)
             });
             const searchContextPromise = api.post('/chat/search-context', {
                 message: messageText,
-                tags: tags || []
+                tags: normalizedTags
             });
 
             let parallelPlaceQueries: string[] = [];
@@ -467,6 +560,12 @@ export default function AgriDashboard() {
             const usedFallback = Boolean(res.data?.usedFallback);
             const incompleteProfile = Boolean(res.data?.incomplete_profile);
             const newConvId = res.data.conversationId ? String(res.data.conversationId) : null;
+            const responseIntent = normalizeIntentName(res.data?.intent) || predictedIntent.intent;
+            const responseIntentConfidence: IntentConfidence =
+                res.data?.intentConfidence === 'high' || res.data?.intentConfidence === 'medium' || res.data?.intentConfidence === 'low'
+                    ? res.data.intentConfidence
+                    : predictedIntent.confidence;
+            const responseMixedIntent = normalizeIntentName(res.data?.mixedIntent) || predictedIntent.mixed;
 
             if (newConvId && !currentConversationId) {
                 setCurrentConversationId(newConvId);
@@ -483,7 +582,10 @@ export default function AgriDashboard() {
                         content: aiResponse,
                         followUpOptions: null,
                         usedFallback: false,
-                        incompleteProfile: true
+                        incompleteProfile: true,
+                        intent: responseIntent,
+                        intentConfidence: responseIntentConfidence,
+                        mixedIntent: responseMixedIntent
                     }]
                 }));
                 return;
@@ -524,7 +626,10 @@ export default function AgriDashboard() {
                                     role: 'assistant',
                                     content: syncedResponse,
                                     followUpOptions: null,
-                                    usedFallback: false
+                                    usedFallback: false,
+                                    intent: responseIntent,
+                                    intentConfidence: responseIntentConfidence,
+                                    mixedIntent: responseMixedIntent
                                 }]
                             }));
                         } catch {
@@ -534,7 +639,10 @@ export default function AgriDashboard() {
                                     role: 'assistant',
                                     content: aiResponse,
                                     followUpOptions: Array.isArray(res.data?.followUpOptions) ? res.data.followUpOptions : null,
-                                    usedFallback
+                                    usedFallback,
+                                    intent: responseIntent,
+                                    intentConfidence: responseIntentConfidence,
+                                    mixedIntent: responseMixedIntent
                                 }]
                             }));
                         }
@@ -545,7 +653,10 @@ export default function AgriDashboard() {
                                 role: 'assistant',
                                 content: aiResponse,
                                 followUpOptions: Array.isArray(res.data?.followUpOptions) ? res.data.followUpOptions : null,
-                                usedFallback
+                                usedFallback,
+                                intent: responseIntent,
+                                intentConfidence: responseIntentConfidence,
+                                mixedIntent: responseMixedIntent
                             }]
                         }));
                     }
@@ -570,7 +681,10 @@ export default function AgriDashboard() {
                             role: 'assistant',
                             content: aiResponse,
                             followUpOptions: Array.isArray(res.data?.followUpOptions) ? res.data.followUpOptions : null,
-                            usedFallback
+                            usedFallback,
+                            intent: responseIntent,
+                            intentConfidence: responseIntentConfidence,
+                            mixedIntent: responseMixedIntent
                         }]
                     }));
                 }
@@ -583,7 +697,10 @@ export default function AgriDashboard() {
                     role: 'assistant',
                     content: aiResponse,
                     followUpOptions: Array.isArray(res.data?.followUpOptions) ? res.data.followUpOptions : null,
-                    usedFallback
+                    usedFallback,
+                    intent: responseIntent,
+                    intentConfidence: responseIntentConfidence,
+                    mixedIntent: responseMixedIntent
                 }]
             }));
 
@@ -613,6 +730,7 @@ export default function AgriDashboard() {
                 [targetTab]: [...prev[targetTab], { role: 'assistant', content: `Sorry, I encountered an error: ${error.response?.data?.details || error.message || 'Unknown error'}. Please try again.` }]
             }));
         } finally {
+            setPendingIntent(null);
             setIsLoading(false);
         }
     };
@@ -760,60 +878,188 @@ export default function AgriDashboard() {
         });
     };
 
+    const ensureKnowledgeBankCategories = async () => {
+        setIsLoadingKnowledgeBankCategories(true);
+        try {
+            const res = await api.get('/profile-library/categories');
+            const existing = Array.isArray(res.data) ? (res.data as LibraryCategory[]) : [];
+            const existingLabels = new Set(existing.map((category) => normalizeLibraryLabel(category.label)));
+            const missingDefaults = DEFAULT_LIBRARY_CATEGORIES.filter(
+                (category) => !existingLabels.has(normalizeLibraryLabel(category.label))
+            );
+
+            const created = missingDefaults.length > 0
+                ? await Promise.all(
+                    missingDefaults.map((category) =>
+                        api.post('/profile-library/categories', category).then((response) => response.data as LibraryCategory)
+                    )
+                )
+                : [];
+
+            const merged = [...existing, ...created].sort((a, b) => {
+                if ((a.sort_order || 0) !== (b.sort_order || 0)) {
+                    return (a.sort_order || 0) - (b.sort_order || 0);
+                }
+                return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+            });
+
+            setKnowledgeBankCategories(merged);
+            return merged;
+        } finally {
+            setIsLoadingKnowledgeBankCategories(false);
+        }
+    };
+
+    const getSelectedAssistantText = (messageIndex: number) => {
+        if (typeof window === 'undefined') return '';
+
+        const selection = window.getSelection();
+        const selectionText = selection?.toString().trim() || '';
+        if (!selection || !selectionText || selection.rangeCount === 0) {
+            return '';
+        }
+
+        const container = assistantMessageRefs.current[`chat-${messageIndex}`];
+        if (!container) return '';
+
+        const range = selection.getRangeAt(0);
+        const ancestor = range.commonAncestorContainer;
+        const ancestorElement = ancestor.nodeType === Node.TEXT_NODE ? ancestor.parentElement : (ancestor as HTMLElement | null);
+        if (!ancestorElement || !container.contains(ancestorElement)) {
+            return '';
+        }
+
+        return selectionText;
+    };
+
+    const closeSaveChatModal = () => {
+        setIsSaveChatModalOpen(false);
+        setChatSaveTargetIndex(null);
+        setChatSaveMode('full');
+        setChatSaveSelectionText('');
+        setChatSaveTitle('');
+        setChatSaveDescription('');
+        setChatSaveTags('');
+        setChatSaveCategoryId('');
+    };
+
+    const openSaveChatModal = async (
+        message: {
+            content: string;
+            intent?: IntentName;
+            intentConfidence?: IntentConfidence;
+            mixedIntent?: IntentName | null;
+        },
+        messageIndex: number
+    ) => {
+        try {
+            const categories = knowledgeBankCategories.length > 0
+                ? knowledgeBankCategories
+                : await ensureKnowledgeBankCategories();
+            const selectionText = getSelectedAssistantText(messageIndex);
+            const defaultCategory = categories.find(
+                (category) => normalizeLibraryLabel(category.label) === getSuggestedLibraryCategoryLabel(message.intent)
+            ) || categories[0] || null;
+
+            const defaultTags = Array.from(new Set([
+                message.intent ? message.intent.replace(/_/g, ' ') : '',
+                message.mixedIntent ? message.mixedIntent.replace(/_/g, ' ') : ''
+            ].filter(Boolean))).join(', ');
+
+            setSelectedAssistantMessageIndex(messageIndex);
+            setChatSaveTargetIndex(messageIndex);
+            setChatSaveSelectionText(selectionText);
+            setChatSaveMode(selectionText ? 'selection' : 'full');
+            setChatSaveTitle(deriveChatSaveTitle(selectionText || message.content, message.intent));
+            setChatSaveDescription(selectionText
+                ? 'Selected excerpt saved from a Navi chat response.'
+                : 'Full response saved from a Navi chat answer.');
+            setChatSaveTags(defaultTags);
+            setChatSaveCategoryId(defaultCategory?.id || '');
+            setIsSaveChatModalOpen(true);
+        } catch (error) {
+            console.warn('Failed to prepare Knowledge Bank categories for chat save.', error);
+            setChatSaveStatus('Could not open the save flow right now.');
+        }
+    };
+
+    const handleSaveChatResponse = async () => {
+        if (chatSaveTargetIndex == null || !chatSaveCategoryId || isSavingChatDocument) return;
+
+        const targetMessage = chatHistory.chat[chatSaveTargetIndex];
+        if (!targetMessage || targetMessage.role !== 'assistant') return;
+
+        const markdownContent = chatSaveMode === 'selection' && chatSaveSelectionText.trim()
+            ? chatSaveSelectionText.trim()
+            : targetMessage.content.trim();
+
+        const plainText = stripMarkdownToPlainText(markdownContent);
+        const tagList = Array.from(new Set(
+            chatSaveTags.split(',').map((tag) => tag.trim()).filter(Boolean)
+        ));
+        const documentType = deriveDocumentType(targetMessage.intent);
+
+        setIsSavingChatDocument(true);
+        try {
+            await api.post('/profile-library/items', {
+                category_id: chatSaveCategoryId,
+                title: chatSaveTitle.trim() || deriveChatSaveTitle(markdownContent, targetMessage.intent),
+                description: chatSaveDescription.trim() || plainText.slice(0, 220),
+                media_url: null,
+                media_type: 'markdown',
+                document_type: documentType,
+                tags: tagList,
+                source: 'ai_chat',
+                source_ref: `${currentConversationId || 'unsaved-conversation'}:${chatSaveTargetIndex}`,
+                source_conversation_id: currentConversationId,
+                source_message_index: chatSaveTargetIndex,
+                selection_text: chatSaveMode === 'selection' ? chatSaveSelectionText.trim() : null,
+                content_markdown: markdownContent,
+                content_json: {
+                    version: 1,
+                    documentType,
+                    title: chatSaveTitle.trim() || deriveChatSaveTitle(markdownContent, targetMessage.intent),
+                    description: chatSaveDescription.trim() || plainText.slice(0, 220),
+                    markdown: markdownContent,
+                    plainText,
+                    tags: tagList,
+                    selectionMode: chatSaveMode,
+                    source: {
+                        type: 'ai_chat',
+                        conversationId: currentConversationId,
+                        messageIndex: chatSaveTargetIndex
+                    },
+                    intent: {
+                        primary: targetMessage.intent || null,
+                        confidence: targetMessage.intentConfidence || null,
+                        mixed: targetMessage.mixedIntent || null
+                    }
+                },
+                metadata: {
+                    saved_from: 'chat_response',
+                    selection_mode: chatSaveMode,
+                    full_markdown: targetMessage.content,
+                    full_plain_text: stripMarkdownToPlainText(targetMessage.content)
+                },
+                is_private: true
+            });
+
+            const activeCategory = knowledgeBankCategories.find((category) => category.id === chatSaveCategoryId);
+            setChatSaveStatus(`Saved to ${activeCategory?.label || 'your Knowledge Bank'}.`);
+            closeSaveChatModal();
+        } catch (error) {
+            console.warn('Failed to save chat document to profile library.', error);
+            setChatSaveStatus('Could not save that response right now.');
+        } finally {
+            setIsSavingChatDocument(false);
+        }
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             handleSend();
         }
-    };
-
-    const escapeHtml = (text: string) =>
-        text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-
-    const renderAssistantMarkdown = (text: string) => {
-        let html = escapeHtml(text);
-
-        // Markdown links: [label](https://...)
-        html = html.replace(
-            /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-            '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline break-all">$1</a>'
-        );
-
-        // Plain URLs: https://...
-        html = html.replace(
-            /(?<!href=")(https?:\/\/[^\s<]+)/g,
-            '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline break-all">$1</a>'
-        );
-
-        // Headings
-        html = html
-            .replace(/^###\s+(.+)$/gm, '<h3 class="font-semibold text-base mt-2 mb-1">$1</h3>')
-            .replace(/^##\s+(.+)$/gm, '<h2 class="font-semibold text-lg mt-2 mb-1">$1</h2>')
-            .replace(/^#\s+(.+)$/gm, '<h1 class="font-bold text-xl mt-2 mb-1">$1</h1>');
-
-        // Bold
-        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-        // Bullet lists (single-level)
-        html = html.replace(/(?:^|\n)-\s+(.+)(?=\n|$)/g, '<li>$1</li>');
-        html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul class="list-disc ml-5 my-2">$1</ul>');
-
-        // Line breaks
-        html = html.replace(/\n/g, '<br />');
-
-        // Clean up breaks around block elements
-        html = html
-            .replace(/<br \/>(<h[1-3])/g, '$1')
-            .replace(/(<\/h[1-3]>)<br \/>/g, '$1')
-            .replace(/<br \/>((?:<ul class="list-disc ml-5 my-2">))/g, '$1')
-            .replace(/(<\/ul>)<br \/>/g, '$1');
-
-        return html;
     };
 
     const extractGoogleMapsQueries = (text: string) => {
@@ -904,6 +1150,9 @@ export default function AgriDashboard() {
         setSuggestedProducts([]);
         setShowPreview(false);
         setPrompt('');
+        setSelectedAssistantMessageIndex(null);
+        setChatSaveStatus('');
+        closeSaveChatModal();
         setChatHistory((prev) => ({
             ...prev,
             chat: [{ role: 'assistant', content: DEFAULT_CHAT_GREETING }]
@@ -1052,6 +1301,11 @@ export default function AgriDashboard() {
                                             New chat
                                         </button>
                                     </div>
+                                    {chatSaveStatus ? (
+                                        <div className="mt-3 rounded-2xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-800">
+                                            {chatSaveStatus}
+                                        </div>
+                                    ) : null}
                                 </div>
                                 <div className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-6 space-y-4">
                                     {(chatHistory['chat'] || []).map((msg, idx, messages) => (
@@ -1061,14 +1315,52 @@ export default function AgriDashboard() {
                                             animate={{ opacity: 1, y: 0 }}
                                             className={`flex w-full mb-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                                         >
-                                            <div className={`max-w-[90%] rounded-2xl px-4 py-3 shadow-sm ${msg.role === 'user'
+                                            <div
+                                                ref={(node) => {
+                                                    if (msg.role === 'assistant') {
+                                                        assistantMessageRefs.current[`chat-${idx}`] = node;
+                                                    }
+                                                }}
+                                                className={`max-w-[90%] rounded-2xl px-4 py-3 shadow-sm ${msg.role === 'user'
                                                 ? 'bg-green-600 text-white rounded-br-none'
-                                                : 'bg-white border border-gray-100 text-gray-800 rounded-bl-none'
-                                                }`}>
+                                                : selectedAssistantMessageIndex === idx
+                                                    ? 'bg-white border border-green-300 text-gray-800 rounded-bl-none ring-2 ring-green-100'
+                                                    : 'bg-white border border-gray-100 text-gray-800 rounded-bl-none'
+                                                }`}
+                                            >
+                                                {msg.role === 'assistant' && !msg.incompleteProfile ? (
+                                                    <div className="mb-2 flex items-center justify-between gap-3">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSelectedAssistantMessageIndex((current) => current === idx ? null : idx)}
+                                                            className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                                                                selectedAssistantMessageIndex === idx
+                                                                    ? 'border-green-300 bg-green-50 text-green-700'
+                                                                    : 'border-gray-200 bg-white text-gray-500 hover:border-green-200 hover:text-green-700'
+                                                            }`}
+                                                        >
+                                                            <span className={`h-3 w-3 rounded-full border ${
+                                                                selectedAssistantMessageIndex === idx
+                                                                    ? 'border-green-600 bg-green-600'
+                                                                    : 'border-gray-300 bg-white'
+                                                            }`} />
+                                                            Save target
+                                                        </button>
+                                                        {selectedAssistantMessageIndex === idx ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => requireAuth(() => { void openSaveChatModal(msg, idx); })}
+                                                                className="rounded-full border border-green-200 bg-green-50 px-3 py-1 text-[11px] font-semibold text-green-700 transition hover:border-green-300 hover:bg-green-100"
+                                                            >
+                                                                Save to bank
+                                                            </button>
+                                                        ) : null}
+                                                    </div>
+                                                ) : null}
                                                 {msg.role === 'assistant' ? (
                                                     <div
                                                         className="leading-relaxed text-sm"
-                                                        dangerouslySetInnerHTML={{ __html: renderAssistantMarkdown(msg.content) }}
+                                                        dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(msg.content) }}
                                                     />
                                                 ) : (
                                                     <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
@@ -1109,6 +1401,11 @@ export default function AgriDashboard() {
                                             </div>
                                         </motion.div>
                                     ))}
+                                    <AnimatePresence>
+                                        {isLoading && pendingIntent ? (
+                                            <IntentLoader classification={pendingIntent} />
+                                        ) : null}
+                                    </AnimatePresence>
                                     <div ref={messagesEndRef} />
                                 </div>
                                 </div>
@@ -1941,10 +2238,10 @@ export default function AgriDashboard() {
                                                             : 'bg-white border border-gray-100 text-gray-800 rounded-bl-none'
                                                             }`}>
                                                             {msg.role === 'assistant' ? (
-                                                                <div
-                                                                    className="leading-relaxed text-sm"
-                                                                    dangerouslySetInnerHTML={{ __html: renderAssistantMarkdown(msg.content) }}
-                                                                />
+                                                        <div
+                                                            className="leading-relaxed text-sm"
+                                                            dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(msg.content) }}
+                                                        />
                                                             ) : (
                                                                 <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
                                                             )}
@@ -2062,7 +2359,7 @@ export default function AgriDashboard() {
                                     />
                                     <button
                                         onClick={() => handleSend()}
-                                        disabled={!prompt.trim()}
+                                        disabled={!prompt.trim() || isLoading}
                                         className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-green-600 text-white rounded-full hover:bg-green-700 disabled:opacity-50 transition shadow-md"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
@@ -2078,6 +2375,142 @@ export default function AgriDashboard() {
                             </div>
                         )
                     }
+
+                    {isSaveChatModalOpen ? (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6 backdrop-blur-sm">
+                            <div className="w-full max-w-2xl rounded-[2rem] border border-gray-200 bg-white p-6 shadow-2xl">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-green-600">Knowledge Bank</p>
+                                        <h3 className="mt-2 text-2xl font-bold text-gray-900">Save chat response</h3>
+                                        <p className="mt-2 text-sm text-gray-500">Save the full response or the highlighted excerpt as Markdown plus structured JSON.</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={closeSaveChatModal}
+                                        className="rounded-full border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-500 transition hover:bg-gray-50"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+
+                                <div className="mt-5 space-y-4">
+                                    {chatSaveSelectionText ? (
+                                        <div>
+                                            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">Save mode</p>
+                                            <div className="grid gap-2 sm:grid-cols-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setChatSaveMode('selection')}
+                                                    className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${chatSaveMode === 'selection' ? 'border-green-300 bg-green-50 text-green-800' : 'border-gray-200 bg-white text-gray-600'}`}
+                                                >
+                                                    <p className="font-bold">Selected excerpt</p>
+                                                    <p className="mt-1 text-xs">Save only the text you highlighted in the response.</p>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setChatSaveMode('full')}
+                                                    className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${chatSaveMode === 'full' ? 'border-green-300 bg-green-50 text-green-800' : 'border-gray-200 bg-white text-gray-600'}`}
+                                                >
+                                                    <p className="font-bold">Full response</p>
+                                                    <p className="mt-1 text-xs">Save the entire assistant message with original markdown formatting.</p>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : null}
+
+                                    <div className="grid gap-4 sm:grid-cols-2">
+                                        <div>
+                                            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">Category</p>
+                                            <select
+                                                value={chatSaveCategoryId}
+                                                onChange={(e) => setChatSaveCategoryId(e.target.value)}
+                                                disabled={isLoadingKnowledgeBankCategories}
+                                                className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-green-500"
+                                            >
+                                                <option value="">{isLoadingKnowledgeBankCategories ? 'Loading categories...' : 'Select a category'}</option>
+                                                {knowledgeBankCategories.map((category) => (
+                                                    <option key={category.id} value={category.id}>
+                                                        {category.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">Title</p>
+                                            <input
+                                                type="text"
+                                                value={chatSaveTitle}
+                                                onChange={(e) => setChatSaveTitle(e.target.value)}
+                                                className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-green-500"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">Description</p>
+                                        <textarea
+                                            value={chatSaveDescription}
+                                            onChange={(e) => setChatSaveDescription(e.target.value)}
+                                            className="min-h-24 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-green-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">Tags</p>
+                                        <input
+                                            type="text"
+                                            value={chatSaveTags}
+                                            onChange={(e) => setChatSaveTags(e.target.value)}
+                                            placeholder="recipe, anti inflammatory, breakfast"
+                                            className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-green-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <div className="mb-2 flex items-center justify-between gap-3">
+                                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-500">Preview</p>
+                                            <p className="text-xs font-medium text-gray-400">
+                                                {chatSaveMode === 'selection' && chatSaveSelectionText ? 'Excerpt' : 'Full response'}
+                                            </p>
+                                        </div>
+                                        <div className="max-h-64 overflow-y-auto rounded-3xl border border-gray-200 bg-gray-50 px-4 py-4">
+                                            <div
+                                                className="prose prose-sm max-w-none text-gray-700"
+                                                dangerouslySetInnerHTML={{
+                                                    __html: renderMarkdownToHtml(
+                                                        chatSaveMode === 'selection' && chatSaveSelectionText
+                                                            ? chatSaveSelectionText
+                                                            : (chatSaveTargetIndex != null && chatHistory.chat[chatSaveTargetIndex]?.role === 'assistant'
+                                                                ? chatHistory.chat[chatSaveTargetIndex].content
+                                                                : '')
+                                                    )
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={closeSaveChatModal}
+                                        className="rounded-2xl border border-gray-200 bg-white px-5 py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleSaveChatResponse()}
+                                        disabled={!chatSaveCategoryId || !chatSaveTitle.trim() || isSavingChatDocument}
+                                        className="rounded-2xl bg-green-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-green-700 disabled:opacity-50"
+                                    >
+                                        {isSavingChatDocument ? 'Saving...' : 'Save to Knowledge Bank'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ) : null}
                 </div>
             </div >
         </div >

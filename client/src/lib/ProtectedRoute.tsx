@@ -11,7 +11,9 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     const { user, loading, isAccessWallEnabled, isUserDenied } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
-    const isPublicRoute = PUBLIC_ROUTES.some(route => pathname === route || pathname?.startsWith('/auth/'));
+    const isPublicRoute =
+        PUBLIC_ROUTES.some((route) => pathname === route || pathname?.startsWith(`${route}/`)) ||
+        pathname?.startsWith('/auth/');
     const requiresAuth = !isPublicRoute;
 
     useEffect(() => {

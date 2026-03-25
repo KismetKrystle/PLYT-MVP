@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import api from './api';
 import { useRouter } from 'next/navigation';
 
@@ -21,6 +21,7 @@ interface AuthContextType {
     token: string | null;
     login: (token: string, user: User, redirectPath?: string) => void;
     logout: () => void;
+    clearSession: (redirectPath?: string) => void;
     loading: boolean;
     isLoginModalOpen: boolean;
     openLoginModal: () => void;
@@ -28,7 +29,7 @@ interface AuthContextType {
     requireAuth: (callback: () => void) => void;
     isAccessWallEnabled: boolean;
     isUserDenied: boolean;
-
+    clerkSignOutRequestId: number;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -42,10 +43,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         process.env.NEXT_PUBLIC_ACCESS_WALL_ENABLED === 'true'
     );
     const [isUserDenied, setIsUserDenied] = useState(false);
+    const [clerkSignOutRequestId, setClerkSignOutRequestId] = useState(0);
     const router = useRouter();
 
     const openLoginModal = () => setIsLoginModalOpen(true);
     const closeLoginModal = () => setIsLoginModalOpen(false);
+
+    const clearStoredSession = useCallback((redirectPath?: string) => {
+        setToken(null);
+        setUser(null);
+        setIsUserDenied(false);
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('clerk_user_id');
+        setIsLoginModalOpen(false);
+
+        if (redirectPath) {
+            router.push(redirectPath);
+        }
+    }, [router]);
 
     const login = (newToken: string, newUser: User, redirectPath?: string) => {
         setToken(newToken);
@@ -59,13 +75,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     };
 
+    const clearSession = (redirectPath?: string) => {
+        clearStoredSession(redirectPath);
+    };
+
     const logout = () => {
-        setToken(null);
-        setUser(null);
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        setIsUserDenied(false);
-        router.push('/');
+        clearStoredSession('/');
+        setClerkSignOutRequestId((current) => current + 1);
     };
 
     const requireAuth = (callback: () => void) => {
@@ -93,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             if (storedToken && storedToken.startsWith('mock-jwt-token')) {
                 console.warn('Mock token detected, clearing session.');
-                logout();
+                clearStoredSession();
                 setLoading(false);
                 return;
             }
@@ -111,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         setToken(storedToken);
                         setUser(JSON.parse(storedUser));
                     } else {
-                        logout();
+                        clearStoredSession();
                     }
                 }
             }
@@ -119,10 +135,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
 
         initAuth();
-    }, []);
+    }, [clearStoredSession]);
 
     return (
-        <AuthContext.Provider value={{ user, token, login, logout, loading, isLoginModalOpen, openLoginModal, closeLoginModal, requireAuth, isAccessWallEnabled, isUserDenied }}>
+        <AuthContext.Provider value={{ user, token, login, logout, clearSession, loading, isLoginModalOpen, openLoginModal, closeLoginModal, requireAuth, isAccessWallEnabled, isUserDenied, clerkSignOutRequestId }}>
             {children}
         </AuthContext.Provider>
     );

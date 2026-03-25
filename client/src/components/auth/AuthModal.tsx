@@ -2,10 +2,13 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useClerk } from '@clerk/nextjs';
+import { useEffect } from 'react';
 import { useAuth } from '../../lib/auth';
 
-export default function AuthModal() {
+function FallbackAuthModal() {
     const { isLoginModalOpen, closeLoginModal, isAccessWallEnabled } = useAuth();
 
     if (!isLoginModalOpen) return null;
@@ -71,4 +74,38 @@ export default function AuthModal() {
             ) : null}
         </AnimatePresence>
     );
+}
+
+function ClerkAuthModal() {
+    const pathname = usePathname();
+    const { openSignIn } = useClerk();
+    const { isLoginModalOpen, closeLoginModal, isAccessWallEnabled } = useAuth();
+
+    useEffect(() => {
+        if (!isLoginModalOpen) {
+            return;
+        }
+
+        const redirectPath = pathname || '/';
+        const signUpRedirect = `/auth/complete?mode=kyc&redirect=${encodeURIComponent(redirectPath)}`;
+
+        closeLoginModal();
+        openSignIn({
+            fallbackRedirectUrl: redirectPath,
+            forceRedirectUrl: redirectPath,
+            signUpFallbackRedirectUrl: signUpRedirect,
+            signUpForceRedirectUrl: signUpRedirect,
+            withSignUp: !isAccessWallEnabled,
+        });
+    }, [closeLoginModal, isAccessWallEnabled, isLoginModalOpen, openSignIn, pathname]);
+
+    return null;
+}
+
+export default function AuthModal() {
+    if (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+        return <ClerkAuthModal />;
+    }
+
+    return <FallbackAuthModal />;
 }

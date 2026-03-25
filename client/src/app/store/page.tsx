@@ -26,7 +26,7 @@ const TAB_OPTIONS: Array<{ id: StoreTab; label: string }> = [
 
 export default function StorePage() {
     const router = useRouter();
-    const { user } = useAuth();
+    const { user, openLoginModal } = useAuth();
     const [activeTab, setActiveTab] = useState<StoreTab>('fresh_produce');
     const [category, setCategory] = useState('All');
     const [storeRequest, setStoreRequest] = useState('');
@@ -57,7 +57,7 @@ export default function StorePage() {
 
         if (!user) {
             localStorage.setItem('pendingStoreRequest', trimmedRequest);
-            router.push('/login?redirect=%2Fstore');
+            openLoginModal();
             return;
         }
 

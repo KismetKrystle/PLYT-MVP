@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useAuth } from '../lib/auth';
 
 export default function NavBar() {
-    const { user, logout } = useAuth();
+    const { user, logout, openLoginModal } = useAuth();
 
     return (
         <nav className="container mx-auto px-4 h-16 flex items-center justify-between">
@@ -39,9 +39,12 @@ export default function NavBar() {
                         </button>
                     </div>
                 ) : (
-                    <Link href="/login" className="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 transition">
+                    <button
+                        onClick={openLoginModal}
+                        className="px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 transition"
+                    >
                         Sign In
-                    </Link>
+                    </button>
                 )}
             </div>
         </nav >

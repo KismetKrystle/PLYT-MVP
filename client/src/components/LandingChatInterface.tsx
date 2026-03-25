@@ -48,7 +48,7 @@ export default function LandingChatInterface() {
     };
 
     const [isLoading, setIsLoading] = useState(false);
-    const { user } = useAuth();
+    const { user, openLoginModal } = useAuth();
     const homeLocation = (user?.location_address || user?.location_city || '').trim();
 
     const resolveSearchLocation = async () => {
@@ -81,7 +81,7 @@ export default function LandingChatInterface() {
                 location: finalLocation
             };
             localStorage.setItem('pendingChatPrompt', JSON.stringify(payload));
-            router.push('/login');
+            openLoginModal();
             return;
         }
 
@@ -126,7 +126,7 @@ export default function LandingChatInterface() {
                 <Logo variant="dark" width={90} />
                 <div className="flex gap-3 md:gap-4">
                     <button
-                        onClick={() => router.push('/login')}
+                        onClick={openLoginModal}
                         className="text-gray-600 font-medium hover:text-green-700 transition-colors text-sm md:text-base"
                     >
                         Sign In

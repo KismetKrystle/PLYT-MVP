@@ -26,6 +26,7 @@ import { checkGatekeeper } from './middleware/gatekeeper';
 
 const app: Express = express();
 const port = process.env.PORT || 4000;
+const host = '0.0.0.0';
 
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
@@ -71,8 +72,8 @@ app.get('/', (req: Request, res: Response) => {
     res.send('PLYT MVP Backend is running');
 });
 
-app.listen(port, () => {
-    console.log(`[server]: Server is running at http://localhost:${port}`);
+app.listen(Number(port), host, () => {
+    console.log(`[server]: Server is running at http://${host}:${port}`);
 });
 
 // Force restart trigger

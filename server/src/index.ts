@@ -28,7 +28,25 @@ const app: Express = express();
 const port = process.env.PORT || 4000;
 const host = '0.0.0.0';
 
-app.use(cors());
+const allowedOrigins = new Set([
+    'http://localhost:3000',
+    'https://app.plyant.com',
+    'https://www.app.plyant.com'
+]);
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.has(origin)) {
+            callback(null, true);
+            return;
+        }
+
+        callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json({ limit: '25mb' }));
 
 // Global Middleware (Order matters!)

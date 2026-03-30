@@ -1,10 +1,30 @@
 'use client';
 
+import Link from 'next/link';
 import { useAuth } from '../lib/auth';
 import LandingChatInterface from '../components/LandingChatInterface';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect } from 'react';
 import AgriDashboard from '../components/AgriDashboard';
+
+function LandingShell() {
+  return (
+    <div className="relative">
+      <LandingChatInterface />
+      <div className="pointer-events-none fixed bottom-4 left-1/2 z-20 -translate-x-1/2">
+        <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-white/20 bg-white/85 px-4 py-2 text-xs text-gray-600 shadow-lg backdrop-blur">
+          <Link className="underline underline-offset-2 hover:text-green-700" href="/privacy">
+            Privacy Policy
+          </Link>
+          <span aria-hidden="true">|</span>
+          <Link className="underline underline-offset-2 hover:text-green-700" href="/terms">
+            Terms of Service
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -22,7 +42,7 @@ export default function Home() {
 
   // 1. Explicit Landing Request (via Logo or Link)
   if (tab === 'landing') {
-    return <LandingChatInterface />;
+    return <LandingShell />;
   }
 
   // 2. User is Logged In -> Default to Dashboard (Profile/Home)
@@ -35,5 +55,5 @@ export default function Home() {
   }
 
   // 3. Guest on Root (No Tab) -> Landing Page
-  return <LandingChatInterface />;
+  return <LandingShell />;
 }

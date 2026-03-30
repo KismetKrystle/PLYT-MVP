@@ -88,6 +88,10 @@ const MOCK_SYSTEMS_DB: Omit<ProduceItem, 'quantity'>[] = [
 
 const SEARCH_RADIUS_OPTIONS_KM = [5, 10, 25, 50, 80, 120];
 const DEFAULT_CHAT_GREETING = 'Hello! I can help you find fresh food, nearby places, recipes, and practical nutrition guidance. What are you looking for?';
+const GUEST_CHAT_LIMIT = 3;
+const GUEST_CHAT_STORAGE_KEY = 'plyt_guest_chat_count';
+const AUTH_MODAL_LINK = 'plyt://auth-modal';
+const GUEST_CHAT_LIMIT_MESSAGE = 'You have used your 3 guest questions. This search is designed to adapt to your health preferences. Please [Signup/in](plyt://auth-modal) and complete a bit of your health profile so the results can serve you better.';
 const DEFAULT_LIBRARY_CATEGORIES = [
     { label: 'Recipes', emoji: '🍽️', color: '#4ade80', sort_order: 0 },
     { label: 'Foods', emoji: '🥦', color: '#facc15', sort_order: 1 },
@@ -210,7 +214,7 @@ export default function AgriDashboard() {
     const historyId = searchParams.get('historyId');
     const requestedTab = searchParams.get('tab');
 
-    const { user, requireAuth } = useAuth(); // Get user for profile & requireAuth
+    const { user, requireAuth, openLoginModal } = useAuth(); // Get user for profile & requireAuth
     const { addToCart } = useCart();
 
     const isProfileTab = requestedTab === 'customer_profile' || requestedTab === 'health_profiles';
@@ -223,6 +227,7 @@ export default function AgriDashboard() {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>('home');
     const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+    const [guestQuestionCount, setGuestQuestionCount] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
     const [prompt, setPrompt] = useState('');
     const [showPreview, setShowPreview] = useState(false);
@@ -239,6 +244,19 @@ export default function AgriDashboard() {
             setActiveTab(tab === 'customer_profile' ? 'home' : tab as Tab);
         }
     }, [searchParams]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        if (user?.id) {
+            localStorage.removeItem(GUEST_CHAT_STORAGE_KEY);
+            setGuestQuestionCount(0);
+            return;
+        }
+
+        const storedCount = Number(localStorage.getItem(GUEST_CHAT_STORAGE_KEY) || '0');
+        setGuestQuestionCount(Number.isFinite(storedCount) ? Math.max(0, storedCount) : 0);
+    }, [user?.id]);
 
 
     // Mobile Panel State
@@ -333,6 +351,18 @@ export default function AgriDashboard() {
 
     const replaceSuggestedPlaces = (incoming: PlaceSuggestion[]) => {
         setSuggestedPlaces(normalizeSuggestedPlaces(incoming));
+    };
+
+    const handleAssistantMessageClick = (event: React.MouseEvent<HTMLDivElement>) => {
+        const target = event.target as HTMLElement | null;
+        const anchor = target?.closest('a');
+        if (!anchor) return;
+
+        const href = String(anchor.getAttribute('href') || '').trim();
+        if (href !== AUTH_MODAL_LINK) return;
+
+        event.preventDefault();
+        openLoginModal();
     };
 
     const buildSuggestionState = (): SavedSuggestionState => ({
@@ -497,6 +527,16 @@ export default function AgriDashboard() {
         const targetTab: 'chat' | 'find_produce' | 'pick_system' | 'learn' = activeTab === 'home' || activeTab === 'impact' || activeTab === 'guide' || activeTab === 'health_profiles' || activeTab === 'customer_profile' ? 'chat' : activeTab as any;
         const predictedIntent = classifyIntent(messageText, normalizedTags);
 
+        if (!user && guestQuestionCount >= GUEST_CHAT_LIMIT) {
+            setActiveTab('chat');
+            setChatHistory(prev => ({
+                ...prev,
+                [targetTab]: [...prev[targetTab], { role: 'assistant', content: GUEST_CHAT_LIMIT_MESSAGE }]
+            }));
+            requireAuth(() => { });
+            return;
+        }
+
         setChatHistory(prev => ({
             ...prev,
             [targetTab]: [...prev[targetTab], { role: 'user', content: messageText, tags: normalizedTags }]
@@ -555,6 +595,16 @@ export default function AgriDashboard() {
             })();
 
             const res = await chatPromise;
+
+            if (!user) {
+                setGuestQuestionCount((current) => {
+                    const nextCount = Math.min(GUEST_CHAT_LIMIT, current + 1);
+                    if (typeof window !== 'undefined') {
+                        localStorage.setItem(GUEST_CHAT_STORAGE_KEY, String(nextCount));
+                    }
+                    return nextCount;
+                });
+            }
 
             const aiResponse = res.data.reply || res.data.response;
             const usedFallback = Boolean(res.data?.usedFallback);
@@ -749,22 +799,14 @@ export default function AgriDashboard() {
             try {
                 const parsed = JSON.parse(stored);
                 if (parsed.text) {
-                    if (user) {
-                        handleSend(parsed.text, parsed.tags, parsed.scope, parsed.location);
-                    } else {
-                        setChatHistory(prev => ({
-                            ...prev,
-                            chat: [...prev.chat, { role: 'user', content: parsed.text, tags: parsed.tags }]
-                        }));
-                        setActiveTab('chat');
-                    }
+                    handleSend(parsed.text, parsed.tags, parsed.scope, parsed.location);
                 }
                 localStorage.removeItem('pendingChatPrompt');
             } catch (e) {
                 console.error(e);
             }
         }
-    }, [searchParams, user]);
+    }, [searchParams, user, guestQuestionCount]);
 
     useEffect(() => {
         const urlConvId = searchParams.get('conversationId');
@@ -1360,6 +1402,7 @@ export default function AgriDashboard() {
                                                 {msg.role === 'assistant' ? (
                                                     <div
                                                         className="leading-relaxed text-sm"
+                                                        onClick={handleAssistantMessageClick}
                                                         dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(msg.content) }}
                                                     />
                                                 ) : (
@@ -2240,6 +2283,7 @@ export default function AgriDashboard() {
                                                             {msg.role === 'assistant' ? (
                                                         <div
                                                             className="leading-relaxed text-sm"
+                                                            onClick={handleAssistantMessageClick}
                                                             dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(msg.content) }}
                                                         />
                                                             ) : (

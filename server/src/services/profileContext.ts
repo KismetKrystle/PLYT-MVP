@@ -19,6 +19,23 @@ function normalizeProfileLocation(profile: any) {
     };
 }
 
+function normalizeStringList(value: unknown): string[] {
+    if (Array.isArray(value)) {
+        return value
+            .map((item) => String(item || '').trim())
+            .filter(Boolean);
+    }
+
+    if (typeof value === 'string') {
+        return value
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean);
+    }
+
+    return [];
+}
+
 export async function fetchRoleProfileData(userId: string | number, role: Role) {
     const userResult = await pool.query('SELECT name, profile_data FROM users WHERE id = $1 LIMIT 1', [userId]);
     const userProfile = userResult.rows[0]?.profile_data || {};
@@ -71,14 +88,22 @@ export async function fetchRoleProfileData(userId: string | number, role: Role) 
 
 export function isProfileComplete(profile: any): boolean {
     const normalizedLocation = normalizeProfileLocation(profile);
-    const fullName = String(profile?.full_name || profile?.name || '').trim();
+    const healthConditions = normalizeStringList(profile?.health_conditions);
+    const dietaryPreferences = normalizeStringList(profile?.dietary_preferences);
+    const allergies = normalizeStringList(profile?.allergies);
+    const wellnessGoals = normalizeStringList(profile?.wellness_goals);
+    const healthAreas = normalizeStringList(profile?.health_areas);
+    const notes = String(profile?.notes || '').trim();
+    const hasHealthDocuments = Array.isArray(profile?.health_documents) && profile.health_documents.some(Boolean);
+    const hasLocation = normalizedLocation.city.length > 0 || normalizedLocation.address.length > 0;
+    const hasHealthContext =
+        healthConditions.length > 0 ||
+        dietaryPreferences.length > 0 ||
+        allergies.length > 0 ||
+        wellnessGoals.length > 0 ||
+        healthAreas.length > 0 ||
+        notes.length > 0 ||
+        hasHealthDocuments;
 
-    return (
-        Array.isArray(profile?.health_conditions) &&
-        profile.health_conditions.length > 0 &&
-        Array.isArray(profile?.dietary_preferences) &&
-        profile.dietary_preferences.length > 0 &&
-        fullName.length > 0 &&
-        (normalizedLocation.city.length > 0 || normalizedLocation.address.length > 0)
-    );
+    return hasHealthContext || hasLocation;
 }

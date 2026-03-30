@@ -6,6 +6,11 @@ import {
     upsertPlaceProfileFromFavorite,
     removePlaceFavorite
 } from '../services/placeProfiles';
+import {
+    ensureConversationRetentionColumns,
+    markConversationSavedByUser,
+    syncConversationSavedState
+} from '../services/chatRetention';
 
 const router = express.Router();
 const VALID_ROLES = new Set(['consumer', 'farmer', 'expert', 'distributor', 'servicer']);
@@ -401,6 +406,7 @@ router.post('/favorites/chats', authenticateToken, async (req: AuthRequest, res:
         };
 
         await client.query('BEGIN');
+        await ensureConversationRetentionColumns(client);
         const existingResult = await client.query(
             `SELECT profile_data FROM users WHERE id = $1 LIMIT 1`,
             [userId]
@@ -422,6 +428,7 @@ router.post('/favorites/chats', authenticateToken, async (req: AuthRequest, res:
         const updatedUser = await syncUserProfileData(client, userId as string | number, userRole, {
             favorite_chats: nextChats
         });
+        await markConversationSavedByUser(client, userId as string | number, favoriteChat.id, true);
 
         await client.query('COMMIT');
         res.json({
@@ -456,6 +463,7 @@ router.delete('/favorites/chats/:conversationId', authenticateToken, async (req:
         }
 
         await client.query('BEGIN');
+        await ensureConversationRetentionColumns(client);
         const existingResult = await client.query(
             `SELECT profile_data FROM users WHERE id = $1 LIMIT 1`,
             [userId]
@@ -474,6 +482,12 @@ router.delete('/favorites/chats/:conversationId', authenticateToken, async (req:
         const updatedUser = await syncUserProfileData(client, userId as string | number, userRole, {
             favorite_chats: nextChats
         });
+        await syncConversationSavedState(
+            client,
+            userId as string | number,
+            normalizedConversationId,
+            updatedUser.profile_data
+        );
 
         await client.query('COMMIT');
         res.json({

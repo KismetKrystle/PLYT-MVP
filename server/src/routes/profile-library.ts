@@ -1,6 +1,11 @@
 import express, { Response } from 'express';
 import pool from '../db';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import {
+    ensureConversationRetentionColumns,
+    markConversationSavedByUser,
+    syncConversationSavedState
+} from '../services/chatRetention';
 
 const router = express.Router();
 
@@ -310,6 +315,8 @@ router.post('/items', authenticateToken, async (req: AuthRequest, res: Response)
             ? tags.map((tag) => String(tag || '').trim()).filter(Boolean)
             : [];
 
+        await ensureConversationRetentionColumns(pool);
+
         const result = await pool.query(
             `INSERT INTO profile_items (
                 user_id, category_id, title, media_url, media_type, document_type, description, content_markdown, content_json,
@@ -339,6 +346,15 @@ router.post('/items', authenticateToken, async (req: AuthRequest, res: Response)
             ]
         );
 
+        if (source_conversation_id) {
+            await markConversationSavedByUser(
+                pool,
+                userId as string | number,
+                String(source_conversation_id),
+                true
+            );
+        }
+
         res.status(201).json(result.rows[0]);
     } catch (error) {
         console.error('Create profile item error:', error);
@@ -350,16 +366,26 @@ router.delete('/items/:id', authenticateToken, async (req: AuthRequest, res: Res
     try {
         const userId = req.user?.id;
         const itemId = String(req.params.id || '').trim();
+        await ensureConversationRetentionColumns(pool);
         const result = await pool.query(
             `DELETE FROM profile_items
              WHERE id = $1 AND user_id = $2
-             RETURNING id`,
+             RETURNING id, source_conversation_id`,
             [itemId, userId]
         );
 
         if (result.rows.length === 0) {
             res.sendStatus(404);
             return;
+        }
+
+        const sourceConversationId = String(result.rows[0]?.source_conversation_id || '').trim();
+        if (sourceConversationId) {
+            await syncConversationSavedState(
+                pool,
+                userId as string | number,
+                sourceConversationId
+            );
         }
 
         res.json({ success: true });

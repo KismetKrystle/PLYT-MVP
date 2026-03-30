@@ -13,7 +13,7 @@ export default function Home() {
   const tab = searchParams.get('tab');
 
   useEffect(() => {
-    if (!loading && !user && tab && tab !== 'landing') {
+    if (!loading && !user && tab && !['landing', 'chat'].includes(tab)) {
       router.replace('/');
     }
   }, [loading, router, tab, user]);
@@ -26,7 +26,7 @@ export default function Home() {
   }
 
   // 2. User is Logged In -> Default to Dashboard (Profile/Home)
-  if (user) {
+  if (user || tab === 'chat') {
     return (
       <Suspense fallback={<div className="min-h-screen bg-white" />}>
         <AgriDashboard />

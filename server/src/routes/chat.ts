@@ -2,11 +2,17 @@ import express, { Request, Response } from 'express';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
 import pool from '../db';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, authenticateTokenOptional } from '../middleware/auth';
 import { buildNaviSystemInstruction } from '../config/persona';
 import { buildIntentSystemSection, classifyIntent } from '../lib/intentClassifier';
 import { fetchRoleProfileData, isProfileComplete } from '../services/profileContext';
 import { hydratePlacesWithProfileData, searchManagedPlaceProfiles } from '../services/placeProfiles';
+import {
+    ACTIVE_CONVERSATION_WHERE_SQL,
+    CHAT_HISTORY_RETENTION_DAYS,
+    cleanupExpiredConversations,
+    ensureConversationRetentionColumns
+} from '../services/chatRetention';
 
 const router = express.Router();
 let chatSchemaReady: Promise<void> | null = null;
@@ -41,6 +47,7 @@ async function ensureChatConversationSchema() {
                 ALTER TABLE conversations
                 ADD COLUMN IF NOT EXISTS suggestion_state JSONB;
             `);
+            await ensureConversationRetentionColumns(pool);
 
             await pool.query(`
                 WITH users_with_history AS (
@@ -61,6 +68,7 @@ async function ensureChatConversationSchema() {
                 WHERE ch.user_id = inserted.user_id
                   AND ch.conversation_id IS NULL;
             `);
+            await cleanupExpiredConversations(pool);
         })().catch((error) => {
             chatSchemaReady = null;
             throw error;
@@ -68,6 +76,29 @@ async function ensureChatConversationSchema() {
     }
 
     return chatSchemaReady;
+}
+
+function profileHasHealthContext(profile: any) {
+    return (
+        (Array.isArray(profile?.health_conditions) && profile.health_conditions.length > 0) ||
+        (Array.isArray(profile?.dietary_preferences) && profile.dietary_preferences.length > 0) ||
+        (Array.isArray(profile?.allergies) && profile.allergies.length > 0) ||
+        (Array.isArray(profile?.wellness_goals) && profile.wellness_goals.length > 0) ||
+        (Array.isArray(profile?.health_areas) && profile.health_areas.length > 0) ||
+        Boolean(String(profile?.notes || '').trim())
+    );
+}
+
+function shouldPreserveConversationForHealth(intent: string | undefined, profile: any) {
+    if (intent === 'health_advice') {
+        return true;
+    }
+
+    if (!profileHasHealthContext(profile)) {
+        return false;
+    }
+
+    return intent === 'meal_suggestion' || intent === 'recipe_search';
 }
 
 function toGeminiRole(role: string): 'model' | 'user' {
@@ -144,6 +175,37 @@ function detectFulfillmentFollowUp(responseText: string) {
         { id: 'prepared_for_later', label: 'Prepared for Later', prompt: 'I want prepared-for-later or meal prep options.' },
         { id: 'raw_produce', label: 'Raw Produce Nearby', prompt: 'I want raw produce to buy nearby.' }
     ];
+}
+
+function buildPersonalizationNudge(isSignedIn: boolean, profileComplete: boolean) {
+    if (isSignedIn && profileComplete) {
+        return '';
+    }
+
+    if (!isSignedIn) {
+        return 'This search is designed to adapt to your health preferences. Please [Signup/in](plyt://auth-modal) and complete a bit of your health profile so the results can serve you better.';
+    }
+
+    return 'This search is designed to adapt to your health preferences. Please complete a bit more of your health profile so the results can serve you better.';
+}
+
+function appendPersonalizationNudge(responseText: string, nudge: string) {
+    const normalizedResponse = String(responseText || '').trim();
+    const normalizedNudge = String(nudge || '').trim();
+
+    if (!normalizedNudge) {
+        return normalizedResponse;
+    }
+
+    if (!normalizedResponse) {
+        return normalizedNudge;
+    }
+
+    if (normalizedResponse.includes(normalizedNudge)) {
+        return normalizedResponse;
+    }
+
+    return `${normalizedResponse}\n\n${normalizedNudge}`;
 }
 
 const TAG_INTENT_HINTS: Record<string, { mode: 'raw_produce' | 'ready_to_eat' | 'prepared_for_later' | 'recipe_ideas' | 'advice'; hints: string[] }> = {
@@ -709,13 +771,11 @@ Answer the user's follow-up using this exact list. If exact menu availability is
     }
 }
 
-router.post('/', authenticateToken, async (req: Request, res: Response) => {
+router.post('/', authenticateTokenOptional, async (req: Request, res: Response) => {
     if (!process.env.GEMINI_API_KEY) {
         res.status(500).json({ error: 'AI Error', details: 'Gemini API key missing' });
         return;
     }
-
-    await ensureChatConversationSchema();
 
     const { message, location, visiblePlaces, conversationId, tags } = req.body || {};
     const user = (req as any).user;
@@ -731,11 +791,13 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
 
     try {
         let profileData: any = {};
-        try {
-            profileData = await fetchRoleProfileData(userId, userRole);
-        } catch (profileErr) {
-            console.warn('Profile context lookup failed, continuing without profile context:', profileErr);
-            profileData = {};
+        if (userId) {
+            try {
+                profileData = await fetchRoleProfileData(userId, userRole);
+            } catch (profileErr) {
+                console.warn('Profile context lookup failed, continuing without profile context:', profileErr);
+                profileData = {};
+            }
         }
 
         const intentClassification = classifyIntent(effectiveMessage, normalizedTags);
@@ -758,13 +820,24 @@ Full profile data:
 ${JSON.stringify(profileData, null, 2)}
 
 Use this profile directly for personalization. Do not ask for details already provided.
-- Filter every food and drink suggestion through the user's health profile before answering.
-- Never fall back to generic place-picking if the profile changes what the best choice should be.`
+                - Filter every food and drink suggestion through the user's health profile before answering.
+                - Never fall back to generic place-picking if the profile changes what the best choice should be.`
             ]
         });
 
+        const mergedProfile = {
+            ...profileData,
+            ...(profileData?.consumer_health_profile || {})
+        };
+        const profileComplete = isProfileComplete(mergedProfile);
+        const personalizationNudge = buildPersonalizationNudge(Boolean(userId), profileComplete);
+
         let activeConversationId = String(conversationId || '').trim();
-        if (activeConversationId) {
+        if (userId) {
+            await ensureChatConversationSchema();
+        }
+
+        if (userId && activeConversationId) {
             const existingConversation = await pool.query(
                 `SELECT id FROM conversations WHERE id = $1 AND user_id = $2 LIMIT 1`,
                 [activeConversationId, userId]
@@ -774,50 +847,33 @@ Use this profile directly for personalization. Do not ask for details already pr
             }
         }
 
-        if (!activeConversationId) {
+        if (userId && !activeConversationId) {
             const newConversation = await pool.query(
-                `INSERT INTO conversations (user_id, title)
-                 VALUES ($1, $2)
+                `INSERT INTO conversations (user_id, title, expires_at)
+                 VALUES ($1, $2, NOW() + INTERVAL '${CHAT_HISTORY_RETENTION_DAYS} days')
                  RETURNING id`,
                 [userId, buildConversationTitle(effectiveMessage)]
             );
             activeConversationId = String(newConversation.rows[0].id);
         }
 
-        const mergedProfile = {
-            ...profileData,
-            ...(profileData?.consumer_health_profile || {})
-        };
-
-        if (!isProfileComplete(mergedProfile)) {
-            return res.json({
-                reply: `Hey${promptFields.healthProfile?.full_name
-                    ? ' ' + promptFields.healthProfile.full_name.split(' ')[0]
-                    : ''}! Before we dive in, I need a little more info to personalise your experience. Can you complete your profile first?`,
-                response: `Hey${promptFields.healthProfile?.full_name
-                    ? ' ' + promptFields.healthProfile.full_name.split(' ')[0]
-                    : ''}! Before we dive in, I need a little more info to personalise your experience. Can you complete your profile first?`,
-                incomplete_profile: true,
-                conversationId: activeConversationId,
-                intent: intentClassification.intent,
-                intentConfidence: intentClassification.confidence,
-                mixedIntent: intentClassification.mixed
-            });
+        if (userId && activeConversationId) {
+            await pool.query(
+                `INSERT INTO chat_history (user_id, conversation_id, role, message)
+                 VALUES ($1, $2, $3, $4)`,
+                [userId, activeConversationId, 'user', effectiveMessage]
+            );
         }
 
-        await pool.query(
-            `INSERT INTO chat_history (user_id, conversation_id, role, message)
-             VALUES ($1, $2, $3, $4)`,
-            [userId, activeConversationId, 'user', effectiveMessage]
-        );
-
-        const historyRes = await pool.query(
-            `SELECT role, message FROM chat_history
-             WHERE user_id = $1 AND conversation_id = $2
-             ORDER BY created_at ASC
-             LIMIT 40`,
-            [userId, activeConversationId]
-        );
+        const historyRes = userId && activeConversationId
+            ? await pool.query(
+                `SELECT role, message FROM chat_history
+                 WHERE user_id = $1 AND conversation_id = $2
+                 ORDER BY created_at ASC
+                 LIMIT 40`,
+                [userId, activeConversationId]
+            )
+            : { rows: [] };
 
         const rawHistory = historyRes.rows.map((row: any) => ({
             role: toGeminiRole(row.role),
@@ -843,6 +899,7 @@ Use this profile directly for personalization. Do not ask for details already pr
         let modelName = 'fallback-local';
         let triedModels: string[] = [];
         let usedFallback = false;
+        const preserveForHealth = Boolean(userId) && shouldPreserveConversationForHealth(intentClassification.intent, mergedProfile);
 
         if (isSuggestionFollowUp) {
             aiResponse = await buildSuggestionAwareReply(effectiveMessage, currentVisiblePlaces, profileData, userRole);
@@ -867,25 +924,36 @@ Use this profile directly for personalization. Do not ask for details already pr
             }
         }
 
-        await pool.query(
-            `INSERT INTO chat_history (user_id, conversation_id, role, message)
-             VALUES ($1, $2, $3, $4)`,
-            [userId, activeConversationId, 'assistant', aiResponse]
-        );
+        aiResponse = appendPersonalizationNudge(aiResponse, personalizationNudge);
 
-        await pool.query(
-            `UPDATE conversations
-             SET updated_at = NOW(),
-                 title = COALESCE(NULLIF(title, ''), $1)
-             WHERE id = $2 AND user_id = $3`,
-            [buildConversationTitle(effectiveMessage), activeConversationId, userId]
-        );
+        if (userId && activeConversationId) {
+            await pool.query(
+                `INSERT INTO chat_history (user_id, conversation_id, role, message)
+                 VALUES ($1, $2, $3, $4)`,
+                [userId, activeConversationId, 'assistant', aiResponse]
+            );
+        }
+
+        if (userId && activeConversationId) {
+            await pool.query(
+                `UPDATE conversations
+                 SET updated_at = NOW(),
+                     title = COALESCE(NULLIF(title, ''), $1),
+                     expires_at = CASE
+                         WHEN saved_by_user = TRUE OR health_relevant = TRUE THEN expires_at
+                         ELSE NOW() + INTERVAL '${CHAT_HISTORY_RETENTION_DAYS} days'
+                     END,
+                     health_relevant = health_relevant OR $4::boolean
+                 WHERE id = $2 AND user_id = $3`,
+                [buildConversationTitle(effectiveMessage), activeConversationId, userId, preserveForHealth]
+            );
+        }
 
         res.json({
             reply: aiResponse,
             response: aiResponse,
             usedFallback,
-            conversationId: activeConversationId,
+            conversationId: activeConversationId || null,
             intent: intentClassification.intent,
             intentConfidence: intentClassification.confidence,
             mixedIntent: intentClassification.mixed,
@@ -904,7 +972,7 @@ Use this profile directly for personalization. Do not ask for details already pr
     }
 });
 
-router.post('/search-context', authenticateToken, async (req: Request, res: Response) => {
+router.post('/search-context', authenticateTokenOptional, async (req: Request, res: Response) => {
     const { message, tags } = req.body || {};
     const user = (req as any).user;
     const userId = user?.id;
@@ -918,7 +986,7 @@ router.post('/search-context', authenticateToken, async (req: Request, res: Resp
     }
 
     try {
-        const profileData = await fetchRoleProfileData(userId, userRole);
+        const profileData = userId ? await fetchRoleProfileData(userId, userRole) : {};
         const searchQueries = buildSearchQueries(effectiveMessage, profileData, normalizedTags);
         res.json({ searchQueries });
     } catch (error: any) {
@@ -956,7 +1024,7 @@ function placeInventoryPriority(place: any, queries: string[]) {
     return score;
 }
 
-router.post('/places', authenticateToken, async (req: Request, res: Response) => {
+router.post('/places', authenticateTokenOptional, async (req: Request, res: Response) => {
     const { queries, location, radiusKm, limit } = req.body || {};
     if (!Array.isArray(queries) || queries.length === 0) {
         res.status(400).json({ error: 'queries array is required' });
@@ -1049,7 +1117,7 @@ router.post('/places', authenticateToken, async (req: Request, res: Response) =>
     }
 });
 
-router.post('/recommend-places', authenticateToken, async (req: Request, res: Response) => {
+router.post('/recommend-places', authenticateTokenOptional, async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     const { message, places, conversationId } = req.body || {};
 
@@ -1059,27 +1127,37 @@ router.post('/recommend-places', authenticateToken, async (req: Request, res: Re
     }
 
     try {
-            const profileData = await fetchRoleProfileData(userId, (req as any).user?.role || 'consumer');
-            const response = await buildPlaceRecommendationReply(
+        const userRole = (req as any).user?.role || 'consumer';
+        const profileData = userId ? await fetchRoleProfileData(userId, userRole) : {};
+        const mergedProfile = {
+            ...profileData,
+            ...(profileData?.consumer_health_profile || {})
+        };
+        const response = appendPersonalizationNudge(
+            await buildPlaceRecommendationReply(
                 String(message),
                 places,
                 profileData,
-                (req as any).user?.role || 'consumer'
-            );
-
-        await pool.query(
-            `UPDATE chat_history
-             SET message = $1
-             WHERE ctid IN (
-                  SELECT ctid
-                  FROM chat_history
-                  WHERE user_id = $2 AND role = 'assistant'
-                    AND ($3::uuid IS NULL OR conversation_id = $3::uuid)
-                  ORDER BY created_at DESC
-                  LIMIT 1
-              )`,
-            [response, userId, conversationId || null]
+                userRole
+            ),
+            buildPersonalizationNudge(Boolean(userId), isProfileComplete(mergedProfile))
         );
+
+        if (userId) {
+            await pool.query(
+                `UPDATE chat_history
+                 SET message = $1
+                 WHERE ctid IN (
+                      SELECT ctid
+                      FROM chat_history
+                      WHERE user_id = $2 AND role = 'assistant'
+                        AND ($3::uuid IS NULL OR conversation_id = $3::uuid)
+                      ORDER BY created_at DESC
+                      LIMIT 1
+                  )`,
+                [response, userId, conversationId || null]
+            );
+        }
 
         res.json({ response });
     } catch (error: any) {
@@ -1094,7 +1172,8 @@ router.get('/history', authenticateToken, async (req: Request, res: Response) =>
         const summary = await pool.query(
             `SELECT id, title, created_at, updated_at
              FROM conversations
-             WHERE user_id = $1
+              WHERE user_id = $1
+               AND ${ACTIVE_CONVERSATION_WHERE_SQL}
              ORDER BY updated_at DESC, created_at DESC`,
             [userId]
         );
@@ -1120,6 +1199,7 @@ router.get('/history/:id', authenticateToken, async (req: Request, res: Response
         `SELECT id, suggestion_state
          FROM conversations
          WHERE id = $1 AND user_id = $2
+           AND ${ACTIVE_CONVERSATION_WHERE_SQL}
          LIMIT 1`,
         [historyId, userId]
     );
@@ -1160,7 +1240,12 @@ router.put('/history/:id/suggestion-state', authenticateToken, async (req: Reque
     try {
         const updateResult = await pool.query(
             `UPDATE conversations
-             SET suggestion_state = $1::jsonb
+             SET suggestion_state = $1::jsonb,
+                 updated_at = NOW(),
+                 expires_at = CASE
+                     WHEN saved_by_user = TRUE OR health_relevant = TRUE THEN expires_at
+                     ELSE NOW() + INTERVAL '${CHAT_HISTORY_RETENTION_DAYS} days'
+                 END
              WHERE id = $2 AND user_id = $3
              RETURNING id, suggestion_state`,
             [JSON.stringify(suggestionState), historyId, userId]

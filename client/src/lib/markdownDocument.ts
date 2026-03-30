@@ -11,8 +11,15 @@ export function renderMarkdownToHtml(text: string) {
     let html = escapeHtml(text);
 
     html = html.replace(
-        /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-        '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline break-all">$1</a>'
+        /\[([^\]]+)\]\(((?:https?:\/\/|plyt:\/\/)[^\s)]+)\)/g,
+        (_match, label, href) => {
+            const safeHref = String(href);
+            const safeLabel = String(label);
+            const externalAttributes = safeHref.startsWith('http')
+                ? ' target="_blank" rel="noopener noreferrer"'
+                : '';
+            return `<a href="${safeHref}"${externalAttributes} class="text-blue-600 underline break-all">${safeLabel}</a>`;
+        }
     );
 
     html = html.replace(
@@ -45,7 +52,7 @@ export function renderMarkdownToHtml(text: string) {
 
 export function stripMarkdownToPlainText(text: string) {
     return String(text || '')
-        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1')
+        .replace(/\[([^\]]+)\]\(((?:https?:\/\/|plyt:\/\/)[^\s)]+)\)/g, '$1')
         .replace(/^#{1,3}\s+/gm, '')
         .replace(/\*\*(.+?)\*\*/g, '$1')
         .replace(/\*(.+?)\*/g, '$1')

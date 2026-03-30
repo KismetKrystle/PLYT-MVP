@@ -15,6 +15,8 @@ const PRESET_TAGS = [
     'Receipes',
     'Advice',
 ];
+const GUEST_CHAT_LIMIT = 3;
+const GUEST_CHAT_STORAGE_KEY = 'plyt_guest_chat_count';
 
 export default function LandingChatInterface() {
     const router = useRouter();
@@ -74,6 +76,15 @@ export default function LandingChatInterface() {
         const finalLocation = await resolveSearchLocation();
 
         if (!user) {
+            const storedGuestCount = typeof window !== 'undefined'
+                ? Number(localStorage.getItem(GUEST_CHAT_STORAGE_KEY) || '0')
+                : 0;
+
+            if (storedGuestCount >= GUEST_CHAT_LIMIT) {
+                openLoginModal();
+                return;
+            }
+
             const payload = {
                 tags: selectedTags,
                 text: prompt,
@@ -81,7 +92,7 @@ export default function LandingChatInterface() {
                 location: finalLocation
             };
             localStorage.setItem('pendingChatPrompt', JSON.stringify(payload));
-            openLoginModal();
+            router.push('/?tab=chat');
             return;
         }
 
@@ -160,17 +171,22 @@ export default function LandingChatInterface() {
                         animate={{ opacity: 1 }}
                         transition={{ delay: 0.2 }}
                         className="text-sm md:text-lg text-gray-500 font-light max-w-xl mx-auto hidden md:block" // Hide subtitle on small mobile to save space? Or just make it smaller.
-                    >
-                        Food advice that actually knows you.
-                    </motion.p>
+                     >
+                         Food advice that actually knows you.
+                     </motion.p>
                     <motion.p // Mobile subtitle
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 0.2 }}
                         className="text-sm text-gray-500 font-light max-w-xs mx-auto md:hidden"
-                    >
-                        Know what you eat. Own how you feel.
-                    </motion.p>
+                     >
+                         Know what you eat. Own how you feel.
+                     </motion.p>
+                    {!user ? (
+                        <p className="text-xs text-emerald-700 max-w-xl mx-auto">
+                            Try up to 3 guest questions, then sign up to personalise results around your health profile.
+                        </p>
+                    ) : null}
                     <p className="text-xs text-gray-400 max-w-xl mx-auto">
                         Mention a city, area, ZIP code, or neighborhood if you want search outside your current location.
                     </p>

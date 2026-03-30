@@ -8,19 +8,9 @@ export interface AuthRequest extends Request {
     user?: JwtUser;
 }
 
-export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    // Debug: Check secret
+function verifyBearerToken(token: string, req: AuthRequest, res: Response, next: NextFunction) {
     const secret = process.env.JWT_SECRET || 'fallback_secret';
     const logPath = path.join(process.cwd(), 'auth_logs.txt');
-
-    if (!token) {
-        fs.appendFileSync(logPath, `[${new Date().toISOString()}] Auth Failure: No token found\n`);
-        res.sendStatus(401);
-        return;
-    }
 
     jwt.verify(token, secret, (err, decoded) => {
         if (err) {
@@ -30,8 +20,35 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
             res.status(403).json({ error: 'Auth Error', details: err.message });
             return;
         }
-        const user = decoded as JwtUser;
-        req.user = user;
+
+        req.user = decoded as JwtUser;
         next();
     });
+}
+
+export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    const logPath = path.join(process.cwd(), 'auth_logs.txt');
+
+    if (!token) {
+        fs.appendFileSync(logPath, `[${new Date().toISOString()}] Auth Failure: No token found\n`);
+        res.sendStatus(401);
+        return;
+    }
+
+    verifyBearerToken(token, req, res, next);
+};
+
+export const authenticateTokenOptional = (req: AuthRequest, res: Response, next: NextFunction) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        next();
+        return;
+    }
+
+    verifyBearerToken(token, req, res, next);
 };

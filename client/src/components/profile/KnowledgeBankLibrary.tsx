@@ -419,7 +419,7 @@ function MediaViewer({
         return (
             <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(74,222,128,0.18),_transparent_42%),linear-gradient(180deg,#101511_0%,#121212_100%)] text-center">
                 <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.22em] text-green-300/80">Personal Health Archive</p>
+                    <p className="text-sm font-semibold uppercase tracking-[0.22em] text-green-300/80">Living Library</p>
                     <p className="mt-3 max-w-xs text-sm text-white/70">Select an item below to view the saved media, context, and source details.</p>
                 </div>
             </div>
@@ -922,7 +922,7 @@ export default function KnowledgeBankLibrary() {
         return (
             <div className="mx-auto flex min-h-[70vh] max-w-3xl items-center justify-center px-6 py-12">
                 <div className="w-full rounded-[2rem] border border-gray-200 bg-white p-10 text-center shadow-sm">
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-green-600">Knowledge Bank</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-green-600">Living Library</p>
                     <h1 className="mt-3 text-3xl font-bold text-gray-900">Sign in to access your media library</h1>
                     <p className="mt-4 text-sm text-gray-500">Your saved recipes, uploads, research, and AI findings live here.</p>
                     <button
@@ -956,7 +956,7 @@ export default function KnowledgeBankLibrary() {
                     </div>
                     <div className="min-w-0">
                         <h1 className="truncate text-2xl font-bold tracking-tight text-slate-900">{displayName}</h1>
-                        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Personal Health Archive</p>
+                        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Living Library</p>
                     </div>
                 </div>
 

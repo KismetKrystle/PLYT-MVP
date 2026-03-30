@@ -250,7 +250,10 @@ router.post('/clerk-login', async (req: Request, res: Response) => {
         res.json({ token, user, isNewUser });
     } catch (error) {
         console.error('Clerk login error:', error);
-        res.status(401).json({ error: 'Failed to verify Clerk session' });
+        const message = error instanceof Error && error.message
+            ? error.message
+            : 'Failed to verify Clerk session';
+        res.status(401).json({ error: message });
     }
 });
 

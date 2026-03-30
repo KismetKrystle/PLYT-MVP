@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useClerk } from '@clerk/nextjs';
 import { useEffect } from 'react';
@@ -78,6 +78,7 @@ function FallbackAuthModal() {
 
 function ClerkAuthModal() {
     const pathname = usePathname();
+    const searchParams = useSearchParams();
     const { openSignIn } = useClerk();
     const { isLoginModalOpen, closeLoginModal, isAccessWallEnabled } = useAuth();
 
@@ -86,18 +87,20 @@ function ClerkAuthModal() {
             return;
         }
 
-        const redirectPath = pathname || '/';
+        const query = searchParams.toString();
+        const redirectPath = query ? `${pathname || '/'}?${query}` : (pathname || '/');
+        const signInRedirect = `/auth/complete?redirect=${encodeURIComponent(redirectPath)}`;
         const signUpRedirect = `/auth/complete?mode=kyc&redirect=${encodeURIComponent(redirectPath)}`;
 
         closeLoginModal();
         openSignIn({
-            fallbackRedirectUrl: redirectPath,
-            forceRedirectUrl: redirectPath,
+            fallbackRedirectUrl: signInRedirect,
+            forceRedirectUrl: signInRedirect,
             signUpFallbackRedirectUrl: signUpRedirect,
             signUpForceRedirectUrl: signUpRedirect,
             withSignUp: !isAccessWallEnabled,
         });
-    }, [closeLoginModal, isAccessWallEnabled, isLoginModalOpen, openSignIn, pathname]);
+    }, [closeLoginModal, isAccessWallEnabled, isLoginModalOpen, openSignIn, pathname, searchParams]);
 
     return null;
 }

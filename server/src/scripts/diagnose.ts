@@ -1,8 +1,6 @@
 import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
+import '../env';
 import pool from '../db';
-
-dotenv.config();
 
 console.log('--- JWT Diagnostic ---');
 console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);

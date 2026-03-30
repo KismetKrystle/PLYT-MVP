@@ -1,7 +1,5 @@
 import path from 'path';
-import dotenv from 'dotenv';
-// Adjusted path to .env (up two levels from src/scripts)
-dotenv.config({ path: path.join(__dirname, '../../.env') });
+import '../env';
 // Adjusted import to db (up one level from src/scripts to src/db)
 import pool from '../db';
 import bcrypt from 'bcrypt';

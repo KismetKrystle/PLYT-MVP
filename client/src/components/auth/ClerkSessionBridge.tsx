@@ -2,6 +2,7 @@
 
 import { useAuth as useClerkAuth, useClerk, useUser } from '@clerk/nextjs';
 import { useEffect, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 
@@ -10,6 +11,7 @@ export default function ClerkSessionBridge() {
     const { isLoaded: isClerkUserLoaded, user: clerkUser } = useUser();
     const { signOut } = useClerk();
     const { token, login, clearSession, clerkSignOutRequestId } = useAuth();
+    const pathname = usePathname();
     const isSyncingRef = useRef(false);
     const handledSignOutRequestIdRef = useRef(0);
     const isProcessingSignOutRef = useRef(false);
@@ -33,6 +35,10 @@ export default function ClerkSessionBridge() {
 
     useEffect(() => {
         if (!isLoaded) {
+            return;
+        }
+
+        if (pathname?.startsWith('/auth/complete')) {
             return;
         }
 
@@ -82,7 +88,7 @@ export default function ClerkSessionBridge() {
                 isSyncingRef.current = false;
             }
         })();
-    }, [clearSession, clerkUser?.id, getToken, isClerkUserLoaded, isLoaded, isSignedIn, login, token]);
+    }, [clearSession, clerkUser?.id, getToken, isClerkUserLoaded, isLoaded, isSignedIn, login, pathname, token]);
 
     return null;
 }

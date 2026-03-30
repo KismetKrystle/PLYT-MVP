@@ -121,13 +121,18 @@ const HEALTH_CONDITIONS = [
 ] as const;
 
 const DIETARY_PREFERENCES = [
+    { id: 'omnivore', label: 'Omnivore / Meat Eater' },
     { id: 'vegan', label: 'Vegan' },
     { id: 'vegetarian', label: 'Vegetarian' },
     { id: 'pescatarian', label: 'Pescatarian' },
     { id: 'celiac', label: 'Celiac' },
     { id: 'raw_vegan', label: 'Raw Vegan' },
+    { id: 'halal', label: 'Halal' },
+    { id: 'kosher', label: 'Kosher' },
     { id: 'gluten_free', label: 'Gluten-Free' },
     { id: 'dairy_free', label: 'Dairy-Free' },
+    { id: 'no_garlic', label: 'No Garlic' },
+    { id: 'no_onion', label: 'No Onion' },
     { id: 'paleo', label: 'Paleo' },
     { id: 'low_sugar', label: 'Low Sugar' },
     { id: 'low_fat', label: 'Low Fat' }

@@ -1,7 +1,5 @@
 import { Client } from 'pg';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import './env';
 
 const testConnection = async () => {
     console.log('Testing connection to:', process.env.DATABASE_URL?.replace(/:([^:@]+)@/, ':****@'));

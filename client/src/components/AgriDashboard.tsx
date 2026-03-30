@@ -24,6 +24,125 @@ interface PlaceSuggestion {
     distance_km?: number | null;
 }
 
+function mentionsSuggestionsPanel(text: string) {
+    const normalized = String(text || '').toLowerCase();
+    return normalized.includes('suggestions panel') ||
+        normalized.includes('check your panel') ||
+        normalized.includes('see your suggestions') ||
+        normalized.includes('places listed');
+}
+
+function escapeRegExp(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function stripPanelPlaceLinks(text: string, places: PlaceSuggestion[]) {
+    let normalizedText = String(text || '');
+
+    places
+        .filter((place) => String(place?.name || '').trim() && String(place?.mapsUrl || '').trim())
+        .forEach((place) => {
+            const name = String(place.name || '').trim();
+            const mapsUrl = String(place.mapsUrl || '').trim();
+            const escapedName = escapeRegExp(name);
+            const escapedUrl = escapeRegExp(mapsUrl);
+
+            normalizedText = normalizedText.replace(
+                new RegExp(`\\[${escapedName}\\]\\(${escapedUrl}\\)`, 'gi'),
+                name
+            );
+
+            normalizedText = normalizedText.replace(
+                new RegExp(`(^|[^\\]])(${escapedName})\\s*(?:\\(|-\\s*|:\\s*)${escapedUrl}\\)?`, 'gmi'),
+                (_match, prefix) => `${prefix}${name}`
+            );
+
+            normalizedText = normalizedText.replace(
+                new RegExp(`(^|[^\\]])(${escapedName})\\s+${escapedUrl}`, 'gmi'),
+                (_match, prefix) => `${prefix}${name}`
+            );
+        });
+
+    return normalizedText;
+}
+
+function normalizeSuggestedPlaceLinks(text: string, places: PlaceSuggestion[]) {
+    let normalizedText = String(text || '');
+
+    places
+        .filter((place) => String(place?.name || '').trim() && String(place?.mapsUrl || '').trim())
+        .forEach((place) => {
+            const name = String(place.name || '').trim();
+            const mapsUrl = String(place.mapsUrl || '').trim();
+            const escapedName = escapeRegExp(name);
+            const escapedUrl = escapeRegExp(mapsUrl);
+            const markdownLink = `[${name}](${mapsUrl})`;
+
+            normalizedText = normalizedText.replace(
+                new RegExp(`\\[${escapedName}\\]\\(${escapedUrl}\\)\\s*(?:\\(|-\\s*|:\\s*)?${escapedUrl}\\)?`, 'gi'),
+                markdownLink
+            );
+
+            normalizedText = normalizedText.replace(
+                new RegExp(`(^|[^\\]])(${escapedName})\\s*(?:\\(|-\\s*|:\\s*)${escapedUrl}\\)?`, 'gmi'),
+                (_match, prefix) => `${prefix}${markdownLink}`
+            );
+
+            normalizedText = normalizedText.replace(
+                new RegExp(`(^|[^\\]])(${escapedName})\\s+${escapedUrl}`, 'gmi'),
+                (_match, prefix) => `${prefix}${markdownLink}`
+            );
+        });
+
+    return normalizedText;
+}
+
+function linkSuggestedPlaceMentions(text: string, places: PlaceSuggestion[]) {
+    let linkedText = String(text || '');
+    const sortedPlaces = [...places]
+        .filter((place) => String(place?.name || '').trim() && String(place?.mapsUrl || '').trim())
+        .sort((a, b) => String(b.name || '').length - String(a.name || '').length);
+
+    sortedPlaces.forEach((place) => {
+        const name = String(place.name || '').trim();
+        const mapsUrl = String(place.mapsUrl || '').trim();
+        if (!name || !mapsUrl || linkedText.includes(`[${name}](`)) {
+            return;
+        }
+
+        const pattern = new RegExp(`(^|[^\\w])(${escapeRegExp(name)})(?=[^\\w]|$)`, 'g');
+        linkedText = linkedText.replace(pattern, (_match, prefix, matchedName) => `${prefix}[${matchedName}](${mapsUrl})`);
+    });
+
+    return linkedText;
+}
+
+function appendCompanionPlacesNote(text: string, places: PlaceSuggestion[]) {
+    const normalizedText = String(text || '').trim();
+    if (!normalizedText) return normalizedText;
+    if (places.length === 0) {
+        return normalizedText;
+    }
+
+    const namedPlaces = places
+        .filter((place) => String(place?.name || '').trim() && String(place?.mapsUrl || '').trim())
+        .slice(0, 2);
+
+    if (namedPlaces.length === 0) {
+        return `${normalizedText}\n\nYou may find similar options in the suggestions panel as well.`;
+    }
+
+    if (namedPlaces.length === 1) {
+        return mentionsSuggestionsPanel(normalizedText)
+            ? `${normalizedText}\n\n${String(namedPlaces[0].name).trim()} is one good match there too.`
+            : `${normalizedText}\n\nYou may find similar options in the suggestions panel too, especially at ${String(namedPlaces[0].name).trim()}.`;
+    }
+
+    return mentionsSuggestionsPanel(normalizedText)
+        ? `${normalizedText}\n\nGood matches there include ${String(namedPlaces[0].name).trim()} and ${String(namedPlaces[1].name).trim()}.`
+        : `${normalizedText}\n\nYou may find similar options in the suggestions panel too, including ${String(namedPlaces[0].name).trim()} and ${String(namedPlaces[1].name).trim()}.`;
+}
+
 type LastPlaceSearch = {
     message: string;
     queries: string[];
@@ -87,11 +206,13 @@ const MOCK_SYSTEMS_DB: Omit<ProduceItem, 'quantity'>[] = [
 ];
 
 const SEARCH_RADIUS_OPTIONS_KM = [5, 10, 25, 50, 80, 120];
+const INITIAL_VISIBLE_PLACE_COUNT = 6;
+const PLACE_PANEL_INCREMENT = 6;
 const DEFAULT_CHAT_GREETING = 'Hello! I can help you find fresh food, nearby places, recipes, and practical nutrition guidance. What are you looking for?';
 const GUEST_CHAT_LIMIT = 3;
 const GUEST_CHAT_STORAGE_KEY = 'plyt_guest_chat_count';
-const AUTH_MODAL_LINK = 'plyt://auth-modal';
-const GUEST_CHAT_LIMIT_MESSAGE = 'You have used your 3 guest questions. This search is designed to adapt to your health preferences. Please [Signup/in](plyt://auth-modal) and complete a bit of your health profile so the results can serve you better.';
+const AUTH_MODAL_LINKS = new Set(['/login', '/signup', 'plyt://auth-modal']);
+const GUEST_CHAT_LIMIT_MESSAGE = 'You have used your 3 guest questions. This search is designed to adapt to your health preferences. Please [Signup/in](/login) and complete a bit of your health profile so the results can serve you better.';
 const DEFAULT_LIBRARY_CATEGORIES = [
     { label: 'Recipes', emoji: '🍽️', color: '#4ade80', sort_order: 0 },
     { label: 'Foods', emoji: '🥦', color: '#facc15', sort_order: 1 },
@@ -218,11 +339,16 @@ export default function AgriDashboard() {
     const { addToCart } = useCart();
 
     const isProfileTab = requestedTab === 'customer_profile' || requestedTab === 'health_profiles';
-    if (!isProfileTab) {
-        if (user?.role === 'farmer') return <FarmerDashboard />;
-        if (user?.role === 'distributor') return <DistributorDashboard />;
-        if (user?.role === 'servicer') return <ServicerDashboard />;
-    }
+    const shouldShowDelegatedDashboard = !requestedTab || requestedTab === 'home';
+    const delegatedDashboard = !isProfileTab && shouldShowDelegatedDashboard
+        ? user?.role === 'farmer'
+            ? <FarmerDashboard />
+            : user?.role === 'distributor'
+                ? <DistributorDashboard />
+                : user?.role === 'servicer'
+                    ? <ServicerDashboard />
+                    : null
+        : null;
 
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>('home');
@@ -232,6 +358,7 @@ export default function AgriDashboard() {
     const [prompt, setPrompt] = useState('');
     const [showPreview, setShowPreview] = useState(false);
     const [searchRadiusKm, setSearchRadiusKm] = useState(25);
+    const [visiblePlaceCount, setVisiblePlaceCount] = useState(INITIAL_VISIBLE_PLACE_COUNT);
     const [searchAreaLabel, setSearchAreaLabel] = useState('Current location');
     const [locationSourceLabel, setLocationSourceLabel] = useState('device');
 
@@ -258,7 +385,6 @@ export default function AgriDashboard() {
         setGuestQuestionCount(Number.isFinite(storedCount) ? Math.max(0, storedCount) : 0);
     }, [user?.id]);
 
-
     // Mobile Panel State
     const [isPanelOpen, setIsPanelOpen] = useState(false);
 
@@ -276,6 +402,8 @@ export default function AgriDashboard() {
     // Chat Tab Suggested Products
     const [suggestedProducts, setSuggestedProducts] = useState<ProduceItem[]>([]);
     const [suggestedPlaces, setSuggestedPlaces] = useState<PlaceSuggestion[]>([]);
+    const visibleSuggestedPlaces = suggestedPlaces.slice(0, visiblePlaceCount);
+    const hasMoreSuggestedPlaces = suggestedPlaces.length > visiblePlaceCount;
     const [lastPlaceSearch, setLastPlaceSearch] = useState<LastPlaceSearch | null>(null);
     const [isRefreshingSuggestions, setIsRefreshingSuggestions] = useState(false);
     const [isSuggestionSettingsOpen, setIsSuggestionSettingsOpen] = useState(false);
@@ -298,6 +426,10 @@ export default function AgriDashboard() {
 
     const [selectedProduct, setSelectedProduct] = useState<ProductDetail | null>(null);
     const assistantMessageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+    useEffect(() => {
+        setVisiblePlaceCount(INITIAL_VISIBLE_PLACE_COUNT);
+    }, [lastPlaceSearch?.message, suggestedPlaces.length]);
 
     // Calculate Total Price (Produce + Systems + Containers)
     const produceTotal = produceItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -359,7 +491,8 @@ export default function AgriDashboard() {
         if (!anchor) return;
 
         const href = String(anchor.getAttribute('href') || '').trim();
-        if (href !== AUTH_MODAL_LINK) return;
+        const normalizedHref = href.split('?')[0];
+        if (!AUTH_MODAL_LINKS.has(normalizedHref)) return;
 
         event.preventDefault();
         openLoginModal();
@@ -650,6 +783,8 @@ export default function AgriDashboard() {
                     : extractGoogleMapsQueries(aiResponse);
             const placeQueries = searchQueries;
             if (placeQueries.length > 0) {
+                const usesCompanionPlaces = parallelPlaceQueries.length === 0;
+
                 if (parallelPlaceQueries.length === 0) {
                     setLastPlaceSearch({
                         message: messageText,
@@ -658,18 +793,25 @@ export default function AgriDashboard() {
                     });
                 }
                 try {
-                    const places = parallelPlaces.length > 0 || !placeFetchFailed
-                        ? parallelPlaces
-                        : await fetchAndMergePlaces(placeQueries, finalLocation, searchRadiusKm, 16);
+                    const sameAsParallelQueries =
+                        parallelPlaceQueries.length > 0 &&
+                        parallelPlaceQueries.length === placeQueries.length &&
+                        parallelPlaceQueries.every((query, index) => query === placeQueries[index]);
+
+                    const places =
+                        sameAsParallelQueries && !placeFetchFailed
+                            ? parallelPlaces
+                            : await fetchAndMergePlaces(placeQueries, finalLocation, searchRadiusKm, 16);
 
                     if (places.length > 0) {
                         try {
-                            const recommendationRes = await api.post('/chat/recommend-places', {
-                                message: messageText,
-                                places,
-                                conversationId: newConvId || currentConversationId
-                            });
-                            const syncedResponse = recommendationRes.data?.response || aiResponse;
+                            const syncedResponse = usesCompanionPlaces
+                                ? appendCompanionPlacesNote(aiResponse, places)
+                                : (await api.post('/chat/recommend-places', {
+                                    message: messageText,
+                                    places,
+                                    conversationId: newConvId || currentConversationId
+                                })).data?.response || aiResponse;
                             setChatHistory(prev => ({
                                 ...prev,
                                 [targetTab]: [...prev[targetTab], {
@@ -1206,6 +1348,10 @@ export default function AgriDashboard() {
         handleSend(option.prompt);
     };
 
+    if (delegatedDashboard) {
+        return delegatedDashboard;
+    }
+
     return (
         <div className="flex w-full h-full">
             {/* Middle Column: Main Content (Dashboard OR Chat) */}
@@ -1403,7 +1549,7 @@ export default function AgriDashboard() {
                                                     <div
                                                         className="leading-relaxed text-sm"
                                                         onClick={handleAssistantMessageClick}
-                                                        dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(msg.content) }}
+                                                        dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(linkSuggestedPlaceMentions(stripPanelPlaceLinks(normalizeSuggestedPlaceLinks(msg.content, suggestedPlaces), suggestedPlaces), [])) }}
                                                     />
                                                 ) : (
                                                     <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
@@ -1532,10 +1678,11 @@ export default function AgriDashboard() {
                                      </div>
                                      <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3">
                                          {suggestedPlaces.length > 0 ? (
-                                             suggestedPlaces.map((place, idx) => (
-                                                <motion.div
-                                                    key={`${place.name}-${idx}`}
-                                                    initial={{ opacity: 0, x: 20 }}
+                                             <>
+                                             {visibleSuggestedPlaces.map((place, idx) => (
+                                                 <motion.div
+                                                     key={`${place.name}-${idx}`}
+                                                     initial={{ opacity: 0, x: 20 }}
                                                     animate={{ opacity: 1, x: 0 }}
                                                     className="p-3 bg-white rounded-xl border border-gray-100 shadow-sm"
                                                 >
@@ -1591,9 +1738,31 @@ export default function AgriDashboard() {
                                                             </div>
                                                         </div>
                                                     </div>
-                                                </motion.div>
-                                            ))
-                                        ) : suggestedProducts.length === 0 ? (
+                                                 </motion.div>
+                                             ))}
+                                             {suggestedPlaces.length > INITIAL_VISIBLE_PLACE_COUNT ? (
+                                                 <div className="pt-1">
+                                                     {hasMoreSuggestedPlaces ? (
+                                                         <button
+                                                             type="button"
+                                                             onClick={() => setVisiblePlaceCount((current) => Math.min(suggestedPlaces.length, current + PLACE_PANEL_INCREMENT))}
+                                                             className="w-full rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 transition hover:border-green-300 hover:bg-green-100"
+                                                         >
+                                                             Show {Math.min(PLACE_PANEL_INCREMENT, suggestedPlaces.length - visiblePlaceCount)} more matches
+                                                         </button>
+                                                     ) : (
+                                                         <button
+                                                             type="button"
+                                                             onClick={() => setVisiblePlaceCount(INITIAL_VISIBLE_PLACE_COUNT)}
+                                                             className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition hover:border-gray-300 hover:bg-gray-50"
+                                                         >
+                                                             Show fewer
+                                                         </button>
+                                                     )}
+                                                 </div>
+                                             ) : null}
+                                             </>
+                                         ) : suggestedProducts.length === 0 ? (
                                             <div className="text-center py-10 opacity-40">
                                                 <svg className="w-12 h-12 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                                 <p className="text-sm text-gray-400">Relevant items will appear here.</p>
@@ -2284,7 +2453,7 @@ export default function AgriDashboard() {
                                                         <div
                                                             className="leading-relaxed text-sm"
                                                             onClick={handleAssistantMessageClick}
-                                                            dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(msg.content) }}
+                                                            dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(linkSuggestedPlaceMentions(stripPanelPlaceLinks(normalizeSuggestedPlaceLinks(msg.content, suggestedPlaces), suggestedPlaces), [])) }}
                                                         />
                                                             ) : (
                                                                 <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>

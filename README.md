@@ -35,4 +35,9 @@ Navigate through the global sidebar to see the full ecosystem:
 -   **AI**: Integrated LLM for contextual guidance
 
 ---
+## Local Dev Safety
+-   Keep local auth on Clerk test keys and deployed auth on Clerk live keys.
+-   Keep local backend pointed at a separate dev database, not the main beta or production database.
+-   See [docs/local-dev-auth-and-db.md](docs/local-dev-auth-and-db.md) for the recommended setup.
+
 *Built for Real World Deployment, with future blockchain integration. We are currently still developing, we are not yet ready for users. Feel free to test and provide feedback. Expect soft release in January 2026*

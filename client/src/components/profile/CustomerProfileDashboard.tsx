@@ -74,8 +74,19 @@ const CONDITION_LABELS: Record<string, string> = {
     inflammation: '🔥 Chronic Inflammation',
 };
 const PREFERENCE_LABELS: Record<string, string> = {
-    vegan: 'Vegan', vegetarian: 'Vegetarian', pescatarian: 'Pescatarian', celiac: 'Celiac', raw_vegan: 'Raw Vegan',
-    gluten_free: 'Gluten-Free', dairy_free: 'Dairy-Free',
+    omnivore: 'Omnivore / Meat Eater',
+    vegan: 'Vegan',
+    vegetarian: 'Vegetarian',
+    pescatarian: 'Pescatarian',
+    pescetarian: 'Pescatarian',
+    halal: 'Halal',
+    kosher: 'Kosher',
+    celiac: 'Celiac',
+    raw_vegan: 'Raw Vegan',
+    gluten_free: 'Gluten-Free',
+    dairy_free: 'Dairy-Free',
+    no_garlic: 'No Garlic',
+    no_onion: 'No Onion',
     paleo: 'Paleo', low_sugar: 'Low Sugar', low_fat: 'Low Fat',
 };
 const GOAL_LABELS: Record<string, string> = {

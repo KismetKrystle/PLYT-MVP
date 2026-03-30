@@ -1,8 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import dotenv from 'dotenv';
-import path from 'path';
-
-dotenv.config({ path: path.join(__dirname, '../.env') });
+import './env';
 
 async function diagnose() {
     const apiKey = process.env.GEMINI_API_KEY;

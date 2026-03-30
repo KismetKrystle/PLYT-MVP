@@ -1,8 +1,6 @@
 import path from 'path';
-import dotenv from 'dotenv';
+import '../env';
 import pool from '../db';
-
-dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 async function check() {
     try {

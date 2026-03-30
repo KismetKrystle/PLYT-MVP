@@ -1,8 +1,6 @@
-import dotenv from 'dotenv';
+import '../env';
 import { Pool } from 'pg';
 import bcrypt from 'bcrypt';
-
-dotenv.config();
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,

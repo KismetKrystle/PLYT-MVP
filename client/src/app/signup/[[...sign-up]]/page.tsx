@@ -8,6 +8,8 @@ import { motion } from 'framer-motion';
 import KYCForm from '../../../components/KYCForm';
 import { useAuth } from '../../../lib/auth';
 
+const hasClerkPublishableKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
 function SignupScreen() {
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -16,6 +18,22 @@ function SignupScreen() {
     const redirectPath = searchParams.get('redirect') || '/';
     const loginUrl = `/login?redirect=${encodeURIComponent(redirectPath)}`;
     const completeUrl = `/auth/complete?mode=kyc&redirect=${encodeURIComponent(redirectPath)}`;
+
+    if (!hasClerkPublishableKey && mode !== 'kyc') {
+        return (
+            <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-[#f5f3ed] px-4">
+                <div className="max-w-md rounded-[28px] border border-amber-200 bg-white p-8 text-center shadow-sm">
+                    <h1 className="text-2xl font-semibold text-[#1f2b18]">Sign up unavailable</h1>
+                    <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
+                        Clerk is not ready yet in this client session. Restart the client dev server so it picks up <code className="rounded bg-[#f5f3ed] px-1 py-0.5">NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code>, then try again.
+                    </p>
+                    <Link className="mt-6 inline-flex font-semibold text-[#234f2e] hover:underline" href="/">
+                        Back to home
+                    </Link>
+                </div>
+            </div>
+        );
+    }
 
     useEffect(() => {
         if (mode === 'kyc' || user || typeof window === 'undefined') {

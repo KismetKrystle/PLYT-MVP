@@ -13,13 +13,18 @@ interface KYCFormProps {
 }
 
 const DIETARY_PREFERENCES = [
+    { id: 'omnivore', label: 'Omnivore / Meat Eater' },
     { id: 'vegan', label: 'Vegan' },
     { id: 'vegetarian', label: 'Vegetarian' },
-    { id: 'pescetarian', label: 'Pescetarian' },
+    { id: 'pescatarian', label: 'Pescatarian' },
     { id: 'raw_vegan', label: 'Raw Vegan' },
+    { id: 'halal', label: 'Halal' },
+    { id: 'kosher', label: 'Kosher' },
     { id: 'celiac', label: 'Celiac' },
     { id: 'gluten_free', label: 'Gluten-Free' },
     { id: 'dairy_free', label: 'Dairy-Free' },
+    { id: 'no_garlic', label: 'No Garlic' },
+    { id: 'no_onion', label: 'No Onion' },
     { id: 'paleo', label: 'Paleo' },
     { id: 'low_sugar', label: 'Low Sugar' },
     { id: 'low_fat', label: 'Low Fat' },
@@ -240,15 +245,15 @@ export default function KYCForm({ onComplete }: KYCFormProps) {
     );
 
     const hasConditions = availableConditionGroups.length > 0;
-    const totalSteps = hasConditions ? 5 : 4;
+    const totalSteps = hasConditions ? 4 : 3;
 
     const toggle = (list: string[], setList: (v: string[]) => void, id: string) => {
         setList(list.includes(id) ? list.filter(x => x !== id) : [...list, id]);
     };
 
     const handleNext = async () => {
-        if (step === 3 && !hasConditions) {
-            setStep(4);
+        if (step === 2 && !hasConditions) {
+            setStep(3);
             return;
         }
 
@@ -380,7 +385,7 @@ export default function KYCForm({ onComplete }: KYCFormProps) {
             <Progress />
 
             {/* ── Step 1: Role ─────────────────────────────────────────────── */}
-            {step === 1 && (
+            {step === 0 && (
                 <div className="space-y-6">
                     <div className="text-center">
                         <h2 className="text-2xl font-bold text-gray-900">Choose your Role</h2>
@@ -416,11 +421,11 @@ export default function KYCForm({ onComplete }: KYCFormProps) {
             )}
 
             {/* ── Step 2: Basic Info ───────────────────────────────────────── */}
-            {step === 2 && (
+            {step === 1 && (
                 <div className="space-y-4">
                     <div className="text-center mb-6">
                         <h2 className="text-2xl font-bold text-gray-900">Complete Profile</h2>
-                        <p className="text-gray-500 text-sm">Tell us a bit about yourself.</p>
+                        <p className="text-gray-500 text-sm">Tell us a bit about yourself so we can personalize your experience.</p>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
@@ -531,15 +536,9 @@ export default function KYCForm({ onComplete }: KYCFormProps) {
                     </div>
                     <div className="flex gap-3 pt-4">
                         <button
-                            onClick={() => setStep(1)}
-                            className="flex-1 py-3 text-gray-600 font-bold hover:bg-gray-50 rounded-xl transition"
-                        >
-                            Back
-                        </button>
-                        <button
                             onClick={handleNext}
                             disabled={!formData.full_name}
-                            className="flex-[2] bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition disabled:opacity-50"
+                            className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition disabled:opacity-50"
                         >
                             Continue
                         </button>
@@ -548,7 +547,7 @@ export default function KYCForm({ onComplete }: KYCFormProps) {
             )}
 
             {/* ── Step 3: Health Areas ─────────────────────────────────────── */}
-            {step === 3 && (
+            {step === 2 && (
                 <div className="space-y-6">
                     <div className="text-center">
                         <h2 className="text-2xl font-bold text-gray-900">What's your health focus?</h2>
@@ -570,7 +569,7 @@ export default function KYCForm({ onComplete }: KYCFormProps) {
 
                     <div className="flex gap-3 pt-2">
                         <button
-                            onClick={() => setStep(2)}
+                            onClick={() => setStep(1)}
                             className="flex-1 py-3 text-gray-600 font-bold hover:bg-gray-50 rounded-xl transition"
                         >
                             Back
@@ -587,7 +586,7 @@ export default function KYCForm({ onComplete }: KYCFormProps) {
             )}
 
             {/* ── Step 4: Health Conditions ────────────────────────────────── */}
-            {step === 4 && hasConditions && (
+            {step === 3 && hasConditions && (
                 <div className="space-y-6">
                     <div className="text-center">
                         <h2 className="text-2xl font-bold text-gray-900">Any specific conditions?</h2>
@@ -625,7 +624,7 @@ export default function KYCForm({ onComplete }: KYCFormProps) {
 
                     <div className="flex gap-3 pt-2">
                         <button
-                            onClick={() => setStep(3)}
+                            onClick={() => setStep(2)}
                             className="flex-1 py-3 text-gray-600 font-bold border border-gray-200 rounded-2xl hover:bg-gray-50 transition"
                         >
                             Back
@@ -641,7 +640,7 @@ export default function KYCForm({ onComplete }: KYCFormProps) {
             )}
 
             {/* ── Final Step: Food Preferences ─────────────────────────────── */}
-            {((step === 4 && !hasConditions) || (step === 5 && hasConditions)) && (
+            {((step === 3 && !hasConditions) || (step === 4 && hasConditions)) && (
                 <div className="space-y-6">
                     <div className="text-center">
                         <h2 className="text-2xl font-bold text-gray-900">How do you eat?</h2>
@@ -715,7 +714,7 @@ export default function KYCForm({ onComplete }: KYCFormProps) {
 
                     <div className="flex gap-3 pt-2">
                         <button
-                            onClick={() => setStep(hasConditions ? 4 : 3)}
+                            onClick={() => setStep(hasConditions ? 3 : 2)}
                             className="flex-1 py-3 text-gray-600 font-bold hover:bg-gray-50 rounded-xl transition"
                         >
                             Back

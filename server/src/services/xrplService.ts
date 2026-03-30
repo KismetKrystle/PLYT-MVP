@@ -1,7 +1,5 @@
 import xrpl from 'xrpl';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import '../env';
 
 // XRPL Testnet Server
 const XRPL_SERVER = process.env.XRPL_SERVER || 'wss://s.altnet.rippletest.net:51233';

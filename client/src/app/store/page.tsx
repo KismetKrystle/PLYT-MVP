@@ -2,21 +2,80 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 
 type StoreTab = 'fresh_produce' | 'request_store';
 
-const PRODUCE_CATEGORIES = ['All', 'Leafy Greens', 'Fruit', 'Herbs', 'Roots'];
+type InventoryItem = {
+    id: number | string;
+    name: string;
+    description?: string | null;
+    price_plyt?: number | string | null;
+    price_fiat?: number | string | null;
+    image_url?: string | null;
+    category?: string | null;
+    quantity?: number | null;
+    unit?: string | null;
+    farmer_name?: string | null;
+    distance_km?: number | null;
+};
 
-const PRODUCE_ITEMS = [
-    { id: 1, name: 'Organic Kale', price: 35000, category: 'Leafy Greens', image: '/assets/images/store/organic_kale.png', note: 'Mineral-rich bunches from nearby growers' },
-    { id: 2, name: 'Cherry Tomatoes', price: 28000, category: 'Fruit', image: '/assets/images/store/cherry_tomatoes.png', note: 'Sweet, vine-ripened, small-batch harvest' },
-    { id: 3, name: 'Fresh Thai Basil', price: 25000, category: 'Herbs', image: '/assets/images/store/thai_basil_seeds.png', note: 'Fragrant basil for soups, salads, and sauces' },
-    { id: 4, name: 'Red Spinach', price: 24000, category: 'Leafy Greens', image: '/assets/images/store/red_spinach.png', note: 'Tender leaves for smoothies and sautés' },
-    { id: 5, name: 'Bok Choy', price: 22000, category: 'Leafy Greens', image: '/assets/images/store/bok_choy.png', note: 'Crisp bunches for stir-fries and broth' },
-    { id: 6, name: 'Sweet Potatoes', price: 26000, category: 'Roots', image: '/assets/images/systems/gallery_harvest.png', note: 'Slow-energy staple for meal prep' },
+const FALLBACK_PRODUCE_ITEMS: InventoryItem[] = [
+    {
+        id: 1,
+        name: 'Organic Kale',
+        category: 'Leafy Greens',
+        image_url: '/assets/images/store/organic_kale.png',
+        description: 'Mineral-rich bunches from nearby growers',
+        price_fiat: 35000,
+        farmer_name: 'Marketplace grower'
+    },
+    {
+        id: 2,
+        name: 'Cherry Tomatoes',
+        category: 'Fruit',
+        image_url: '/assets/images/store/cherry_tomatoes.png',
+        description: 'Sweet, vine-ripened, small-batch harvest',
+        price_fiat: 28000,
+        farmer_name: 'Marketplace grower'
+    },
+    {
+        id: 3,
+        name: 'Fresh Thai Basil',
+        category: 'Herbs',
+        image_url: '/assets/images/store/thai_basil_seeds.png',
+        description: 'Fragrant basil for soups, salads, and sauces',
+        price_fiat: 25000,
+        farmer_name: 'Marketplace grower'
+    },
+    {
+        id: 4,
+        name: 'Red Spinach',
+        category: 'Leafy Greens',
+        image_url: '/assets/images/store/red_spinach.png',
+        description: 'Tender leaves for smoothies and sautés',
+        price_fiat: 24000,
+        farmer_name: 'Marketplace grower'
+    },
+    {
+        id: 5,
+        name: 'Bok Choy',
+        category: 'Leafy Greens',
+        image_url: '/assets/images/store/bok_choy.png',
+        description: 'Crisp bunches for stir-fries and broth',
+        price_fiat: 22000,
+        farmer_name: 'Marketplace grower'
+    },
+    {
+        id: 6,
+        name: 'Sweet Potatoes',
+        category: 'Roots',
+        image_url: '/assets/images/systems/gallery_harvest.png',
+        description: 'Slow-energy staple for meal prep',
+        price_fiat: 26000,
+        farmer_name: 'Marketplace grower'
+    }
 ];
 
 const TAB_OPTIONS: Array<{ id: StoreTab; label: string }> = [
@@ -25,13 +84,15 @@ const TAB_OPTIONS: Array<{ id: StoreTab; label: string }> = [
 ];
 
 export default function StorePage() {
-    const router = useRouter();
     const { user, openLoginModal } = useAuth();
     const [activeTab, setActiveTab] = useState<StoreTab>('fresh_produce');
     const [category, setCategory] = useState('All');
     const [storeRequest, setStoreRequest] = useState('');
     const [status, setStatus] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+    const [inventoryError, setInventoryError] = useState<string | null>(null);
+    const [isLoadingInventory, setIsLoadingInventory] = useState(true);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -43,9 +104,52 @@ export default function StorePage() {
         localStorage.removeItem('pendingStoreRequest');
     }, []);
 
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadInventory = async () => {
+            setIsLoadingInventory(true);
+            setInventoryError(null);
+
+            try {
+                const response = await api.get('/inventory/search');
+                if (cancelled) return;
+
+                setInventoryItems(Array.isArray(response.data) ? response.data : []);
+            } catch (error: any) {
+                if (cancelled) return;
+
+                setInventoryError(error?.response?.data?.error || 'Could not load live inventory right now.');
+                setInventoryItems(FALLBACK_PRODUCE_ITEMS);
+            } finally {
+                if (!cancelled) {
+                    setIsLoadingInventory(false);
+                }
+            }
+        };
+
+        void loadInventory();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    const produceCategories = useMemo(() => {
+        const categories = new Set<string>();
+        inventoryItems.forEach((item) => {
+            const value = String(item.category || '').trim();
+            if (value) categories.add(value);
+        });
+
+        return ['All', ...Array.from(categories)];
+    }, [inventoryItems]);
+
     const filteredProduce = useMemo(
-        () => (category === 'All' ? PRODUCE_ITEMS : PRODUCE_ITEMS.filter((item) => item.category === category)),
-        [category]
+        () => (category === 'All'
+            ? inventoryItems
+            : inventoryItems.filter((item) => String(item.category || '').trim() === category)),
+        [category, inventoryItems]
     );
 
     const handleStoreRequestSubmit = async () => {
@@ -84,7 +188,7 @@ export default function StorePage() {
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Store</h1>
                     <p className="mt-2 text-sm text-gray-500">
-                        Browse fresh produce now, or tell us what kind of store you want to see added next.
+                        Browse live inventory from farmers and distributors, or tell us what kind of store you want to see added next.
                     </p>
                 </div>
 
@@ -111,12 +215,18 @@ export default function StorePage() {
                     <div className="mb-6">
                         <h2 className="text-2xl font-bold text-gray-900">Fresh Produce</h2>
                         <p className="mt-2 text-sm text-gray-500">
-                            Seasonal produce listings for the marketplace experience you want to grow.
+                            Inventory shown here reflects active marketplace listings, with a fallback preview if nothing has been published yet.
                         </p>
                     </div>
 
+                    {inventoryError ? (
+                        <p className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-[#6b531f]">
+                            {inventoryError}
+                        </p>
+                    ) : null}
+
                     <div className="mb-8 flex gap-2 overflow-x-auto pb-2">
-                        {PRODUCE_CATEGORIES.map((cat) => (
+                        {produceCategories.map((cat) => (
                             <button
                                 key={cat}
                                 type="button"
@@ -132,38 +242,66 @@ export default function StorePage() {
                         ))}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4">
-                        {filteredProduce.map((product) => (
-                            <div key={product.id} className="group overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md">
-                                <div className="relative aspect-square bg-white">
-                                    <Image
-                                        src={product.image}
-                                        alt={product.name}
-                                        fill
-                                        className="object-cover transition duration-300 group-hover:scale-105"
-                                    />
-                                </div>
-                                <div className="p-4">
-                                    <div className="mb-2 flex items-start justify-between gap-3">
-                                        <div>
-                                            <h3 className="font-bold text-gray-900 transition group-hover:text-green-600">{product.name}</h3>
-                                            <p className="text-xs text-gray-500">{product.category}</p>
+                    {isLoadingInventory ? (
+                        <div className="rounded-3xl border border-gray-200 bg-white px-6 py-10 text-center text-sm text-gray-500 shadow-sm">
+                            Loading marketplace inventory...
+                        </div>
+                    ) : filteredProduce.length === 0 ? (
+                        <div className="rounded-3xl border border-dashed border-gray-300 bg-white px-6 py-10 text-center shadow-sm">
+                            <h3 className="text-lg font-semibold text-gray-900">No inventory published yet</h3>
+                            <p className="mt-2 text-sm text-gray-500">
+                                As farmers and distributors add inventory, their produce will show up here automatically.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4">
+                            {filteredProduce.map((product) => {
+                                const imageSrc = String(product.image_url || '/assets/images/store/organic_kale.png');
+                                const price = Number(product.price_fiat ?? product.price_plyt ?? 0);
+                                const seller = String(product.farmer_name || 'Marketplace seller');
+                                const description = String(product.description || 'Fresh listing from the current marketplace inventory.');
+                                const quantityLabel = product.quantity != null
+                                    ? `${product.quantity}${product.unit ? ` ${product.unit}` : ''} available`
+                                    : null;
+
+                                return (
+                                    <div key={product.id} className="group overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md">
+                                        <div className="relative aspect-square bg-white">
+                                            <Image
+                                                src={imageSrc}
+                                                alt={product.name}
+                                                fill
+                                                className="object-cover transition duration-300 group-hover:scale-105"
+                                            />
+                                        </div>
+                                        <div className="p-4">
+                                            <div className="mb-2 flex items-start justify-between gap-3">
+                                                <div>
+                                                    <h3 className="font-bold text-gray-900 transition group-hover:text-green-600">{product.name}</h3>
+                                                    <p className="text-xs text-gray-500">{product.category || 'Marketplace'}</p>
+                                                </div>
+                                            </div>
+                                            <p className="text-sm text-gray-500">{description}</p>
+                                            <div className="mt-3 space-y-1 text-xs text-gray-400">
+                                                <p>Seller: {seller}</p>
+                                                {quantityLabel ? <p>{quantityLabel}</p> : null}
+                                                {typeof product.distance_km === 'number' ? <p>{product.distance_km} km away</p> : null}
+                                            </div>
+                                            <div className="mt-4 flex items-center justify-between">
+                                                <span className="font-bold text-gray-900">Rp {price.toLocaleString()}</span>
+                                                <button
+                                                    type="button"
+                                                    className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-green-700 transition hover:bg-green-600 hover:text-white"
+                                                >
+                                                    +
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
-                                    <p className="text-sm text-gray-500">{product.note}</p>
-                                    <div className="mt-4 flex items-center justify-between">
-                                        <span className="font-bold text-gray-900">Rp {product.price.toLocaleString()}</span>
-                                        <button
-                                            type="button"
-                                            className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-green-700 transition hover:bg-green-600 hover:text-white"
-                                        >
-                                            +
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </section>
             ) : (
                 <section className="mx-auto max-w-3xl rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">

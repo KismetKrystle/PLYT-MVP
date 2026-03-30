@@ -1,5 +1,4 @@
-import dotenv from 'dotenv';
-dotenv.config();
+import './env';
 
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';

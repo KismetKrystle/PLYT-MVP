@@ -169,6 +169,10 @@ function detectFulfillmentFollowUp(responseText: string) {
 
     if (!mentionsAllModes || !asksClarifyingQuestion) return null;
 
+    return getFulfillmentFollowUpOptions();
+}
+
+function getFulfillmentFollowUpOptions() {
     return [
         { id: 'ready_to_eat', label: 'Ready to Eat', prompt: 'I want ready-to-eat options near me.' },
         { id: 'recipe_ideas', label: 'Recipe Ideas', prompt: 'I want recipe ideas for this.' },
@@ -177,13 +181,29 @@ function detectFulfillmentFollowUp(responseText: string) {
     ];
 }
 
+function shouldOfferFulfillmentClarifier(message: string, tags: string[], intent: string, searchQueries: string[]) {
+    const normalizedTags = normalizeChatTags(tags);
+    const mode = inferFulfillmentMode(message, normalizedTags);
+
+    if (mode !== 'unknown') {
+        return false;
+    }
+
+    if (!['meal_suggestion', 'food_search', 'general'].includes(intent)) {
+        return false;
+    }
+
+    const hasFoodSignal = extractFoodTerms(message).length > 0;
+    return hasFoodSignal || searchQueries.length > 0;
+}
+
 function buildPersonalizationNudge(isSignedIn: boolean, profileComplete: boolean) {
     if (isSignedIn && profileComplete) {
         return '';
     }
 
     if (!isSignedIn) {
-        return 'This search is designed to adapt to your health preferences. Please [Signup/in](plyt://auth-modal) and complete a bit of your health profile so the results can serve you better.';
+        return 'This search is designed to adapt to your health preferences. Please [Signup/in](/login) and complete a bit of your health profile so the results can serve you better.';
     }
 
     return 'This search is designed to adapt to your health preferences. Please complete a bit more of your health profile so the results can serve you better.';
@@ -206,6 +226,42 @@ function appendPersonalizationNudge(responseText: string, nudge: string) {
     }
 
     return `${normalizedResponse}\n\n${normalizedNudge}`;
+}
+
+function emphasizeLeadSuggestion(responseText: string) {
+    const trimmed = String(responseText || '').trim();
+    if (!trimmed || trimmed.includes('**')) {
+        return trimmed;
+    }
+
+    const paragraphs = trimmed.split(/\n{2,}/);
+    const lead = String(paragraphs[0] || '').trim();
+    if (!lead) {
+        return trimmed;
+    }
+
+    const sentenceMatch = lead.match(/^(.{18,180}?[.!?])(?=\s|$)/);
+    const segment = sentenceMatch ? sentenceMatch[1].trim() : lead.length <= 120 ? lead : '';
+
+    if (!segment) {
+        return trimmed;
+    }
+
+    paragraphs[0] = lead.replace(segment, `**${segment}**`);
+    return paragraphs.join('\n\n');
+}
+
+function appendFulfillmentQuestion(responseText: string, shouldAskQuestion: boolean) {
+    const normalizedResponse = String(responseText || '').trim();
+    if (!normalizedResponse || !shouldAskQuestion) {
+        return normalizedResponse;
+    }
+
+    if (/(would you like|do you want|which one|which option|what sounds better|are you after).*\?/i.test(normalizedResponse)) {
+        return normalizedResponse;
+    }
+
+    return `${normalizedResponse}\n\nAre you looking for something to order, a recipe to cook, meal prep, or ingredients to buy?`;
 }
 
 const TAG_INTENT_HINTS: Record<string, { mode: 'raw_produce' | 'ready_to_eat' | 'prepared_for_later' | 'recipe_ideas' | 'advice'; hints: string[] }> = {
@@ -271,12 +327,39 @@ function inferFulfillmentMode(message: string, tags: string[] = []) {
     return 'unknown';
 }
 
+function shouldActivatePlaceSearch(message: string, tags: string[] = []) {
+    const text = String(message || '').toLowerCase();
+    const normalizedTags = normalizeChatTags(tags);
+    const mode = inferFulfillmentMode(text, normalizedTags);
+    const hasExplicitPlaceTag = normalizedTags.some((tag) => ['fresh', 'cooked', 'meal prep'].includes(String(tag).toLowerCase()));
+
+    if (hasExplicitPlaceTag) {
+        return true;
+    }
+
+    if (mode === 'ready_to_eat') {
+        return /(near me|nearby|around here|local|restaurant|restaurants|cafe|cafes|takeout|delivery|eat out|where can i (eat|get|find|go)|what.?s nearby|places|spots|order|pickup)/.test(text);
+    }
+
+    if (mode === 'raw_produce') {
+        return /(produce|market|grocer|grocery|farmer.?s market|farm stand|ingredients|where can i (buy|get|find)|buy|shop)/.test(text);
+    }
+
+    if (mode === 'prepared_for_later') {
+        return /(meal prep|prepared meals?|prepared for later|prep ahead|for later)/.test(text);
+    }
+
+    return false;
+}
+
 function extractFoodTerms(message: string) {
     const text = message.toLowerCase();
     const knownFoods = [
         'coffee', 'tea', 'matcha', 'salad', 'smoothie', 'juice', 'bowl', 'wrap', 'sandwich',
         'soup', 'kale', 'spinach', 'tomato', 'avocado', 'fruit', 'vegetable', 'greens',
-        'protein bowl', 'raw food', 'brunch', 'dessert', 'pizza', 'sushi', 'burger', 'bakery', 'cafe'
+        'saucy fries', 'loaded fries', 'fries',
+        'protein bowl', 'grilled bowl', 'grilled fish bowl', 'veggie burger', 'plant based burger',
+        'raw food', 'brunch', 'dessert', 'pizza', 'sushi', 'burger', 'bakery', 'cafe', 'cacao'
     ];
     const found = knownFoods.filter((food) => text.includes(food));
     return found.length > 0 ? found.slice(0, 3) : [];
@@ -288,9 +371,13 @@ function buildDietModifiers(profileData: any) {
     if (preferences.has('vegan') || preferences.has('raw_vegan')) modifiers.push('vegan');
     else if (preferences.has('vegetarian')) modifiers.push('vegetarian');
     else if (preferences.has('pescatarian') || preferences.has('pescetarian')) modifiers.push('pescatarian');
+    else if (preferences.has('halal')) modifiers.push('halal');
+    else if (preferences.has('kosher')) modifiers.push('kosher');
     if (preferences.has('gluten_free') || preferences.has('celiac')) modifiers.push('gluten free');
     if (preferences.has('dairy_free')) modifiers.push('dairy free');
-    return modifiers.slice(0, 2);
+    if (preferences.has('no_garlic')) modifiers.push('no garlic');
+    if (preferences.has('no_onion')) modifiers.push('no onion');
+    return modifiers.slice(0, 3);
 }
 
 function buildCravingUpgradeQueries(baseFood: string, profileData: any) {
@@ -318,38 +405,95 @@ function buildCravingUpgradeQueries(baseFood: string, profileData: any) {
         queries.add('cacao cafe');
     }
 
+    if (baseFood === 'fries' || baseFood === 'saucy fries' || baseFood === 'loaded fries') {
+        queries.add('loaded fries');
+        queries.add('crispy potato wedges');
+        queries.add('burger fries');
+        if (preferences.has('dairy_free')) queries.add('dairy free loaded fries');
+    }
+
     return Array.from(queries);
+}
+
+function appendQueriesWithModifiers(queries: Set<string>, phrases: string[], modifiers: string[]) {
+    phrases
+        .map((phrase) => String(phrase || '').trim())
+        .filter(Boolean)
+        .forEach((phrase) => {
+            if (modifiers.length === 0) {
+                queries.add(phrase);
+                return;
+            }
+
+            modifiers.forEach((modifier) => queries.add(`${modifier} ${phrase}`));
+            queries.add(phrase);
+        });
+}
+
+function buildReadyToEatQueries(baseFood: string, profileData: any) {
+    const modifiers = buildDietModifiers(profileData);
+    const queries = new Set<string>();
+    const phrases: string[] = [
+        `${baseFood} restaurant`,
+        `${baseFood} cafe`,
+        'healthy restaurant'
+    ];
+    const upgradeQueries = buildCravingUpgradeQueries(baseFood, profileData);
+
+    if (baseFood === 'coffee') {
+        phrases.push('coffee shop', 'specialty coffee');
+    }
+
+    if (baseFood !== 'healthy food') {
+        phrases.push(`${baseFood} near me`);
+    }
+
+    appendQueriesWithModifiers(queries, [...phrases, ...upgradeQueries], modifiers);
+    return Array.from(queries).slice(0, 6);
+}
+
+function buildCompanionPlaceQueriesFromReply(message: string, reply: string, profileData: any) {
+    const replyFoods = extractFoodTerms(reply);
+    const messageFoods = extractFoodTerms(message);
+    const candidateFoods = Array.from(new Set([...replyFoods, ...messageFoods])).filter(Boolean);
+
+    if (candidateFoods.length === 0) {
+        return [];
+    }
+
+    const queries = new Set<string>();
+    candidateFoods.slice(0, 2).forEach((food) => {
+        buildReadyToEatQueries(food, profileData).forEach((query) => queries.add(query));
+    });
+
+    const normalizedText = `${message} ${reply}`.toLowerCase();
+    if (normalizedText.includes('burger') && normalizedText.includes('fries')) {
+        buildReadyToEatQueries('burger', profileData).forEach((query) => queries.add(query));
+        queries.add('burger fries restaurant');
+        queries.add('burger and fries');
+        queries.add('loaded fries restaurant');
+    }
+
+    return Array.from(queries).slice(0, 6);
 }
 
 function buildSearchQueries(message: string, profileData: any, tags: string[] = []) {
     const normalizedTags = normalizeChatTags(tags);
     const augmentedMessage = [String(message || '').trim(), ...getTagSearchHints(normalizedTags)].filter(Boolean).join(' ');
+
+    if (!shouldActivatePlaceSearch(message, normalizedTags)) {
+        return [];
+    }
+
     const mode = inferFulfillmentMode(augmentedMessage, normalizedTags);
     const foods = extractFoodTerms(augmentedMessage);
-    const modifiers = buildDietModifiers(profileData);
     const baseFood = foods[0] || 'healthy food';
     const queries = new Set<string>();
-    const upgradeQueries = buildCravingUpgradeQueries(baseFood, profileData);
-
-    const withModifiers = (phrase: string) => {
-        if (modifiers.length === 0) {
-            queries.add(phrase);
-            return;
-        }
-        modifiers.forEach((modifier) => queries.add(`${modifier} ${phrase}`));
-        queries.add(phrase);
-    };
+    const modifiers = buildDietModifiers(profileData);
+    const withModifiers = (...phrases: string[]) => appendQueriesWithModifiers(queries, phrases, modifiers);
 
     if (mode === 'ready_to_eat') {
-        withModifiers(`${baseFood} restaurant`);
-        withModifiers(`${baseFood} cafe`);
-        upgradeQueries.forEach((query) => withModifiers(query));
-        if (baseFood === 'coffee') {
-            withModifiers('coffee shop');
-            withModifiers('specialty coffee');
-        }
-        if (baseFood !== 'healthy food') withModifiers(`${baseFood} near me`);
-        withModifiers('healthy restaurant');
+        return buildReadyToEatQueries(baseFood, profileData);
     } else if (mode === 'raw_produce') {
         withModifiers(`${baseFood} market`);
         withModifiers(`${baseFood} grocery`);
@@ -364,9 +508,7 @@ function buildSearchQueries(message: string, profileData: any, tags: string[] = 
     } else if (mode === 'advice') {
         return [];
     } else {
-        withModifiers(`${baseFood} restaurant`);
-        withModifiers(`${baseFood} cafe`);
-        queries.add('healthy food');
+        return [];
     }
 
     return Array.from(queries).slice(0, 6);
@@ -643,6 +785,7 @@ async function buildPlaceRecommendationReply(message: string, places: any[], pro
 - Keep the tone warm, practical, and companion-like.
 - Use the user's health profile quietly in the background when choosing what to highlight.
 - Do not repeatedly explain, summarize, or restate the user's health conditions unless they directly ask for that reasoning.
+- Focus on helping the user move toward a better-fit choice, not reinforcing illness identity.
 - If raw_inventory_context is available for a place and the user is asking for groceries, produce, or recipe ingredients, prioritize that place first.
 - Use raw_inventory_context to name exact produce, pantry ingredients, herbs, or grocery items when available.
 - If menu_context is available for a place, use it to recommend specific meals or drinks by name.
@@ -676,6 +819,7 @@ Rules:
 - Do not turn this into a generic ratings summary.
 - Do not recommend a conflicting option just because it is nearby or highly rated.
 - Only mention the user's health conditions if it materially changes the recommendation and adds clear value in that exact reply.
+- Keep the emphasis on the upgrade or better-fit choice, not on labeling the user by a condition.
 - If the craving is burger, coffee, sweets, fried food, or alcohol, steer toward the upgrade version of it.
 - Mention that there are more options in the suggestions panel.
 - Keep it to 2 or 3 sentences total.`;
@@ -749,6 +893,7 @@ async function buildSuggestionAwareReply(message: string, places: any[], profile
 - If menu_context is available, use it to name specific dishes or drinks.
 - Use the user's health profile quietly in the background when deciding what to highlight.
 - Do not restate the user's health conditions unless it is necessary to avoid a clear conflict or they explicitly ask why.
+- Focus on better-fit choices and practical support, not illness identity framing.
 - Keep the tone warm, natural, and companion-like.
 - Keep it concise.`
         ]
@@ -900,6 +1045,7 @@ Use this profile directly for personalization. Do not ask for details already pr
         let triedModels: string[] = [];
         let usedFallback = false;
         const preserveForHealth = Boolean(userId) && shouldPreserveConversationForHealth(intentClassification.intent, mergedProfile);
+        let responseSearchQueries = searchQueries;
 
         if (isSuggestionFollowUp) {
             aiResponse = await buildSuggestionAwareReply(effectiveMessage, currentVisiblePlaces, profileData, userRole);
@@ -922,8 +1068,28 @@ Use this profile directly for personalization. Do not ask for details already pr
                 triedModels = generationError?.triedModels || [];
                 usedFallback = true;
             }
+
+            if (
+                responseSearchQueries.length === 0 &&
+                (intentClassification.intent === 'meal_suggestion' ||
+                    intentClassification.intent === 'food_search' ||
+                    intentClassification.intent === 'general')
+            ) {
+                responseSearchQueries = buildCompanionPlaceQueriesFromReply(effectiveMessage, aiResponse, profileData);
+            }
         }
 
+        const shouldForceClarifier = shouldOfferFulfillmentClarifier(
+            effectiveMessage,
+            normalizedTags,
+            intentClassification.intent,
+            responseSearchQueries
+        );
+        const shouldAskFulfillmentQuestion =
+            shouldForceClarifier || Boolean(detectFulfillmentFollowUp(aiResponse));
+        const followUpOptions = null;
+        aiResponse = emphasizeLeadSuggestion(aiResponse);
+        aiResponse = appendFulfillmentQuestion(aiResponse, shouldAskFulfillmentQuestion);
         aiResponse = appendPersonalizationNudge(aiResponse, personalizationNudge);
 
         if (userId && activeConversationId) {
@@ -958,8 +1124,8 @@ Use this profile directly for personalization. Do not ask for details already pr
             intentConfidence: intentClassification.confidence,
             mixedIntent: intentClassification.mixed,
             model: modelName,
-            followUpOptions: detectFulfillmentFollowUp(aiResponse),
-            searchQueries,
+            followUpOptions,
+            searchQueries: responseSearchQueries,
             tried_models: triedModels
         });
     } catch (error: any) {

@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import AccessWall from '../components/AccessWall';
 
-const PUBLIC_ROUTES = ['/', '/login', '/signup', '/auth/login', '/auth/wallet-login', '/auth/google-login'];
+const PUBLIC_ROUTES = ['/', '/login', '/signup', '/privacy', '/terms', '/auth/login', '/auth/wallet-login', '/auth/google-login'];
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const { user, loading, isAccessWallEnabled, isUserDenied } = useAuth();

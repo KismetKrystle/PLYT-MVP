@@ -143,6 +143,34 @@ function appendCompanionPlacesNote(text: string, places: PlaceSuggestion[]) {
         : `${normalizedText}\n\nYou may find similar options in the suggestions panel too, including ${String(namedPlaces[0].name).trim()} and ${String(namedPlaces[1].name).trim()}.`;
 }
 
+function PlaceThumbnail({ image, name }: { image: string | null; name: string }) {
+    const [hasImageError, setHasImageError] = useState(false);
+
+    useEffect(() => {
+        setHasImageError(false);
+    }, [image]);
+
+    if (!image || hasImageError) {
+        return (
+            <div className="w-full h-full flex items-center justify-center text-gray-400">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0L6.343 16.657a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={image}
+            alt={name}
+            className="w-full h-full object-cover"
+            onError={() => setHasImageError(true)}
+        />
+    );
+}
+
 type LastPlaceSearch = {
     message: string;
     queries: string[];
@@ -839,6 +867,8 @@ export default function AgriDashboard() {
                             }));
                         }
                     } else {
+                        replaceSuggestedPlaces([]);
+                        setShowPreview(false);
                         setChatHistory(prev => ({
                             ...prev,
                             [targetTab]: [...prev[targetTab], {
@@ -853,20 +883,9 @@ export default function AgriDashboard() {
                         }));
                     }
                 } catch {
-                    const fallbackPlaces = placeQueries.map((q: string) => ({
-                        name: q.split(',')[0]?.trim() || q,
-                        address: q,
-                        phone: '',
-                        rating: null,
-                        reviewsCount: 0,
-                        website: '',
-                        mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`,
-                        image: null,
-                        distance_km: null
-                    }));
-                    mergeSuggestedPlaces(fallbackPlaces);
+                    replaceSuggestedPlaces([]);
                     setSuggestedProducts([]);
-                    setShowPreview(true);
+                    setShowPreview(false);
                     setChatHistory(prev => ({
                         ...prev,
                         [targetTab]: [...prev[targetTab], {
@@ -1688,13 +1707,7 @@ export default function AgriDashboard() {
                                                 >
                                                     <div className="flex gap-3">
                                                         <div className="w-14 h-14 rounded-lg bg-gray-100 shrink-0 overflow-hidden">
-                                                            {place.image ? (
-                                                                <img src={place.image} alt={place.name} className="w-full h-full object-cover" />
-                                                            ) : (
-                                                                <div className="w-full h-full flex items-center justify-center text-gray-400">
-                                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0L6.343 16.657a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                                </div>
-                                                            )}
+                                                            <PlaceThumbnail image={place.image} name={place.name} />
                                                         </div>
                                                         <div className="flex-1 min-w-0">
                                                             <h4 className="text-sm font-bold text-gray-800 leading-snug">{place.name}</h4>

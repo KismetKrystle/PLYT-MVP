@@ -1214,18 +1214,7 @@ router.post('/places', authenticateTokenOptional, async (req: Request, res: Resp
                 // fallback below
             }
 
-            return [{
-                id: query,
-                name: query.split(',')[0]?.trim() || query,
-                address: query,
-                phone: '',
-                rating: null,
-                reviewsCount: 0,
-                website: '',
-                mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
-                image: null,
-                distance_km: null
-            }];
+            return [];
         }));
 
         const deduped = new Map<string, any>();

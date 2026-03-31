@@ -1,6 +1,6 @@
 'use client';
 
-import { SignUp } from '@clerk/nextjs';
+import { ClerkProvider, SignUp } from '@clerk/nextjs';
 import Link from 'next/link';
 import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -9,6 +9,26 @@ import KYCForm from '../../../components/KYCForm';
 import { useAuth } from '../../../lib/auth';
 
 const hasClerkPublishableKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+const clerkAppearance = {
+    elements: {
+        rootBox: 'flex w-full max-w-md justify-center',
+        cardBox: 'w-full',
+        card: 'w-full border border-[#d8d1c4] rounded-[32px] bg-white shadow-[0_30px_90px_rgba(53,62,33,0.12)]',
+        headerTitle: 'text-center',
+        headerSubtitle: 'text-center',
+        socialButtonsBlockButton: 'justify-center',
+        formButtonPrimary: 'justify-center',
+        footerAction: 'justify-center',
+    }
+};
+const clerkLocalization = {
+    signUp: {
+        start: {
+            title: 'Plyant',
+            titleCombined: 'Plyant',
+        },
+    },
+};
 
 function SignupScreen() {
     const searchParams = useSearchParams();
@@ -113,30 +133,16 @@ function SignupScreen() {
 
     return (
         <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
-            <div className="mx-auto flex w-full max-w-xl items-center justify-center">
-                <div className="w-full rounded-[32px] border border-[#d8d1c4] bg-white p-6 shadow-[0_30px_90px_rgba(53,62,33,0.12)] sm:p-8">
-                    <div className="mb-6 text-center">
-                        <h1 className="text-3xl font-semibold text-[#1f2b18]">Join the network</h1>
-                        <p className="mt-2 text-sm text-[#6b6d61]">
-                            Sign up with Google or your email, then go straight into your health profile onboarding.
-                        </p>
-                    </div>
-
-                    <SignUp
-                        appearance={{
-                            elements: {
-                                card: 'shadow-none border border-[#e6e0d4] rounded-[28px]',
-                                rootBox: 'w-full',
-                            }
-                        }}
-                        fallbackRedirectUrl={completeUrl}
-                        forceRedirectUrl={completeUrl}
-                        path="/signup"
-                        routing="path"
-                        signInUrl={loginUrl}
-                    />
-                </div>
-            </div>
+            <ClerkProvider localization={clerkLocalization}>
+                <SignUp
+                    appearance={clerkAppearance}
+                    fallbackRedirectUrl={completeUrl}
+                    forceRedirectUrl={completeUrl}
+                    path="/signup"
+                    routing="path"
+                    signInUrl={loginUrl}
+                />
+            </ClerkProvider>
         </div>
     );
 }

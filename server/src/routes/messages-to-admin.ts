@@ -1,6 +1,7 @@
 import express, { Response } from 'express';
 import pool from '../db';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { softAuthenticateToken } from '../middleware/softAuth';
 
 const router = express.Router();
 let messagesToAdminSchemaReady: Promise<void> | null = null;
@@ -54,14 +55,15 @@ function isAdmin(req: AuthRequest) {
     return req.user?.role === 'admin';
 }
 
-router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.post('/', softAuthenticateToken, async (req: AuthRequest, res: Response) => {
     try {
         await ensureMessagesToAdminSchema();
 
         const userId = req.user?.id as string | number;
-        const { message, subject, context } = req.body || {};
+        const { message, subject, context, email } = req.body || {};
         const trimmedMessage = String(message || '').trim();
         const trimmedSubject = String(subject || 'store_request').trim() || 'store_request';
+        const trimmedEmail = String(email || '').trim();
 
         if (!trimmedMessage) {
             res.status(400).json({ error: 'Message is required' });
@@ -73,7 +75,9 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
              VALUES ($1, $2, $3, $4::jsonb)
              RETURNING *`,
             [userId, trimmedSubject, trimmedMessage, JSON.stringify({
-                context: String(context || '').trim()
+                context: String(context || '').trim(),
+                email: trimmedEmail || null,
+                source: userId ? 'authenticated' : 'guest'
             })]
         );
 

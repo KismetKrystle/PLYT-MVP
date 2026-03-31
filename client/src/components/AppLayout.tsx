@@ -53,6 +53,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
     const [feedbackCategory, setFeedbackCategory] = useState<'suggestion' | 'bug'>('suggestion');
     const [feedbackMessage, setFeedbackMessage] = useState('');
+    const [feedbackEmail, setFeedbackEmail] = useState('');
     const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
     const [feedbackStatus, setFeedbackStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const { savedLessons, activeLesson, setActiveLesson } = useLessons();
@@ -71,12 +72,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     };
 
     const openFeedbackModal = () => {
-        if (!user) {
-            requestSignIn();
-            return;
-        }
-
         setFeedbackStatus(null);
+        setFeedbackEmail(user?.email || '');
         setIsProfileOpen(false);
         setIsFeedbackOpen(true);
     };
@@ -89,11 +86,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     const handleSubmitFeedback = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-
-        if (!user) {
-            requestSignIn();
-            return;
-        }
 
         const trimmedMessage = feedbackMessage.trim();
         if (!trimmedMessage) {
@@ -109,10 +101,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             await api.post('/messages-to-admin', {
                 subject: feedbackCategory === 'bug' ? 'bug_report' : 'product_feedback',
                 message: trimmedMessage,
-                context: currentLocation
+                context: currentLocation,
+                email: feedbackEmail.trim()
             });
 
             setFeedbackMessage('');
+            if (!user) {
+                setFeedbackEmail('');
+            }
             setFeedbackCategory('suggestion');
             setFeedbackStatus({ type: 'success', message: 'Thanks. Your note was sent to the team.' });
         } catch (error) {
@@ -415,6 +411,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 <label htmlFor="feedback-message" className="mb-2 block text-sm font-medium text-gray-700">
                                     What would you like us to know?
                                 </label>
+                                {!user ? (
+                                    <div className="mb-3">
+                                        <label htmlFor="feedback-email" className="mb-2 block text-sm font-medium text-gray-700">
+                                            Email
+                                        </label>
+                                        <input
+                                            id="feedback-email"
+                                            type="email"
+                                            value={feedbackEmail}
+                                            onChange={(event) => setFeedbackEmail(event.target.value)}
+                                            placeholder="Optional, if you want us to follow up"
+                                            className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-green-400 focus:ring-2 focus:ring-green-500/10"
+                                        />
+                                    </div>
+                                ) : null}
                                 <textarea
                                     id="feedback-message"
                                     value={feedbackMessage}

@@ -26,7 +26,7 @@ function LandingShell() {
   );
 }
 
-export default function Home() {
+function HomeScreen() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -56,4 +56,12 @@ export default function Home() {
 
   // 3. Guest on Root (No Tab) -> Landing Page
   return <LandingShell />;
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-white" />}>
+      <HomeScreen />
+    </Suspense>
+  );
 }

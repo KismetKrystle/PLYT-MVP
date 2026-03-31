@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ClerkProvider } from '@clerk/nextjs';
+import { Suspense } from 'react';
 import { AuthProvider } from '../lib/auth';
 import ProtectedRoute from '../lib/ProtectedRoute';
 import './globals.css';
@@ -26,16 +27,20 @@ function AppProviders({ children }: { children: React.ReactNode }) {
       {clerkPublishableKey ? <ClerkSessionBridge /> : null}
       <LessonProvider>
         <CartProvider>
-          <ProtectedRoute>
-            <AppLayout>
-              <main className="flex-1 h-full">
-                {children}
-              </main>
-            </AppLayout>
-          </ProtectedRoute>
+          <Suspense fallback={<div className="min-h-screen bg-white" />}>
+            <ProtectedRoute>
+              <AppLayout>
+                <main className="flex-1 h-full">
+                  {children}
+                </main>
+              </AppLayout>
+            </ProtectedRoute>
+          </Suspense>
         </CartProvider>
       </LessonProvider>
-      <AuthModal />
+      <Suspense fallback={null}>
+        <AuthModal />
+      </Suspense>
     </AuthProvider>
   );
 }

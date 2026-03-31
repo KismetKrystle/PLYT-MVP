@@ -1,27 +1,143 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { formatJournalDate, JournalEntry, loadJournalEntries } from '../../lib/journal';
 
 interface ProfileProps {
     user: any;
     isOwner?: boolean; // Optional prop to determine if the viewer is the profile owner
 }
 
-// -- Reuse Mock Data from PublicProfile --
-const FOOD_GALLERY = [
-    { id: 1, title: 'Cherry Tomatoes', image: '/assets/images/gallery/cherry_tomatoes.png', status: 'Harvested' },
-    { id: 2, title: 'Organic Kale', image: '/assets/images/gallery/organic_kale.png', status: 'Growing' },
-    { id: 3, title: 'Basil', image: '/assets/images/gallery/fresh_herbs.png', status: 'Harvested' },
-    { id: 4, title: 'Spinach', image: '/assets/images/gallery/spinach.png', status: 'Planted' },
+type VideoEntry = {
+    id: number;
+    title: string;
+    image: string;
+    channel: string;
+    type: string;
+    link: string;
+    tags?: string[];
+};
+
+type RecipeEntry = {
+    id: number;
+    title: string;
+    image: string;
+    likes: number;
+    description: string;
+    tags?: string[];
+};
+
+type ProduceEntry = {
+    id: number;
+    title: string;
+    image: string;
+    nutrients: string[];
+    benefits: string[];
+};
+
+type SupplementEntry = {
+    id: number;
+    title: string;
+    image: string;
+    nutrients: string[];
+    benefits: string[];
+    notes?: string;
+};
+
+function normalizeSupplementEntry(raw: any, fallbackId: number): SupplementEntry | null {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return null;
+    }
+
+    const title = String(raw.title || '').trim();
+    if (!title) {
+        return null;
+    }
+
+    const nutrients = Array.isArray(raw.nutrients)
+        ? raw.nutrients.map((value: unknown) => String(value).trim()).filter(Boolean)
+        : [];
+
+    const benefits = Array.isArray(raw.benefits)
+        ? raw.benefits.map((value: unknown) => String(value).trim()).filter(Boolean)
+        : [];
+
+    return {
+        id: Number(raw.id) || fallbackId,
+        title,
+        image: String(raw.image || '/assets/images/gallery/user_avatar.png').trim() || '/assets/images/gallery/user_avatar.png',
+        nutrients,
+        benefits,
+        notes: String(raw.notes || '').trim() || undefined
+    };
+}
+
+function normalizeSupplements(raw: any): SupplementEntry[] {
+    if (!Array.isArray(raw)) {
+        return [];
+    }
+
+    return raw
+        .map((item, index) => normalizeSupplementEntry(item, Date.now() + index))
+        .filter((item): item is SupplementEntry => Boolean(item));
+}
+
+type MealPlanDay = {
+    id: string;
+    dayLabel: string;
+    breakfast: string;
+    lunch: string;
+    dinner: string;
+    notes: string;
+};
+
+const PRODUCE_LIBRARY: ProduceEntry[] = [
+    { id: 1, title: 'Spinach', image: '/assets/images/gallery/spinach.png', nutrients: ['Iron', 'Folate', 'Vitamin K'], benefits: ['Supports energy and oxygen transport', 'Helps maintain healthy bones', 'Easy base for salads and sautés'] },
+    { id: 2, title: 'Kale', image: '/assets/images/gallery/organic_kale.png', nutrients: ['Vitamin C', 'Vitamin A', 'Fiber'], benefits: ['Great for immune support', 'Adds satisfying volume to meals', 'Pairs well in soups, smoothies, and salads'] },
+    { id: 3, title: 'Cherry Tomatoes', image: '/assets/images/gallery/cherry_tomatoes.png', nutrients: ['Lycopene', 'Vitamin C', 'Potassium'], benefits: ['Bright flavor for bowls and snacks', 'Supports hydration', 'Easy way to add color and antioxidants'] },
+    { id: 4, title: 'Basil', image: '/assets/images/gallery/fresh_herbs.png', nutrients: ['Vitamin K', 'Antioxidants', 'Manganese'], benefits: ['Adds flavor without much sodium', 'Freshens sauces and salads', 'Useful for simple herb-forward meals'] },
+    { id: 5, title: 'Broccoli', image: '/assets/images/gallery/organic_kale.png', nutrients: ['Vitamin C', 'Fiber', 'Folate'], benefits: ['Supports fullness', 'Great roasted or steamed', 'Easy side for lunch or dinner'] },
+    { id: 6, title: 'Bell Peppers', image: '/assets/images/gallery/cherry_tomatoes.png', nutrients: ['Vitamin C', 'Vitamin A', 'B6'], benefits: ['Adds crunch and sweetness', 'Works raw or cooked', 'Good for snacks and stir-fries'] },
+    { id: 7, title: 'Cucumber', image: '/assets/images/gallery/spinach.png', nutrients: ['Water', 'Vitamin K', 'Potassium'], benefits: ['Very hydrating', 'Light, cooling snack option', 'Easy to add to salads and wraps'] },
+    { id: 8, title: 'Carrots', image: '/assets/images/gallery/cherry_tomatoes.png', nutrients: ['Beta-carotene', 'Fiber', 'Potassium'], benefits: ['Naturally sweet crunch', 'Great for roasting or dipping', 'Helpful when you want a simple snack vegetable'] },
+    { id: 9, title: 'Zucchini', image: '/assets/images/gallery/organic_kale.png', nutrients: ['Vitamin C', 'Manganese', 'Water'], benefits: ['Versatile in sautés and bowls', 'Light texture for easy meals', 'Works well with herbs and grilled proteins'] },
+    { id: 10, title: 'Mushrooms', image: '/assets/images/gallery/fresh_herbs.png', nutrients: ['Selenium', 'Copper', 'B Vitamins'], benefits: ['Savory, satisfying texture', 'Great for plant-forward meals', 'Adds depth to pasta, bowls, and eggs'] }
 ];
 
-const VIDEO_GALLERY = [
+const INITIAL_SUPPLEMENTS: SupplementEntry[] = [
+    {
+        id: 1,
+        title: 'Magnesium Glycinate',
+        image: '/assets/images/gallery/user_avatar.png',
+        nutrients: ['Magnesium', 'Glycine'],
+        benefits: ['Often used to support relaxation and muscle recovery', 'Can be easier on the stomach than some other forms'],
+        notes: 'Commonly taken in the evening.'
+    },
+    {
+        id: 2,
+        title: 'Vitamin D3',
+        image: '/assets/images/gallery/cherry_tomatoes.png',
+        nutrients: ['Vitamin D'],
+        benefits: ['Supports bone health', 'Helpful when daily sunlight exposure is low'],
+        notes: 'Often paired with a meal containing fat.'
+    },
+    {
+        id: 3,
+        title: 'Omega-3',
+        image: '/assets/images/gallery/fresh_herbs.png',
+        nutrients: ['EPA', 'DHA'],
+        benefits: ['Supports heart and brain health', 'Useful when oily fish is not eaten regularly'],
+        notes: 'A fish oil or algae-based option can work.'
+    }
+];
+
+const INITIAL_VIDEO_GALLERY: VideoEntry[] = [
     {
         id: 1,
         title: '5 Anti-Inflammatory Foods That Improve Body Pain!',
@@ -45,9 +161,9 @@ const USEFUL_LINKS = [
     { id: 2, title: 'Community Farm Map', link: '#', type: 'Link' },
 ];
 
-const RECIPES = [
-    { id: 1, title: 'Fresh Kale Salad', image: '/assets/images/gallery/organic_kale.png', likes: 124 },
-    { id: 2, title: 'Tomato Basil Pasta', image: '/assets/images/gallery/cherry_tomatoes.png', likes: 85 },
+const INITIAL_RECIPES: RecipeEntry[] = [
+    { id: 1, title: 'Fresh Kale Salad', image: '/assets/images/gallery/organic_kale.png', likes: 124, description: 'A crisp, herb-forward salad that works as a light lunch or an easy side.', tags: ['fresh', 'greens', 'quick'] },
+    { id: 2, title: 'Tomato Basil Pasta', image: '/assets/images/gallery/cherry_tomatoes.png', likes: 85, description: 'Comforting pasta with bright basil and tomatoes for an easy weeknight dinner.', tags: ['comfort', 'pasta', 'dinner'] },
 ];
 
 const DIET_JOURNEYS = [
@@ -70,10 +186,36 @@ const RESOURCES = PINNED_ARTICLES.map((item) => ({
     type: 'Article'
 }));
 
-const WALL_POSTS = [
+const JOURNAL_PREVIEW_ENTRIES = [
     { id: 1, type: 'image', user: 'Urban Gardener', content: 'Just harvested my first batch of hydroponic lettuce! 🥬 #UrbanFarming #Hydroponics', image: '/assets/images/gallery/organic_kale.png', likes: 24, comments: 5, time: '2h ago' },
     { id: 2, type: 'status', user: 'Urban Gardener', content: 'Thinking about expanding to aquaponics next season. Anyone have experience with Tilapia? 🐟', likes: 12, comments: 8, time: '5h ago' },
     { id: 3, type: 'image', user: 'Urban Gardener', content: 'Beautiful sunset over the community garden today. Grateful for this space.', image: '/assets/images/gallery/community_garden.png', likes: 45, comments: 2, time: '1d ago' },
+];
+
+const JOURNAL_WALL_MOCK_ENTRIES: JournalEntry[] = [
+    {
+        id: 1001,
+        entryDate: '2026-03-29',
+        content: 'Today felt steadier. I kept lunch simple with greens, roasted vegetables, and enough water through the afternoon, and my energy stayed much more even.',
+        imageUrl: '/assets/images/gallery/organic_kale.png',
+        tags: ['energy', 'greens', 'routine'],
+        createdAt: '2026-03-29T10:15:00.000Z'
+    },
+    {
+        id: 1002,
+        entryDate: '2026-03-27',
+        content: 'Noticed I tend to crave something salty when I rush through the morning. Slowing down for breakfast helped a lot more than I expected.',
+        tags: ['cravings', 'breakfast', 'awareness'],
+        createdAt: '2026-03-27T13:00:00.000Z'
+    },
+    {
+        id: 1003,
+        entryDate: '2026-03-24',
+        content: 'Tried a simple produce restock this week: spinach, mushrooms, cherry tomatoes, and cucumbers. Having easy ingredients around made dinner decisions much easier.',
+        imageUrl: '/assets/images/gallery/cherry_tomatoes.png',
+        tags: ['shopping', 'meal prep', 'produce'],
+        createdAt: '2026-03-24T18:30:00.000Z'
+    }
 ];
 
 const FAVORITE_MODAL_TITLES: Record<string, string> = {
@@ -90,6 +232,14 @@ function extractProfileData(record: any) {
 }
 
 type MealEntry = { breakfast: string; lunch: string; dinner: string; notes: string };
+
+function getLocalIsoDate() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = `${now.getMonth() + 1}`.padStart(2, '0');
+    const day = `${now.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
 
 function buildAutoMealForDay(dayOffset: number, profile: any): MealEntry {
     const preferences: string[] = profile?.dietary_preferences || [];
@@ -123,17 +273,100 @@ function buildAutoMealForDay(dayOffset: number, profile: any): MealEntry {
     };
 }
 
+function buildInitialMealPlan(profile: any): MealPlanDay[] {
+    const today = new Date();
+
+    return Array.from({ length: 7 }).map((_, index) => {
+        const dayDate = new Date(today);
+        dayDate.setDate(today.getDate() + index);
+        const dayLabel = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(dayDate);
+        const generated = buildAutoMealForDay(index, profile);
+
+        return {
+            id: `${dayLabel}-${index}`,
+            dayLabel,
+            breakfast: generated.breakfast,
+            lunch: generated.lunch,
+            dinner: generated.dinner,
+            notes: generated.notes
+        };
+    });
+}
+
 export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) {
     const { token, loading: authLoading } = useAuth();
     const [activeModal, setActiveModal] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [usefulLinks, setUsefulLinks] = useState(USEFUL_LINKS);
+    const [videos, setVideos] = useState(INITIAL_VIDEO_GALLERY);
+    const [recipes, setRecipes] = useState(INITIAL_RECIPES);
+    const [isEditingVideos, setIsEditingVideos] = useState(false);
+    const [editingVideoId, setEditingVideoId] = useState<number | null>(null);
+    const [newVideoTitle, setNewVideoTitle] = useState('');
+    const [newVideoLink, setNewVideoLink] = useState('');
+    const [newVideoChannel, setNewVideoChannel] = useState('');
+    const [newVideoType, setNewVideoType] = useState('Wellness');
+    const [newVideoTags, setNewVideoTags] = useState('');
+    const [isEditingRecipes, setIsEditingRecipes] = useState(false);
+    const [editingRecipeId, setEditingRecipeId] = useState<number | null>(null);
+    const [newRecipeTitle, setNewRecipeTitle] = useState('');
+    const [newRecipeImage, setNewRecipeImage] = useState('');
+    const [newRecipeDescription, setNewRecipeDescription] = useState('');
+    const [newRecipeTags, setNewRecipeTags] = useState('');
     const [isEditingUsefulLinks, setIsEditingUsefulLinks] = useState(false);
     const [newUsefulLink, setNewUsefulLink] = useState('');
     const [profileData, setProfileData] = useState<any>(() => extractProfileData(user));
     const [savedChats, setSavedChats] = useState<Array<{ id: string; title: string; updated_at?: string }>>([]);
-    const [healthyDays] = useState(42);
-    const featuredVideo = VIDEO_GALLERY[VIDEO_GALLERY.length - 1];
+    const [healthyDays, setHealthyDays] = useState(1);
+    const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+    const [selectedProduce, setSelectedProduce] = useState<ProduceEntry | null>(null);
+    const [produceSearch, setProduceSearch] = useState('');
+    const [visibleProduceCount, setVisibleProduceCount] = useState(6);
+    const [supplements, setSupplements] = useState(INITIAL_SUPPLEMENTS);
+    const [selectedSupplement, setSelectedSupplement] = useState<SupplementEntry | null>(INITIAL_SUPPLEMENTS[0] ?? null);
+    const [supplementSearch, setSupplementSearch] = useState('');
+    const [visibleSupplementCount, setVisibleSupplementCount] = useState(6);
+    const [isEditingSupplements, setIsEditingSupplements] = useState(false);
+    const [editingSupplementId, setEditingSupplementId] = useState<number | null>(null);
+    const [newSupplementTitle, setNewSupplementTitle] = useState('');
+    const [newSupplementImage, setNewSupplementImage] = useState('');
+    const [newSupplementNutrients, setNewSupplementNutrients] = useState('');
+    const [newSupplementBenefits, setNewSupplementBenefits] = useState('');
+    const [newSupplementNotes, setNewSupplementNotes] = useState('');
+    const [mealPlan, setMealPlan] = useState<MealPlanDay[]>([]);
+    const [isEditingMealPlan, setIsEditingMealPlan] = useState(false);
+    const featuredVideo = videos[videos.length - 1] || null;
+    const featuredRecipe = recipes[0] || null;
+    const journalPreviewEntries = journalEntries.slice(0, 3);
+    const journalWallEntries = journalPreviewEntries.length > 0 ? journalPreviewEntries : JOURNAL_WALL_MOCK_ENTRIES;
+    const featuredProduce = PRODUCE_LIBRARY[0];
+    const featuredSupplement = supplements[0] || null;
+    const filteredProduce = useMemo(() => {
+        const normalizedQuery = produceSearch.trim().toLowerCase();
+
+        if (!normalizedQuery) {
+            return PRODUCE_LIBRARY;
+        }
+
+        return PRODUCE_LIBRARY.filter((item) => {
+            const haystacks = [item.title, ...item.nutrients, ...item.benefits];
+            return haystacks.some((value) => value.toLowerCase().includes(normalizedQuery));
+        });
+    }, [produceSearch]);
+    const visibleProduce = filteredProduce.slice(0, visibleProduceCount);
+    const filteredSupplements = useMemo(() => {
+        const normalizedQuery = supplementSearch.trim().toLowerCase();
+
+        if (!normalizedQuery) {
+            return supplements;
+        }
+
+        return supplements.filter((item) => {
+            const haystacks = [item.title, item.notes || '', ...item.nutrients, ...item.benefits];
+            return haystacks.some((value) => value.toLowerCase().includes(normalizedQuery));
+        });
+    }, [supplementSearch, supplements]);
+    const visibleSupplements = filteredSupplements.slice(0, visibleSupplementCount);
 
     // Edit Profile Form State
     const [editForm, setEditForm] = useState({
@@ -144,10 +377,139 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     });
 
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const favoritesSectionRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         setProfileData(extractProfileData(user));
     }, [user]);
+
+    useEffect(() => {
+        const savedSupplements = normalizeSupplements(profileData?.supplements);
+        const nextSupplements = savedSupplements.length > 0 ? savedSupplements : INITIAL_SUPPLEMENTS;
+        setSupplements(nextSupplements);
+        setSelectedSupplement((current) => {
+            if (current && nextSupplements.some((item) => item.id === current.id)) {
+                return nextSupplements.find((item) => item.id === current.id) || nextSupplements[0] || null;
+            }
+            return nextSupplements[0] || null;
+        });
+    }, [profileData?.supplements]);
+
+    useEffect(() => {
+        setEditForm({
+            full_name: user?.full_name || '',
+            location_city: user?.location_city || '',
+            location_address: user?.location_address || '',
+            bio: user?.bio || ''
+        });
+    }, [user]);
+
+    useEffect(() => {
+        const streakKey = `plyt-health-streak:${user?.id ?? 'guest'}`;
+        const today = getLocalIsoDate();
+
+        try {
+            const raw = localStorage.getItem(streakKey);
+            const parsed = raw ? JSON.parse(raw) : null;
+
+            if (!parsed) {
+                const initial = { count: 1, lastActiveDate: today };
+                localStorage.setItem(streakKey, JSON.stringify(initial));
+                setHealthyDays(initial.count);
+                return;
+            }
+
+            if (parsed.lastActiveDate !== today) {
+                const next = {
+                    count: Number(parsed.count || 0) + 1,
+                    lastActiveDate: today
+                };
+                localStorage.setItem(streakKey, JSON.stringify(next));
+                setHealthyDays(next.count);
+                return;
+            }
+
+            setHealthyDays(Number(parsed.count || 1));
+        } catch {
+            setHealthyDays(1);
+        }
+    }, [user?.id]);
+
+    useEffect(() => {
+        if (!user?.id) {
+            setJournalEntries([]);
+            return;
+        }
+
+        setJournalEntries(loadJournalEntries(user.id));
+    }, [user?.id]);
+
+    useEffect(() => {
+        const mealPlanKey = `plyt-meal-plan:${user?.id ?? 'guest'}`;
+
+        try {
+            const raw = localStorage.getItem(mealPlanKey);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    setMealPlan(parsed);
+                    return;
+                }
+            }
+        } catch {
+            // fall through to generated plan
+        }
+
+        setMealPlan(buildInitialMealPlan(profileData));
+    }, [profileData, user?.id]);
+
+    useEffect(() => {
+        if (mealPlan.length === 0) return;
+        localStorage.setItem(`plyt-meal-plan:${user?.id ?? 'guest'}`, JSON.stringify(mealPlan));
+    }, [mealPlan, user?.id]);
+
+    useEffect(() => {
+        setVisibleProduceCount(6);
+    }, [produceSearch]);
+
+    useEffect(() => {
+        if (activeModal !== 'food') return;
+
+        if (filteredProduce.length === 0) {
+            setSelectedProduce(null);
+            return;
+        }
+
+        if (!selectedProduce || !filteredProduce.some((item) => item.id === selectedProduce.id)) {
+            setSelectedProduce(filteredProduce[0]);
+        }
+    }, [activeModal, filteredProduce, selectedProduce]);
+
+    useEffect(() => {
+        setVisibleSupplementCount(6);
+    }, [supplementSearch]);
+
+    useEffect(() => {
+        if (activeModal !== 'supplements') return;
+
+        if (filteredSupplements.length === 0) {
+            setSelectedSupplement(null);
+            return;
+        }
+
+        if (!selectedSupplement || !filteredSupplements.some((item) => item.id === selectedSupplement.id)) {
+            setSelectedSupplement(filteredSupplements[0]);
+        }
+    }, [activeModal, filteredSupplements, selectedSupplement]);
+
+    useEffect(() => {
+        if (searchParams.get('focus') !== 'favorites') {
+            return;
+        }
+
+        favoritesSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, [searchParams]);
 
     useEffect(() => {
         if (authLoading || !token || !isOwner) {
@@ -269,6 +631,31 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         }
     ];
 
+    const persistSupplements = async (nextSupplements: SupplementEntry[]) => {
+        if (!isOwner || authLoading || !token) {
+            return;
+        }
+
+        try {
+            const response = await api.put('/user/profile', {
+                profile_data: {
+                    supplements: nextSupplements
+                }
+            });
+
+            const refreshedProfile = extractProfileData(response.data);
+            setProfileData((current: any) => ({
+                ...current,
+                ...refreshedProfile,
+                supplements: normalizeSupplements(refreshedProfile?.supplements).length > 0
+                    ? normalizeSupplements(refreshedProfile?.supplements)
+                    : nextSupplements
+            }));
+        } catch (error) {
+            console.error('Failed to persist supplements:', error);
+        }
+    };
+
     const handleSaveProfile = async () => {
         setIsSaving(true);
         try {
@@ -314,31 +701,303 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         setUsefulLinks((current) => current.filter((item) => item.id !== id));
     };
 
-    // Common Action Button Component
-    const ActionButton = ({ type, modal }: { type: 'edit' | 'like', modal?: string }) => (
-        <button
-            className="absolute top-4 right-4 bg-white/30 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/50 transition z-20"
-            onClick={(e) => {
-                e.stopPropagation();
-                if (type === 'edit') setActiveModal(modal || 'edit');
-                else console.log('Like clicked');
-            }}
-        >
-            {type === 'edit' ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-            ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
-            )}
-        </button>
-    );
+    const handleAddVideo = () => {
+        const rawTitle = newVideoTitle.trim();
+        const rawLink = newVideoLink.trim();
+        const rawChannel = newVideoChannel.trim();
+        if (!rawTitle || !rawLink) return;
+
+        const normalizedLink = /^https?:\/\//i.test(rawLink) ? rawLink : `https://${rawLink}`;
+        let image = 'https://i.ytimg.com/vi/c3MlI45j-rg/hqdefault.jpg';
+
+        try {
+            const url = new URL(normalizedLink);
+            const videoId =
+                url.hostname.includes('youtu.be')
+                    ? url.pathname.replace('/', '')
+                    : url.searchParams.get('v');
+            if (videoId) {
+                image = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+            }
+        } catch {
+            image = 'https://i.ytimg.com/vi/c3MlI45j-rg/hqdefault.jpg';
+        }
+
+        const tags = newVideoTags
+            .split(',')
+            .map((tag) => tag.trim())
+            .filter(Boolean);
+
+        if (editingVideoId) {
+            setVideos((current) =>
+                current.map((item) =>
+                    item.id === editingVideoId
+                        ? {
+                            ...item,
+                            title: rawTitle,
+                            image,
+                            channel: rawChannel || 'Saved Video',
+                            type: newVideoType || 'Wellness',
+                            link: normalizedLink,
+                            tags
+                        }
+                        : item
+                )
+            );
+        } else {
+            setVideos((current) => [
+                ...current,
+                {
+                    id: Date.now(),
+                    title: rawTitle,
+                    image,
+                    channel: rawChannel || 'Saved Video',
+                    type: newVideoType || 'Wellness',
+                    link: normalizedLink,
+                    tags
+                }
+            ]);
+        }
+        setNewVideoTitle('');
+        setNewVideoLink('');
+        setNewVideoChannel('');
+        setNewVideoType('Wellness');
+        setNewVideoTags('');
+        setEditingVideoId(null);
+        setIsEditingVideos(false);
+    };
+
+    const handleRemoveVideo = (id: number) => {
+        setVideos((current) => current.filter((item) => item.id !== id));
+        if (editingVideoId === id) {
+            setEditingVideoId(null);
+            setNewVideoTitle('');
+            setNewVideoLink('');
+            setNewVideoChannel('');
+            setNewVideoType('Wellness');
+            setNewVideoTags('');
+        }
+    };
+
+    const handleEditVideo = (item: VideoEntry) => {
+        setEditingVideoId(item.id);
+        setNewVideoTitle(item.title);
+        setNewVideoLink(item.link);
+        setNewVideoChannel(item.channel);
+        setNewVideoType(item.type);
+        setNewVideoTags((item.tags || []).join(', '));
+        setIsEditingVideos(true);
+    };
+
+    const handleAddRecipe = () => {
+        const rawTitle = newRecipeTitle.trim();
+        const rawDescription = newRecipeDescription.trim();
+        if (!rawTitle || !rawDescription) return;
+
+        const tags = newRecipeTags
+            .split(',')
+            .map((tag) => tag.trim())
+            .filter(Boolean);
+
+        const image = newRecipeImage.trim() || '/assets/images/gallery/organic_kale.png';
+
+        if (editingRecipeId) {
+            setRecipes((current) =>
+                current.map((item) =>
+                    item.id === editingRecipeId
+                        ? {
+                            ...item,
+                            title: rawTitle,
+                            description: rawDescription,
+                            image,
+                            tags
+                        }
+                        : item
+                )
+            );
+        } else {
+            setRecipes((current) => [
+                {
+                    id: Date.now(),
+                    title: rawTitle,
+                    description: rawDescription,
+                    image,
+                    likes: 0,
+                    tags
+                },
+                ...current
+            ]);
+        }
+
+        setNewRecipeTitle('');
+        setNewRecipeImage('');
+        setNewRecipeDescription('');
+        setNewRecipeTags('');
+        setEditingRecipeId(null);
+        setIsEditingRecipes(false);
+    };
+
+    const handleEditRecipe = (item: RecipeEntry) => {
+        setEditingRecipeId(item.id);
+        setNewRecipeTitle(item.title);
+        setNewRecipeImage(item.image);
+        setNewRecipeDescription(item.description);
+        setNewRecipeTags((item.tags || []).join(', '));
+        setIsEditingRecipes(true);
+    };
+
+    const handleRemoveRecipe = (id: number) => {
+        setRecipes((current) => current.filter((item) => item.id !== id));
+        if (editingRecipeId === id) {
+            setEditingRecipeId(null);
+            setNewRecipeTitle('');
+            setNewRecipeImage('');
+            setNewRecipeDescription('');
+            setNewRecipeTags('');
+        }
+    };
+
+    const handleAddSupplement = () => {
+        const rawTitle = newSupplementTitle.trim();
+        if (!rawTitle) return;
+
+        const nutrients = newSupplementNutrients
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+        const benefits = newSupplementBenefits
+            .split('\n')
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+        const image = newSupplementImage.trim() || '/assets/images/gallery/user_avatar.png';
+        const nextSupplement: SupplementEntry = {
+            id: editingSupplementId || Date.now(),
+            title: rawTitle,
+            image,
+            nutrients,
+            benefits,
+            notes: newSupplementNotes.trim()
+        };
+
+        let nextSupplements: SupplementEntry[] = [];
+        if (editingSupplementId) {
+            nextSupplements = supplements.map((item) => (item.id === editingSupplementId ? nextSupplement : item));
+            setSupplements(nextSupplements);
+            setSelectedSupplement(nextSupplement);
+        } else {
+            nextSupplements = [nextSupplement, ...supplements];
+            setSupplements(nextSupplements);
+            setSelectedSupplement(nextSupplement);
+        }
+
+        setNewSupplementTitle('');
+        setNewSupplementImage('');
+        setNewSupplementNutrients('');
+        setNewSupplementBenefits('');
+        setNewSupplementNotes('');
+        setEditingSupplementId(null);
+        setIsEditingSupplements(false);
+        void persistSupplements(nextSupplements);
+    };
+
+    const handleEditSupplement = (item: SupplementEntry) => {
+        setEditingSupplementId(item.id);
+        setNewSupplementTitle(item.title);
+        setNewSupplementImage(item.image);
+        setNewSupplementNutrients(item.nutrients.join(', '));
+        setNewSupplementBenefits(item.benefits.join('\n'));
+        setNewSupplementNotes(item.notes || '');
+        setSelectedSupplement(item);
+        setIsEditingSupplements(true);
+    };
+
+    const handleRemoveSupplement = (id: number) => {
+        const nextSupplements = supplements.filter((item) => item.id !== id);
+        setSupplements(nextSupplements);
+        if (editingSupplementId === id) {
+            setEditingSupplementId(null);
+            setNewSupplementTitle('');
+            setNewSupplementImage('');
+            setNewSupplementNutrients('');
+            setNewSupplementBenefits('');
+            setNewSupplementNotes('');
+            setIsEditingSupplements(false);
+        }
+        if (selectedSupplement?.id === id) {
+            setSelectedSupplement(nextSupplements[0] || null);
+        }
+        void persistSupplements(nextSupplements);
+    };
+
+    const resetVideoEditor = () => {
+        setEditingVideoId(null);
+        setNewVideoTitle('');
+        setNewVideoLink('');
+        setNewVideoChannel('');
+        setNewVideoType('Wellness');
+        setNewVideoTags('');
+        setIsEditingVideos(false);
+    };
+
+    const resetRecipeEditor = () => {
+        setEditingRecipeId(null);
+        setNewRecipeTitle('');
+        setNewRecipeImage('');
+        setNewRecipeDescription('');
+        setNewRecipeTags('');
+        setIsEditingRecipes(false);
+    };
+
+    const resetSupplementEditor = () => {
+        setEditingSupplementId(null);
+        setNewSupplementTitle('');
+        setNewSupplementImage('');
+        setNewSupplementNutrients('');
+        setNewSupplementBenefits('');
+        setNewSupplementNotes('');
+        setIsEditingSupplements(false);
+    };
+
+    const handleClearEditForm = () => {
+        setEditForm({
+            full_name: '',
+            location_city: '',
+            location_address: '',
+            bio: ''
+        });
+    };
+
+    const handleMealPlanFieldChange = (dayId: string, field: keyof Omit<MealPlanDay, 'id' | 'dayLabel'>, value: string) => {
+        setMealPlan((current) =>
+            current.map((day) =>
+                day.id === dayId
+                    ? {
+                        ...day,
+                        [field]: value
+                    }
+                    : day
+            )
+        );
+    };
+
+    const resetMealPlan = () => {
+        setMealPlan(buildInitialMealPlan(profileData));
+        setIsEditingMealPlan(false);
+    };
 
     return (
         <div className="w-full h-full overflow-y-auto bg-gray-50 p-4 md:p-8 no-scrollbar relative">
             <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 auto-rows-min">
 
                 {/* -- Box 1: Identity (Row 1, Col 1-2) -- */}
-                <div className="col-span-2 md:col-span-4 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex items-center gap-6 relative overflow-hidden group">
-                    {isOwner && <ActionButton type="edit" modal="edit" />}
+                <div
+                    onClick={() => {
+                        if (isOwner) setActiveModal('edit');
+                    }}
+                    className={`col-span-2 md:col-span-4 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex items-center gap-6 relative overflow-hidden group ${isOwner ? 'cursor-pointer' : ''}`}
+                >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-green-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
                     <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-4 border-white shadow-lg overflow-hidden shrink-0 relative z-10">
                         <Image
@@ -373,7 +1032,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 <Link href="/health-challenges" className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex flex-col justify-center items-center text-center hover:border-green-400 cursor-pointer group">
                     <p className="text-gray-400 text-xs font-bold uppercase tracking-wider group-hover:text-green-600 transition-colors">Health Streak</p>
                     <p className="text-5xl font-extrabold text-gray-900 mt-2 group-hover:scale-110 transition-transform">{healthyDays}</p>
-                    <p className="text-xs text-green-600 font-medium mt-2 bg-green-50 px-2 py-1 rounded-full">Improving Daily</p>
+                    <p className="text-xs text-green-600 font-medium mt-2 bg-green-50 px-2 py-1 rounded-full">Showing up for your health</p>
                 </Link>
 
                 {/* -- Box 4: Food I Eat (Row 2, Col 2-4) -- */}
@@ -381,11 +1040,10 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     onClick={() => setActiveModal('food')}
                     className="md:col-span-3 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 relative overflow-hidden group cursor-pointer"
                 >
-                    <ActionButton type={isOwner ? 'edit' : 'like'} />
                     {/* Background Image (Cover) */}
                     <div className="absolute inset-0">
                         <Image
-                            src={FOOD_GALLERY[0].image}
+                            src={featuredProduce.image}
                             alt="Food Cover"
                             fill
                             className="object-cover group-hover:scale-105 transition duration-700"
@@ -399,11 +1057,11 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                 <span className="w-3 h-3 bg-green-500 rounded-full box-shadow-green shadow-[0_0_10px_rgba(34,197,94,0.8)]"></span>
                                 Food I Eat
                             </h3>
-                            <button className="text-xs text-white/90 hover:text-white bg-white/20 backdrop-blur-md px-3 py-1 rounded-full border border-white/30 transition-colors">View All (4)</button>
+                            <span className="text-xs text-white/90 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full border border-white/30">Fresh produce gallery</span>
                         </div>
                         <div>
-                            <p className="text-white text-2xl font-bold border-l-4 border-green-500 pl-3">{FOOD_GALLERY[0].title}</p>
-                            <p className="text-white/80 text-sm mt-1 pl-4">{FOOD_GALLERY[0].status} • +3 others</p>
+                            <p className="text-white text-2xl font-bold border-l-4 border-green-500 pl-3">{featuredProduce.title}</p>
+                            <p className="text-white/80 text-sm mt-1 pl-4">Tap to view nutrition facts and benefits</p>
                         </div>
                     </div>
                 </div>
@@ -413,26 +1071,40 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     onClick={() => setActiveModal('grow')}
                     className="col-span-1 md:col-span-1 md:row-span-2 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 relative overflow-hidden group cursor-pointer"
                 >
-                    <ActionButton type={isOwner ? 'edit' : 'like'} />
-                    <div className="absolute inset-0">
-                        <img
-                            src={featuredVideo.image}
-                            alt={featuredVideo.title}
-                            className="h-full w-full object-cover scale-125 group-hover:scale-[1.32] transition duration-700"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
-                    </div>
+                    {featuredVideo ? (
+                        <>
+                            <div className="absolute inset-0">
+                                <img
+                                    src={featuredVideo.image}
+                                    alt={featuredVideo.title}
+                                    className="h-full w-full object-cover scale-125 group-hover:scale-[1.32] transition duration-700"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
+                            </div>
 
-                    <div className="relative z-10 h-full flex flex-col justify-between" style={{ minHeight: '160px' }}>
-                        <h3 className="font-extrabold text-white flex items-center gap-2 text-3xl tracking-tight leading-none">
-                            <span className="w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.8)] shrink-0"></span>
-                            Videos <br /> I Love
-                        </h3>
-                        <div>
-                            <p className="text-white text-xl font-bold border-l-4 border-blue-500 pl-3">{featuredVideo.title}</p>
-                            <p className="text-white/80 text-sm pl-4">{featuredVideo.channel}</p>
+                            <div className="relative z-10 h-full flex flex-col justify-between" style={{ minHeight: '160px' }}>
+                                <h3 className="font-extrabold text-white flex items-center gap-2 text-3xl tracking-tight leading-none">
+                                    <span className="w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.8)] shrink-0"></span>
+                                    Videos <br /> I Love
+                                </h3>
+                                <div>
+                                    <p className="text-white text-xl font-bold border-l-4 border-blue-500 pl-3">{featuredVideo.title}</p>
+                                    <p className="text-white/80 text-sm pl-4">{featuredVideo.channel}</p>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="relative z-10 flex h-full min-h-[160px] flex-col justify-between">
+                            <h3 className="font-extrabold text-gray-900 flex items-center gap-2 text-3xl tracking-tight leading-none">
+                                <span className="w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.35)] shrink-0"></span>
+                                Videos <br /> I Love
+                            </h3>
+                            <div>
+                                <p className="text-lg font-bold text-gray-900">No videos saved yet</p>
+                                <p className="text-sm text-gray-500 mt-2">Add a few creators or talks that support your journey.</p>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
 
                 {/* -- Box 5b: Favorite Quote / Status (Mobile Gap Filler) -- */}
@@ -450,28 +1122,31 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     <p className="text-gray-400 text-xs mt-3 uppercase tracking-wider font-bold">- Audrey Hepburn</p>
                 </div>
 
-                {/* -- Box 6: Knowledge Bank (Row 3, Col 3-4) -- */}
+                {/* -- Box 6: Supplements (Row 3, Col 3-4) -- */}
                 <div
-                    onClick={() => router.push('/knowledge-bank')}
+                    onClick={() => setActiveModal('supplements')}
                     className="col-span-2 md:col-span-2 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group"
                 >
-                    <ActionButton type={isOwner ? 'edit' : 'like'} />
                     <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-4">
-                            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-700">
+                            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
                                 <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v11.494m0-11.494C10.832 5.477 9.246 5 7.5 5A4.5 4.5 0 003 9.5v8A2.5 2.5 0 005.5 20H12m0-13.747C13.168 5.477 14.754 5 16.5 5A4.5 4.5 0 0121 9.5v8a2.5 2.5 0 01-2.5 2.5H12" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m7-7H5" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 9h10v6H7z" />
                                 </svg>
                             </span>
                             <div>
-                                <h3 className="text-lg font-bold text-gray-900">Knowledge Bank</h3>
-                                <p className="mt-1 text-sm font-medium text-gray-500">
+                                <h3 className="text-lg font-bold text-gray-900">Supplements</h3>
+                                <p className="hidden">
                                     ❤️ {USEFUL_LINKS.length + PINNED_ARTICLES.length + 218} total likes
+                                </p>
+                                <p className="mt-1 text-sm font-medium text-gray-500">
+                                    {featuredSupplement ? featuredSupplement.title : 'Build your supplement list'}
                                 </p>
                             </div>
                         </div>
                         <span className="text-4xl font-extrabold leading-none text-gray-900">
-                            {usefulLinks.length + PINNED_ARTICLES.length}
+                            {supplements.length}
                         </span>
                     </div>
                 </div>
@@ -481,28 +1156,43 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     onClick={() => setActiveModal('recipes')}
                     className="bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 overflow-hidden group relative cursor-pointer"
                 >
-                    <ActionButton type={isOwner ? 'edit' : 'like'} />
-                    <div className="absolute inset-0">
-                        <Image
-                            src={RECIPES[0].image}
-                            alt="Recipe Cover"
-                            fill
-                            className="object-cover group-hover:scale-105 transition duration-700"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
-                    </div>
-                    <div className="relative z-10 p-6 h-full flex flex-col justify-end" style={{ minHeight: '220px' }}>
-                        <h3 className="font-extrabold text-white flex items-center gap-2 text-3xl shadow-sm tracking-tight mb-2">
-                            <span className="w-3 h-3 bg-yellow-400 rounded-full shadow-[0_0_10px_rgba(250,204,21,0.8)]"></span>
-                            Recipes
-                        </h3>
-                        <p className="text-white text-lg font-bold leading-tight mb-1 border-l-4 border-yellow-400 pl-3">{RECIPES[0].title}</p>
-                        <p className="text-white/70 text-xs pl-4">❤️ {RECIPES[0].likes} Likes</p>
-                    </div>
+                    {featuredRecipe ? (
+                        <>
+                            <div className="absolute inset-0">
+                                <Image
+                                    src={featuredRecipe.image}
+                                    alt="Recipe Cover"
+                                    fill
+                                    className="object-cover group-hover:scale-105 transition duration-700"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
+                            </div>
+                            <div className="relative z-10 p-6 h-full flex flex-col justify-end" style={{ minHeight: '220px' }}>
+                                <h3 className="font-extrabold text-white flex items-center gap-2 text-3xl shadow-sm tracking-tight mb-2">
+                                    <span className="w-3 h-3 bg-yellow-400 rounded-full shadow-[0_0_10px_rgba(250,204,21,0.8)]"></span>
+                                    Recipes
+                                </h3>
+                                <p className="text-white text-lg font-bold leading-tight mb-1 border-l-4 border-yellow-400 pl-3">{featuredRecipe.title}</p>
+                                <p className="text-white/70 text-xs pl-4">❤️ {featuredRecipe.likes} Likes</p>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="relative z-10 flex h-full min-h-[220px] flex-col justify-end p-6">
+                            <h3 className="font-extrabold text-gray-900 flex items-center gap-2 text-3xl shadow-sm tracking-tight mb-2">
+                                <span className="w-3 h-3 bg-yellow-400 rounded-full shadow-[0_0_10px_rgba(250,204,21,0.35)]"></span>
+                                Recipes
+                            </h3>
+                            <p className="text-lg font-bold text-gray-900">No recipes saved yet</p>
+                            <p className="mt-2 text-sm text-gray-500">Add recipes you cook often or want to remember.</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* -- Box 8: Diet Journeys (Row 4, Col 2) -- */}
-                <div className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300">
+                <div
+                    onClick={() => router.push('/journal')}
+                    className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer"
+                >
                     <h3 className="font-bold text-gray-900 text-sm mb-4 uppercase tracking-wide">Journeys</h3>
                     <div className="space-y-4">
                         {DIET_JOURNEYS.map(item => (
@@ -512,22 +1202,37 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             </div>
                         ))}
                     </div>
+                    <div className="mt-4">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-3 py-1 text-[11px] font-bold text-purple-700">
+                            Open timeline
+                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                        </span>
+                    </div>
                 </div>
 
-                <div className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300">
+                <div
+                    onClick={() => setActiveModal('meal_plan')}
+                    className="col-span-2 md:col-span-1 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer"
+                >
                     <div className="flex flex-col items-start gap-3">
                         <div>
                             <h3 className="font-bold text-gray-900 text-sm uppercase tracking-wide">Meals of the Day</h3>
                         </div>
-                        <Link
-                            href="/?tab=customer_profile&mealPlan=full-month"
+                        <button
+                            type="button"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                setActiveModal('meal_plan');
+                            }}
                             className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-[11px] font-bold text-green-700 transition hover:bg-green-100"
                         >
                             View Full Meal Plan
                             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                             </svg>
-                        </Link>
+                        </button>
                     </div>
 
                     {todayMeal ? (
@@ -552,7 +1257,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     )}
                 </div>
 
-                <div className="col-span-2 md:col-span-2 md:col-start-2 bg-white rounded-3xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
+                <div ref={favoritesSectionRef} className="col-span-2 md:col-span-2 md:col-start-2 bg-white rounded-3xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         {favoriteSections.map((section) => (
                             <button
@@ -574,45 +1279,62 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 </div>
 
                 {/* -- Box 9: Wall of Posts (Feed) -- */}
-                <div className="col-span-2 md:col-span-4 bg-transparent rounded-3xl p-0 mt-4 flex flex-col gap-6">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-2xl font-bold text-gray-900">Community Wall</h3>
-                        <button className="text-sm font-semibold text-green-600 bg-white px-4 py-2 rounded-full shadow-sm hover:shadow-md transition">Create Post +</button>
+                <div
+                    onClick={() => router.push('/journal')}
+                    className="col-span-2 md:col-span-4 bg-transparent rounded-3xl p-0 mt-4 flex cursor-pointer flex-col gap-6"
+                >
+                    <div className="flex items-center justify-between gap-4">
+                        <div>
+                            <h3 className="text-2xl font-bold text-gray-900">Journal Wall</h3>
+                            <p className="mt-1 text-sm text-gray-500">Share your journey, reflect on your progress, and keep track of what is changing over time.</p>
+                        </div>
+                        <Link
+                            href="/journal"
+                            onClick={(event) => event.stopPropagation()}
+                            className="text-sm font-semibold text-green-600 bg-white px-4 py-2 rounded-full shadow-sm hover:shadow-md transition"
+                        >
+                            Open Journal
+                        </Link>
                     </div>
 
+                    {journalPreviewEntries.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-green-200 bg-green-50/60 px-4 py-3 text-sm text-green-800">
+                            Example entries are showing here for now so people can visualize the space. Once you add real journal notes, this wall will switch to your own timeline.
+                        </div>
+                    ) : null}
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {WALL_POSTS.map(post => (
-                            <div key={post.id} className="bg-white rounded-3xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex flex-col h-full">
+                        {journalWallEntries.map((entry) => (
+                            <div key={entry.id} className="bg-white rounded-3xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex flex-col h-full">
                                 <div className="flex items-center gap-3 mb-3">
                                     <div className="w-10 h-10 rounded-full bg-green-100 overflow-hidden relative border border-gray-100">
                                         <Image src="/assets/images/gallery/user_avatar.png" alt="User" fill className="object-cover" />
                                     </div>
                                     <div>
-                                        <p className="text-sm font-bold text-gray-900">{post.user}</p>
-                                        <p className="text-[10px] text-gray-400">{post.time}</p>
+                                        <p className="text-sm font-bold text-gray-900">{journalPreviewEntries.length > 0 ? (user?.full_name || user?.email?.split('@')[0] || 'Your Journal') : 'Journal example'}</p>
+                                        <p className="text-[10px] text-gray-400">{formatJournalDate(entry.entryDate)}</p>
                                     </div>
                                 </div>
 
-                                {post.image && (
+                                {entry.imageUrl ? (
                                     <div className="aspect-video relative rounded-2xl overflow-hidden mb-3 shadow-inner">
-                                        <Image src={post.image} alt="Post content" fill className="object-cover" />
+                                        <Image src={entry.imageUrl} alt="Journal entry" fill className="object-cover" unoptimized />
                                     </div>
-                                )}
+                                ) : null}
 
-                                <p className="text-sm text-gray-700 leading-relaxed mb-4 flex-grow">
-                                    {post.content}
+                                <p className="text-sm text-gray-700 leading-relaxed mb-4 flex-grow line-clamp-5">
+                                    {entry.content}
                                 </p>
 
-                                <div className="flex items-center gap-4 border-t border-gray-100 pt-3 mt-auto">
-                                    <button className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-red-500 transition">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
-                                        {post.likes}
-                                    </button>
-                                    <button className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-blue-500 transition">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
-                                        {post.comments}
-                                    </button>
-                                </div>
+                                {entry.tags && entry.tags.length > 0 ? (
+                                    <div className="mt-auto flex flex-wrap gap-2 border-t border-gray-100 pt-3">
+                                        {entry.tags.map((tag) => (
+                                            <span key={`${entry.id}-${tag}`} className="rounded-full bg-green-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-green-700">
+                                                {tag}
+                                            </span>
+                                        ))}
+                                    </div>
+                                ) : null}
                             </div>
                         ))}
                     </div>
@@ -645,8 +1367,10 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             <div className="p-6 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white z-10">
                                 <h2 className="text-2xl font-bold text-gray-900">
                                     {activeModal === 'food' && 'Food I Eat'}
+                                    {activeModal === 'supplements' && 'Supplements'}
                                     {activeModal === 'grow' && 'Videos I Love'}
                                     {activeModal === 'recipes' && 'Shared Recipes'}
+                                    {activeModal === 'meal_plan' && 'Meal Plan'}
                                     {activeModal === 'learn' && 'Useful Links'}
                                     {activeModal === 'edit' && 'Edit Profile'}
                                     {(activeModal && FAVORITE_MODAL_TITLES[activeModal]) || ''}
@@ -660,6 +1384,17 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
                                 {activeModal === 'edit' && (
                                     <div className="space-y-6">
+                                        <div className="flex items-center justify-between rounded-2xl border border-green-100 bg-green-50/70 px-4 py-3">
+                                            <div>
+                                                <p className="text-sm font-semibold text-gray-900">Profile details</p>
+                                                <p className="text-xs text-gray-600">Make your updates here once you open the profile card.</p>
+                                            </div>
+                                            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-green-200 bg-white text-green-600">
+                                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                </svg>
+                                            </span>
+                                        </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div>
                                                 <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Full Name</label>
@@ -705,6 +1440,13 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                         </div>
                                         <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
                                             <button
+                                                type="button"
+                                                onClick={handleClearEditForm}
+                                                className="px-6 py-2.5 rounded-xl font-bold text-red-500 hover:bg-red-50 transition-colors"
+                                            >
+                                                Clear
+                                            </button>
+                                            <button
                                                 onClick={() => setActiveModal(null)}
                                                 className="px-6 py-2.5 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition-colors"
                                             >
@@ -722,72 +1464,782 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                 )}
 
                                 {activeModal === 'food' && (
-                                    <div className="flex flex-col gap-6">
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                                            {FOOD_GALLERY.map(item => (
-                                                <div key={item.id} className="group cursor-pointer">
-                                                    <div className="aspect-square relative rounded-xl overflow-hidden mb-3 shadow-md">
-                                                        <Image src={item.image} alt={item.title} fill className="object-cover group-hover:scale-105 transition duration-500" />
-                                                        <div className="absolute top-2 right-2 bg-white/90 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide text-green-800 backdrop-blur-sm shadow-sm">{item.status}</div>
-                                                    </div>
-                                                    <h3 className="font-bold text-gray-900">{item.title}</h3>
-                                                    <p className="text-xs text-gray-400">Harvested 2 days ago</p>
-                                                </div>
-                                            ))}
+                                    <div className="space-y-6">
+                                        <div className="rounded-2xl border border-green-100 bg-green-50/70 p-5">
+                                            <p className="text-sm font-semibold text-gray-900">Fresh produce gallery</p>
+                                            <p className="mt-1 text-sm text-gray-600">Choose produce you enjoy most, then explore the details at the top while browsing the wider library below.</p>
                                         </div>
 
-                                        <div className="mt-4 pt-6 border-t border-gray-100 flex justify-center">
-                                            <Link
-                                                href="/?tab=find_produce"
-                                                className="inline-flex items-center gap-2 px-8 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5"
-                                            >
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                                                Order More Food
-                                            </Link>
+                                        {selectedProduce ? (
+                                            <div className="rounded-3xl border border-green-200 bg-white p-5 shadow-sm">
+                                                <div className="flex items-start gap-4">
+                                                    <div>
+                                                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-green-600">Nutrition snapshot</p>
+                                                        <h3 className="mt-2 text-2xl font-bold text-gray-900">{selectedProduce.title}</h3>
+                                                        <p className="mt-2 text-sm text-gray-600">A quick look at what this produce brings to your plate and why it can be worth keeping around.</p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-5 grid gap-5 md:grid-cols-[0.8fr_1.2fr]">
+                                                    <div className="relative aspect-square overflow-hidden rounded-2xl border border-gray-100">
+                                                        <Image src={selectedProduce.image} alt={selectedProduce.title} fill className="object-cover" />
+                                                    </div>
+                                                    <div className="space-y-5">
+                                                        <div>
+                                                            <p className="text-sm font-semibold text-gray-900">Key nutrients</p>
+                                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                                {selectedProduce.nutrients.map((nutrient) => (
+                                                                    <span key={`${selectedProduce.id}-${nutrient}`} className="rounded-full bg-green-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-green-700">
+                                                                        {nutrient}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-sm font-semibold text-gray-900">Benefits</p>
+                                                            <ul className="mt-3 space-y-2 text-sm leading-6 text-gray-600">
+                                                                {selectedProduce.benefits.map((benefit) => (
+                                                                    <li key={`${selectedProduce.id}-${benefit}`} className="flex gap-2">
+                                                                        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
+                                                                        <span>{benefit}</span>
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
+                                                No produce selected yet. Pick something from the gallery below to open its nutrition snapshot.
+                                            </div>
+                                        )}
+
+                                        <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+                                            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-gray-900">Browse the produce library</p>
+                                                    <p className="mt-1 text-sm text-gray-500">This is a starter in-app library for now and can grow into a fuller produce database over time.</p>
+                                                </div>
+                                                <div className="w-full md:max-w-sm">
+                                                    <label htmlFor="produce-search" className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
+                                                        Search produce
+                                                    </label>
+                                                    <input
+                                                        id="produce-search"
+                                                        type="text"
+                                                        value={produceSearch}
+                                                        onChange={(event) => setProduceSearch(event.target.value)}
+                                                        placeholder="Search spinach, hydration, iron, fiber..."
+                                                        className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-green-400"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-5 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                                                <span>{filteredProduce.length} match{filteredProduce.length === 1 ? '' : 'es'}</span>
+                                                {produceSearch ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setProduceSearch('')}
+                                                        className="rounded-full border border-gray-200 px-3 py-1 text-[11px] font-bold tracking-normal text-gray-600 transition hover:bg-gray-50"
+                                                    >
+                                                        Clear search
+                                                    </button>
+                                                ) : null}
+                                            </div>
+
+                                            {visibleProduce.length > 0 ? (
+                                                <div className="mt-5 grid grid-cols-2 gap-6 md:grid-cols-4">
+                                                    {visibleProduce.map((item) => (
+                                                        <button
+                                                            key={item.id}
+                                                            type="button"
+                                                            onClick={() => setSelectedProduce(item)}
+                                                            className={`group rounded-2xl border bg-white p-3 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
+                                                                selectedProduce?.id === item.id
+                                                                    ? 'border-green-300 ring-2 ring-green-100'
+                                                                    : 'border-gray-100 hover:border-green-200'
+                                                            }`}
+                                                        >
+                                                            <div className="aspect-square relative overflow-hidden rounded-xl shadow-sm">
+                                                                <Image src={item.image} alt={item.title} fill className="object-cover transition duration-500 group-hover:scale-105" />
+                                                            </div>
+                                                            <h3 className="mt-3 font-bold text-gray-900">{item.title}</h3>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="mt-5 rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                                                    No produce matches that search yet. Try a vegetable name, nutrient, or benefit.
+                                                </div>
+                                            )}
+
+                                            {filteredProduce.length > visibleProduce.length ? (
+                                                <div className="mt-5 flex justify-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setVisibleProduceCount((count) => count + 6)}
+                                                        className="rounded-full border border-green-200 px-4 py-2 text-sm font-bold text-green-700 transition hover:bg-green-50"
+                                                    >
+                                                        Show more produce
+                                                    </button>
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeModal === 'supplements' && (
+                                    <div className="space-y-6">
+                                        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5">
+                                            <p className="text-sm font-semibold text-gray-900">Supplement shelf</p>
+                                            <p className="mt-1 text-sm text-gray-600">Keep track of the supplements you currently use, why you keep them around, and the details you want to remember.</p>
+                                        </div>
+
+                                        {selectedSupplement ? (
+                                            <div className="rounded-3xl border border-emerald-200 bg-white p-5 shadow-sm">
+                                                <div className="flex items-start gap-4">
+                                                    <div>
+                                                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-600">Supplement snapshot</p>
+                                                        <h3 className="mt-2 text-2xl font-bold text-gray-900">{selectedSupplement.title}</h3>
+                                                        <p className="mt-2 text-sm text-gray-600">{selectedSupplement.notes || 'A quick look at what this supplement offers and why it may be part of your routine.'}</p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-5 grid gap-5 md:grid-cols-[0.8fr_1.2fr]">
+                                                    <div className="relative aspect-square overflow-hidden rounded-2xl border border-gray-100">
+                                                        <Image src={selectedSupplement.image} alt={selectedSupplement.title} fill className="object-cover" />
+                                                    </div>
+                                                    <div className="space-y-5">
+                                                        <div>
+                                                            <p className="text-sm font-semibold text-gray-900">Key nutrients</p>
+                                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                                {selectedSupplement.nutrients.map((nutrient) => (
+                                                                    <span key={`${selectedSupplement.id}-${nutrient}`} className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700">
+                                                                        {nutrient}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-sm font-semibold text-gray-900">Benefits</p>
+                                                            <ul className="mt-3 space-y-2 text-sm leading-6 text-gray-600">
+                                                                {selectedSupplement.benefits.map((benefit) => (
+                                                                    <li key={`${selectedSupplement.id}-${benefit}`} className="flex gap-2">
+                                                                        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                                                                        <span>{benefit}</span>
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
+                                                No supplement selected yet. Pick one from the shelf below to open its detail view.
+                                            </div>
+                                        )}
+
+                                        {isOwner ? (
+                                            <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+                                                <div className="flex items-center justify-between gap-4">
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-gray-900">Manage your supplement shelf</p>
+                                                        <p className="mt-1 text-sm text-gray-500">Add something new or edit an existing item when your routine changes.</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        {isEditingSupplements ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={resetSupplementEditor}
+                                                                className="rounded-full border border-gray-200 px-3 py-1 text-xs font-bold text-gray-600 transition hover:bg-gray-50"
+                                                            >
+                                                                Close
+                                                            </button>
+                                                        ) : null}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setEditingSupplementId(null);
+                                                                setNewSupplementTitle('');
+                                                                setNewSupplementImage('');
+                                                                setNewSupplementNutrients('');
+                                                                setNewSupplementBenefits('');
+                                                                setNewSupplementNotes('');
+                                                                setIsEditingSupplements((value) => !value);
+                                                            }}
+                                                            className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-600 transition hover:bg-emerald-50"
+                                                            aria-label="Add a supplement"
+                                                        >
+                                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {isEditingSupplements ? (
+                                                    <div className="mt-5 grid grid-cols-1 gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
+                                                        <input
+                                                            type="text"
+                                                            value={newSupplementTitle}
+                                                            onChange={(e) => setNewSupplementTitle(e.target.value)}
+                                                            placeholder="Supplement name"
+                                                            className="w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
+                                                        />
+                                                        <input
+                                                            type="text"
+                                                            value={newSupplementImage}
+                                                            onChange={(e) => setNewSupplementImage(e.target.value)}
+                                                            placeholder="Optional image URL"
+                                                            className="w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
+                                                        />
+                                                        <input
+                                                            type="text"
+                                                            value={newSupplementNutrients}
+                                                            onChange={(e) => setNewSupplementNutrients(e.target.value)}
+                                                            placeholder="Key nutrients separated by commas"
+                                                            className="w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
+                                                        />
+                                                        <textarea
+                                                            value={newSupplementBenefits}
+                                                            onChange={(e) => setNewSupplementBenefits(e.target.value)}
+                                                            rows={3}
+                                                            placeholder="Benefits, one per line"
+                                                            className="w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400 resize-none"
+                                                        />
+                                                        <textarea
+                                                            value={newSupplementNotes}
+                                                            onChange={(e) => setNewSupplementNotes(e.target.value)}
+                                                            rows={2}
+                                                            placeholder="Optional notes about timing, form, or how you use it"
+                                                            className="w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400 resize-none"
+                                                        />
+                                                        <div className="flex flex-wrap items-center gap-3">
+                                                            <button
+                                                                type="button"
+                                                                onClick={handleAddSupplement}
+                                                                className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-700"
+                                                            >
+                                                                {editingSupplementId ? 'Update Supplement' : 'Add Supplement'}
+                                                            </button>
+                                                            {editingSupplementId ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        handleRemoveSupplement(editingSupplementId);
+                                                                        resetSupplementEditor();
+                                                                    }}
+                                                                    className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-500 transition hover:bg-red-50"
+                                                                >
+                                                                    Delete Supplement
+                                                                </button>
+                                                            ) : null}
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        ) : null}
+
+                                        <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+                                            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-gray-900">Browse your supplement shelf</p>
+                                                    <p className="mt-1 text-sm text-gray-500">You can keep this lightweight for now and expand it later as the platform grows.</p>
+                                                </div>
+                                                <div className="w-full md:max-w-sm">
+                                                    <label htmlFor="supplement-search" className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
+                                                        Search supplements
+                                                    </label>
+                                                    <input
+                                                        id="supplement-search"
+                                                        type="text"
+                                                        value={supplementSearch}
+                                                        onChange={(event) => setSupplementSearch(event.target.value)}
+                                                        placeholder="Search magnesium, omega, bone health..."
+                                                        className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-5 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                                                <span>{filteredSupplements.length} match{filteredSupplements.length === 1 ? '' : 'es'}</span>
+                                                {supplementSearch ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSupplementSearch('')}
+                                                        className="rounded-full border border-gray-200 px-3 py-1 text-[11px] font-bold tracking-normal text-gray-600 transition hover:bg-gray-50"
+                                                    >
+                                                        Clear search
+                                                    </button>
+                                                ) : null}
+                                            </div>
+
+                                            {visibleSupplements.length > 0 ? (
+                                                <div className="mt-5 grid grid-cols-2 gap-6 md:grid-cols-4">
+                                                    {visibleSupplements.map((item) => (
+                                                        <div key={item.id} className="relative">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSelectedSupplement(item)}
+                                                                className={`group w-full rounded-2xl border bg-white p-3 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
+                                                                    selectedSupplement?.id === item.id
+                                                                        ? 'border-emerald-300 ring-2 ring-emerald-100'
+                                                                        : 'border-gray-100 hover:border-emerald-200'
+                                                                }`}
+                                                            >
+                                                                <div className="aspect-square relative overflow-hidden rounded-xl shadow-sm">
+                                                                    <Image src={item.image} alt={item.title} fill className="object-cover transition duration-500 group-hover:scale-105" />
+                                                                </div>
+                                                                <h3 className="mt-3 font-bold text-gray-900">{item.title}</h3>
+                                                            </button>
+                                                            {isOwner ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleEditSupplement(item)}
+                                                                    className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-white/90 text-gray-700 transition hover:bg-white"
+                                                                    aria-label={`Edit ${item.title}`}
+                                                                >
+                                                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                                    </svg>
+                                                                </button>
+                                                            ) : null}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="mt-5 rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                                                    No supplements match that search yet.
+                                                </div>
+                                            )}
+
+                                            {filteredSupplements.length > visibleSupplements.length ? (
+                                                <div className="mt-5 flex justify-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setVisibleSupplementCount((count) => count + 6)}
+                                                        className="rounded-full border border-emerald-200 px-4 py-2 text-sm font-bold text-emerald-700 transition hover:bg-emerald-50"
+                                                    >
+                                                        Show more supplements
+                                                    </button>
+                                                </div>
+                                            ) : null}
                                         </div>
                                     </div>
                                 )}
 
                                 {activeModal === 'grow' && (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {VIDEO_GALLERY.map(item => (
-                                            <a
-                                                href={item.link}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                key={item.id}
-                                                className="block relative aspect-video rounded-2xl overflow-hidden group shadow-md cursor-pointer hover:ring-4 hover:ring-green-500/30 transition-all"
-                                            >
-                                                <img src={item.image} alt={item.title} className="h-full w-full object-cover group-hover:scale-105 transition duration-500" />
-                                                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent flex flex-col justify-end p-6">
-                                                    <span className="mb-3 inline-flex w-fit rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-gray-900">
-                                                        {item.type}
-                                                    </span>
-                                                    <h3 className="text-white text-xl font-bold flex items-center gap-2">
-                                                        {item.title}
-                                                        <svg className="w-5 h-5 text-green-400 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                                    </h3>
-                                                    <p className="mt-1 text-white/80">{item.channel}</p>
+                                    <div className="space-y-6">
+                                        {isOwner ? (
+                                            <div className="flex items-center justify-between gap-4">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-gray-900">Saved videos</p>
+                                                    <p className="text-sm text-gray-500">Add creator videos, talks, or recipes you want to revisit.</p>
                                                 </div>
-                                            </a>
-                                        ))}
+                                                <div className="flex items-center gap-2">
+                                                    {isEditingVideos ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={resetVideoEditor}
+                                                            className="rounded-full border border-gray-200 px-3 py-1 text-xs font-bold text-gray-600 transition hover:bg-gray-50"
+                                                        >
+                                                            Close
+                                                        </button>
+                                                    ) : null}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setEditingVideoId(null);
+                                                            setNewVideoTitle('');
+                                                            setNewVideoLink('');
+                                                            setNewVideoChannel('');
+                                                            setNewVideoType('Wellness');
+                                                            setNewVideoTags('');
+                                                            setIsEditingVideos((value) => !value);
+                                                        }}
+                                                        className="flex h-9 w-9 items-center justify-center rounded-full border border-blue-200 bg-white text-blue-600 transition hover:bg-blue-50"
+                                                        aria-label="Add a video"
+                                                    >
+                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : null}
+
+                                        {isEditingVideos ? (
+                                            <div className="grid grid-cols-1 gap-3 rounded-2xl border border-blue-100 bg-blue-50/50 p-4 md:grid-cols-2">
+                                                <input
+                                                    type="text"
+                                                    value={newVideoTitle}
+                                                    onChange={(e) => setNewVideoTitle(e.target.value)}
+                                                    placeholder="Video title"
+                                                    className="w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-blue-400"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={newVideoChannel}
+                                                    onChange={(e) => setNewVideoChannel(e.target.value)}
+                                                    placeholder="Channel or creator"
+                                                    className="w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-blue-400"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={newVideoLink}
+                                                    onChange={(e) => setNewVideoLink(e.target.value)}
+                                                    placeholder="Paste a YouTube or video link"
+                                                    className="w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-blue-400 md:col-span-2"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={newVideoTags}
+                                                    onChange={(e) => setNewVideoTags(e.target.value)}
+                                                    placeholder="Add tags separated by commas"
+                                                    className="w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-blue-400 md:col-span-2"
+                                                />
+                                                <div className="flex flex-col gap-3 md:col-span-2 md:flex-row md:items-center md:justify-between">
+                                                    <select
+                                                        value={newVideoType}
+                                                        onChange={(e) => setNewVideoType(e.target.value)}
+                                                        className="rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-blue-400"
+                                                    >
+                                                        <option value="Wellness">Wellness</option>
+                                                        <option value="Nutrition">Nutrition</option>
+                                                        <option value="Recipe">Recipe</option>
+                                                        <option value="Motivation">Motivation</option>
+                                                    </select>
+                                                    <div className="flex flex-wrap items-center gap-3">
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleAddVideo}
+                                                            className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-700"
+                                                        >
+                                                            {editingVideoId ? 'Update Video' : 'Add Video'}
+                                                        </button>
+                                                        {editingVideoId ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    handleRemoveVideo(editingVideoId);
+                                                                    resetVideoEditor();
+                                                                }}
+                                                                className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-500 transition hover:bg-red-50"
+                                                            >
+                                                                Delete Video
+                                                            </button>
+                                                        ) : null}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : null}
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            {videos.map(item => (
+                                                <div key={item.id} className="relative">
+                                                    <a
+                                                        href={item.link}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="block relative aspect-video rounded-2xl overflow-hidden group shadow-md cursor-pointer hover:ring-4 hover:ring-green-500/30 transition-all"
+                                                    >
+                                                        <img src={item.image} alt={item.title} className="h-full w-full object-cover group-hover:scale-105 transition duration-500" />
+                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent flex flex-col justify-end p-6">
+                                                            <span className="mb-3 inline-flex w-fit rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-gray-900">
+                                                                {item.type}
+                                                            </span>
+                                                            <h3 className="text-white text-xl font-bold flex items-center gap-2">
+                                                                {item.title}
+                                                                <svg className="w-5 h-5 text-green-400 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                                            </h3>
+                                                            <p className="mt-1 text-white/80">{item.channel}</p>
+                                                            {item.tags && item.tags.length > 0 ? (
+                                                                <div className="mt-3 flex flex-wrap gap-2">
+                                                                    {item.tags.map((tag) => (
+                                                                        <span key={`${item.id}-${tag}`} className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white/90">
+                                                                            {tag}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+                                                    </a>
+                                                    {isOwner ? (
+                                                        <div className="absolute right-3 top-3">
+                                                            <button
+                                                                type="button"
+                                                                onClick={(event) => {
+                                                                    event.preventDefault();
+                                                                    event.stopPropagation();
+                                                                    handleEditVideo(item);
+                                                                }}
+                                                                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/50 bg-white/90 text-gray-700 transition hover:bg-white"
+                                                                aria-label={`Edit ${item.title}`}
+                                                            >
+                                                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {videos.length === 0 ? (
+                                            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                                                No saved videos yet. Add a few to build this part of your profile.
+                                            </div>
+                                        ) : null}
                                     </div>
                                 )}
 
                                 {activeModal === 'recipes' && (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {RECIPES.map(item => (
-                                            <div key={item.id} className="flex gap-4 p-4 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-white hover:shadow-lg transition cursor-pointer group">
-                                                <div className="w-24 h-24 rounded-xl overflow-hidden relative shrink-0">
-                                                    <Image src={item.image} alt={item.title} fill className="object-cover" />
+                                    <div className="space-y-6">
+                                        {isOwner ? (
+                                            <div className="flex items-center justify-between gap-4">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-gray-900">Saved recipes</p>
+                                                    <p className="text-sm text-gray-500">Add recipes you want to keep, adjust, or share with your future self.</p>
                                                 </div>
-                                                <div className="flex flex-col justify-center">
-                                                    <h3 className="font-bold text-gray-900 group-hover:text-green-600 transition">{item.title}</h3>
-                                                    <p className="text-sm text-gray-500 mt-1 line-clamp-2">A delicious and healthy recipe featuring fresh ingredients from the garden.</p>
-                                                    <p className="text-xs text-red-500 font-medium mt-2">❤️ {item.likes} Likes</p>
+                                                <div className="flex items-center gap-2">
+                                                    {isEditingRecipes ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={resetRecipeEditor}
+                                                            className="rounded-full border border-gray-200 px-3 py-1 text-xs font-bold text-gray-600 transition hover:bg-gray-50"
+                                                        >
+                                                            Close
+                                                        </button>
+                                                    ) : null}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setEditingRecipeId(null);
+                                                            setNewRecipeTitle('');
+                                                            setNewRecipeImage('');
+                                                            setNewRecipeDescription('');
+                                                            setNewRecipeTags('');
+                                                            setIsEditingRecipes((value) => !value);
+                                                        }}
+                                                        className="flex h-9 w-9 items-center justify-center rounded-full border border-yellow-200 bg-white text-yellow-600 transition hover:bg-yellow-50"
+                                                        aria-label="Add a recipe"
+                                                    >
+                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                        </svg>
+                                                    </button>
                                                 </div>
                                             </div>
-                                        ))}
+                                        ) : null}
+
+                                        {isEditingRecipes ? (
+                                            <div className="grid grid-cols-1 gap-3 rounded-2xl border border-yellow-100 bg-yellow-50/50 p-4">
+                                                <input
+                                                    type="text"
+                                                    value={newRecipeTitle}
+                                                    onChange={(e) => setNewRecipeTitle(e.target.value)}
+                                                    placeholder="Recipe title"
+                                                    className="w-full rounded-xl border border-yellow-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-yellow-400"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={newRecipeImage}
+                                                    onChange={(e) => setNewRecipeImage(e.target.value)}
+                                                    placeholder="Optional image URL"
+                                                    className="w-full rounded-xl border border-yellow-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-yellow-400"
+                                                />
+                                                <textarea
+                                                    value={newRecipeDescription}
+                                                    onChange={(e) => setNewRecipeDescription(e.target.value)}
+                                                    rows={4}
+                                                    placeholder="Why you like it, when you make it, or what makes it useful."
+                                                    className="w-full rounded-xl border border-yellow-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-yellow-400 resize-none"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={newRecipeTags}
+                                                    onChange={(e) => setNewRecipeTags(e.target.value)}
+                                                    placeholder="Add tags separated by commas"
+                                                    className="w-full rounded-xl border border-yellow-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-yellow-400"
+                                                />
+                                                <div className="flex flex-wrap items-center gap-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleAddRecipe}
+                                                        className="inline-flex items-center justify-center rounded-xl bg-yellow-500 px-4 py-3 text-sm font-bold text-white transition hover:bg-yellow-600"
+                                                    >
+                                                        {editingRecipeId ? 'Update Recipe' : 'Add Recipe'}
+                                                    </button>
+                                                    {editingRecipeId ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                handleRemoveRecipe(editingRecipeId);
+                                                                resetRecipeEditor();
+                                                            }}
+                                                            className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-500 transition hover:bg-red-50"
+                                                        >
+                                                            Delete Recipe
+                                                        </button>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+                                        ) : null}
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {recipes.map(item => (
+                                                <div key={item.id} className="relative flex gap-4 p-4 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-white hover:shadow-lg transition group">
+                                                    <div className="w-24 h-24 rounded-xl overflow-hidden relative shrink-0">
+                                                        <Image src={item.image} alt={item.title} fill className="object-cover" />
+                                                    </div>
+                                                    <div className="flex flex-col justify-center pr-20">
+                                                        <h3 className="font-bold text-gray-900 group-hover:text-green-600 transition">{item.title}</h3>
+                                                        <p className="text-sm text-gray-500 mt-1 line-clamp-2">{item.description}</p>
+                                                        <p className="text-xs text-red-500 font-medium mt-2">❤️ {item.likes} Likes</p>
+                                                        {item.tags && item.tags.length > 0 ? (
+                                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                                {item.tags.map((tag) => (
+                                                                    <span key={`${item.id}-${tag}`} className="rounded-full bg-yellow-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-yellow-800">
+                                                                        {tag}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                    {isOwner ? (
+                                                        <div className="absolute right-4 top-4">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleEditRecipe(item)}
+                                                                className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50"
+                                                                aria-label={`Edit ${item.title}`}
+                                                            >
+                                                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {recipes.length === 0 ? (
+                                            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                                                No recipes saved yet. Add one to get started.
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                )}
+
+                                {activeModal === 'meal_plan' && (
+                                    <div className="space-y-6">
+                                        <div className="flex items-center justify-between gap-4 rounded-2xl border border-green-100 bg-green-50/70 p-5">
+                                            <div>
+                                                <p className="text-sm font-semibold text-gray-900">This week at a glance</p>
+                                                <p className="mt-1 text-sm text-gray-600">This is the meal-plan editor for now. It grew out of the old auto-plan flow rather than a dedicated page.</p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsEditingMealPlan((value) => !value)}
+                                                    className={`rounded-full px-4 py-2 text-xs font-bold transition ${
+                                                        isEditingMealPlan
+                                                            ? 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                                                            : 'bg-green-600 text-white hover:bg-green-700'
+                                                    }`}
+                                                >
+                                                    {isEditingMealPlan ? 'Done' : 'Edit'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={resetMealPlan}
+                                                    className="rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+                                                >
+                                                    Rest
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 gap-4">
+                                            {mealPlan.map((dayPlan, index) => {
+                                                return (
+                                                    <div key={dayPlan.id} className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            <div>
+                                                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-green-600">{dayPlan.dayLabel}</p>
+                                                                <p className="mt-1 text-sm text-gray-500">{index === 0 ? 'Today' : `${index} day${index > 1 ? 's' : ''} ahead`}</p>
+                                                            </div>
+                                                            {dayPlan.notes && !isEditingMealPlan ? (
+                                                                <span className="rounded-full bg-green-50 px-3 py-1 text-[11px] font-bold text-green-700">
+                                                                    {dayPlan.notes}
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
+
+                                                        <div className="mt-4 grid gap-3 md:grid-cols-3">
+                                                            <div className="rounded-2xl border border-green-100 bg-green-50/70 px-4 py-3">
+                                                                <p className="text-[11px] font-bold uppercase tracking-wide text-green-700">Breakfast</p>
+                                                                {isEditingMealPlan ? (
+                                                                    <input
+                                                                        type="text"
+                                                                        value={dayPlan.breakfast}
+                                                                        onChange={(event) => handleMealPlanFieldChange(dayPlan.id, 'breakfast', event.target.value)}
+                                                                        className="mt-2 w-full rounded-xl border border-green-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-green-400"
+                                                                    />
+                                                                ) : (
+                                                                    <p className="mt-1 text-sm font-semibold text-gray-900">{dayPlan.breakfast}</p>
+                                                                )}
+                                                            </div>
+                                                            <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3">
+                                                                <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700">Lunch</p>
+                                                                {isEditingMealPlan ? (
+                                                                    <input
+                                                                        type="text"
+                                                                        value={dayPlan.lunch}
+                                                                        onChange={(event) => handleMealPlanFieldChange(dayPlan.id, 'lunch', event.target.value)}
+                                                                        className="mt-2 w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-amber-400"
+                                                                    />
+                                                                ) : (
+                                                                    <p className="mt-1 text-sm font-semibold text-gray-900">{dayPlan.lunch}</p>
+                                                                )}
+                                                            </div>
+                                                            <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3">
+                                                                <p className="text-[11px] font-bold uppercase tracking-wide text-sky-700">Dinner</p>
+                                                                {isEditingMealPlan ? (
+                                                                    <input
+                                                                        type="text"
+                                                                        value={dayPlan.dinner}
+                                                                        onChange={(event) => handleMealPlanFieldChange(dayPlan.id, 'dinner', event.target.value)}
+                                                                        className="mt-2 w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-sky-400"
+                                                                    />
+                                                                ) : (
+                                                                    <p className="mt-1 text-sm font-semibold text-gray-900">{dayPlan.dinner}</p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="mt-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
+                                                            <p className="text-[11px] font-bold uppercase tracking-wide text-gray-600">Notes</p>
+                                                            {isEditingMealPlan ? (
+                                                                <textarea
+                                                                    value={dayPlan.notes}
+                                                                    onChange={(event) => handleMealPlanFieldChange(dayPlan.id, 'notes', event.target.value)}
+                                                                    rows={2}
+                                                                    className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-gray-400 resize-none"
+                                                                />
+                                                            ) : (
+                                                                <p className="mt-1 text-sm text-gray-600">{dayPlan.notes || 'No notes added yet.'}</p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 )}
 

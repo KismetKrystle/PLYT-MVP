@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth';
 import { useLessons } from '../context/LessonContext';
 import { useCart } from '../context/CartContext';
 import Logo from './Logo';
-import { MouseEvent, useEffect, useState } from 'react';
+import { FormEvent, MouseEvent, useEffect, useState } from 'react';
 import RightSidebar from './RightSidebar';
 import api from '../lib/api';
 
@@ -50,6 +50,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [conversationList, setConversationList] = useState<ChatConversationSummary[]>([]);
     const [favoriteConversationIds, setFavoriteConversationIds] = useState<string[]>([]);
     const [conversationActionIds, setConversationActionIds] = useState<string[]>([]);
+    const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+    const [feedbackCategory, setFeedbackCategory] = useState<'suggestion' | 'bug'>('suggestion');
+    const [feedbackMessage, setFeedbackMessage] = useState('');
+    const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+    const [feedbackStatus, setFeedbackStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const { savedLessons, activeLesson, setActiveLesson } = useLessons();
 
     const requestSignIn = () => {
@@ -63,6 +68,59 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         event.preventDefault();
         requestSignIn();
         return true;
+    };
+
+    const openFeedbackModal = () => {
+        if (!user) {
+            requestSignIn();
+            return;
+        }
+
+        setFeedbackStatus(null);
+        setIsProfileOpen(false);
+        setIsFeedbackOpen(true);
+    };
+
+    const closeFeedbackModal = () => {
+        if (isSubmittingFeedback) return;
+        setIsFeedbackOpen(false);
+        setFeedbackStatus(null);
+    };
+
+    const handleSubmitFeedback = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+
+        if (!user) {
+            requestSignIn();
+            return;
+        }
+
+        const trimmedMessage = feedbackMessage.trim();
+        if (!trimmedMessage) {
+            setFeedbackStatus({ type: 'error', message: 'Please share a short note before sending.' });
+            return;
+        }
+
+        setIsSubmittingFeedback(true);
+        setFeedbackStatus(null);
+
+        try {
+            const currentLocation = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+            await api.post('/messages-to-admin', {
+                subject: feedbackCategory === 'bug' ? 'bug_report' : 'product_feedback',
+                message: trimmedMessage,
+                context: currentLocation
+            });
+
+            setFeedbackMessage('');
+            setFeedbackCategory('suggestion');
+            setFeedbackStatus({ type: 'success', message: 'Thanks. Your note was sent to the team.' });
+        } catch (error) {
+            console.warn('Unable to submit feedback.', error);
+            setFeedbackStatus({ type: 'error', message: 'We could not send that note just now. Please try again.' });
+        } finally {
+            setIsSubmittingFeedback(false);
+        }
     };
 
     useEffect(() => {
@@ -221,13 +279,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
             )
         },
-        {
-            name: 'Living Library', href: '/knowledge-bank', icon: (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V6a4 4 0 118 0v1M6 7h12a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2zm6 4v4m-2-2h4" />
-                </svg>
-            )
-        },
+        // {
+        //     name: 'Living Library', href: '/knowledge-bank', icon: (
+        //         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        //             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V6a4 4 0 118 0v1M6 7h12a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2zm6 4v4m-2-2h4" />
+        //         </svg>
+        //     )
+        // },
         // {
         //     name: 'Lessons', href: '#', icon: (
         //         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
@@ -300,6 +358,100 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 Got it
                             </button>
                         </div>
+                    </div>
+                </div>
+            ) : null}
+
+            {isFeedbackOpen ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 backdrop-blur-sm">
+                    <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-gray-200">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-green-600">Feedback</p>
+                                <h2 className="mt-2 text-2xl font-bold text-gray-900">Share a suggestion or bug</h2>
+                                <p className="mt-2 text-sm text-gray-500">
+                                    Tell us what you noticed and we will use it to keep improving PLYT.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeFeedbackModal}
+                                className="rounded-full p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+                                aria-label="Close feedback form"
+                            >
+                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmitFeedback} className="mt-6 space-y-4">
+                            <div>
+                                <label className="mb-2 block text-sm font-medium text-gray-700">Type</label>
+                                <div className="flex gap-2">
+                                    {[
+                                        { value: 'suggestion', label: 'Suggestion' },
+                                        { value: 'bug', label: 'Bug' }
+                                    ].map((option) => (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            onClick={() => setFeedbackCategory(option.value as 'suggestion' | 'bug')}
+                                            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                                                feedbackCategory === option.value
+                                                    ? 'bg-green-600 text-white shadow-sm'
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label htmlFor="feedback-message" className="mb-2 block text-sm font-medium text-gray-700">
+                                    What would you like us to know?
+                                </label>
+                                <textarea
+                                    id="feedback-message"
+                                    value={feedbackMessage}
+                                    onChange={(event) => setFeedbackMessage(event.target.value)}
+                                    placeholder="Share a bug, a suggestion, or anything that felt confusing."
+                                    rows={6}
+                                    className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-green-400 focus:ring-2 focus:ring-green-500/10"
+                                />
+                            </div>
+
+                            {feedbackStatus ? (
+                                <div
+                                    className={`rounded-2xl px-4 py-3 text-sm ${
+                                        feedbackStatus.type === 'success'
+                                            ? 'bg-green-50 text-green-700'
+                                            : 'bg-red-50 text-red-600'
+                                    }`}
+                                >
+                                    {feedbackStatus.message}
+                                </div>
+                            ) : null}
+
+                            <div className="flex items-center justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={closeFeedbackModal}
+                                    className="rounded-full px-4 py-2 text-sm font-medium text-gray-500 transition hover:bg-gray-100 hover:text-gray-700"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSubmittingFeedback}
+                                    className="rounded-full bg-green-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-green-400"
+                                >
+                                    {isSubmittingFeedback ? 'Sending...' : 'Send'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             ) : null}
@@ -559,22 +711,111 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {/* Universal Top Header (Mobile & Desktop) */}
                 <header className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 md:px-6 z-40 md:relative md:border-gray-200 md:shrink-0 transition-all">
 
-                    {/* Mobile: Back Arrow & Logo */}
+                    {/* Mobile: Back Button & Logo */}
                     <div className="flex items-center gap-4 md:hidden w-full">
-                        <Link href="/?tab=home" className="text-gray-600">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (window.history.length > 1) {
+                                    router.back();
+                                    return;
+                                }
+                                router.push('/?tab=customer_profile');
+                                setIsProfileOpen(false);
+                            }}
+                            className="text-gray-600"
+                            aria-label="Go back"
+                        >
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                        </Link>
+                        </button>
                         <div className="flex-1 flex justify-center">
                             <Link href="/?tab=landing">
                                 <Logo variant="dark" width={80} />
                             </Link>
                         </div>
-                        <Link href="/cart" className="text-gray-600 relative">
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
-                            {totalItems > 0 && (
-                                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{totalItems}</span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={openFeedbackModal}
+                                className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-base font-semibold text-gray-600 shadow-sm transition hover:border-green-200 hover:text-green-700"
+                                aria-label="Share feedback"
+                                title="Share feedback"
+                            >
+                                ?
+                            </button>
+                            <div className="relative">
+                            <button
+                                onClick={() => setIsProfileOpen(!isProfileOpen)}
+                                className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-inner hover:ring-2 hover:ring-green-500/20 transition-all border border-green-100 ${
+                                    user
+                                        ? 'bg-gradient-to-br from-green-100 to-emerald-200 text-green-800'
+                                        : 'bg-gray-100 text-gray-500'
+                                }`}
+                            >
+                                {user ? (user.email?.[0].toUpperCase() || 'U') : 'G'}
+                            </button>
+
+                            {isProfileOpen && (
+                                <>
+                                    <div
+                                        className="fixed inset-0 z-30"
+                                        onClick={() => setIsProfileOpen(false)}
+                                    />
+                                    <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 divide-y divide-gray-100 z-40 overflow-hidden text-sm animate-in fade-in slide-in-from-top-2 duration-200">
+                                        <div className="px-5 py-4 bg-gray-50/50">
+                                            <p className="text-sm font-semibold text-gray-900 truncate">
+                                                {user ? 'Kismet' : 'Guest User'}
+                                            </p>
+                                            <p className="text-xs text-gray-500 truncate">
+                                                {user ? user.email : 'Sign in to sync your data'}
+                                            </p>
+                                        </div>
+
+                                        <div className="py-2">
+                                            <Link
+                                                href={user ? "/?tab=customer_profile" : "#"}
+                                                onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
+                                                className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
+                                            >
+                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A10 10 0 1118.88 17.8M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                About You
+                                            </Link>
+                                            <Link
+                                                href={user ? "/settings" : "#"}
+                                                onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
+                                                className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
+                                            >
+                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                Settings
+                                            </Link>
+                                        </div>
+                                        <div className="py-2 bg-red-50/30">
+                                            {user ? (
+                                                <button
+                                                    onClick={logout}
+                                                    className="w-full text-left flex items-center gap-3 px-5 py-2.5 text-red-600 hover:bg-red-50 transition-colors"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                                                    Sign Out
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => {
+                                                        openLoginModal();
+                                                        setIsProfileOpen(false);
+                                                    }}
+                                                    className="w-full text-left flex items-center gap-3 px-5 py-2.5 text-green-600 hover:bg-green-50 transition-colors font-medium"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" /></svg>
+                                                    Sign In / Sign Up
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
                             )}
-                        </Link>
+                            </div>
+                        </div>
                     </div>
 
                     {/* Desktop: Sidebar Toggle & Search (Hidden on Mobile) */}
@@ -601,25 +842,35 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         </div>
 
                         <div className="flex items-center gap-4 ml-auto">
-                            {user && (
-                                <Link href="/wallet" className="hidden lg:flex items-center gap-2 bg-green-50 px-3 py-1.5 rounded-full border border-green-100 hover:bg-green-100 transition-colors">
-                                    <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-[10px] text-white font-bold">P</div>
-                                    <div className="flex flex-col leading-none">
-                                        <span className="text-xs font-bold text-gray-900">1,250 PLYT</span>
-                                        <span className="text-[10px] text-green-600">≈ $12.50</span>
-                                    </div>
-                                </Link>
-                            )}
+                        {false && user && (
+                            <Link href="/wallet" className="hidden lg:flex items-center gap-2 bg-green-50 px-3 py-1.5 rounded-full border border-green-100 hover:bg-green-100 transition-colors">
+                                <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-[10px] text-white font-bold">P</div>
+                                <div className="flex flex-col leading-none">
+                                    <span className="text-xs font-bold text-gray-900">1,250 PLYT</span>
+                                    <span className="text-[10px] text-green-600">≈ $12.50</span>
+                                </div>
+                            </Link>
+                        )}
 
-                            {/* --- DESKTOP SHOPPING CART ICON --- */}
+                        {false && (
                             <Link href="/cart" className="relative p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
                                 {totalItems > 0 && (
                                     <span className="absolute top-1 right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold border-2 border-white">{totalItems}</span>
                                 )}
                             </Link>
-                            {/* ---------------------------------- */}
+                        )}
                         </div>
+
+                        <button
+                            type="button"
+                            onClick={openFeedbackModal}
+                            className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-base font-semibold text-gray-600 shadow-sm transition hover:border-green-200 hover:text-green-700"
+                            aria-label="Share feedback"
+                            title="Share feedback"
+                        >
+                            ?
+                        </button>
 
                         <div className="relative ml-2">
                             <button
@@ -776,13 +1027,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {/* Mobile Navigation Footer (Fixed Bottom) */}
                 <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-100 md:hidden z-50 flex items-center justify-around px-2">
                     <Link
-                        href="/systems"
+                        href="/?tab=customer_profile&focus=favorites"
                         onClick={(event) => {
                             if (handleProtectedNavigation(event)) return;
                         }}
-                        className={`flex flex-col items-center p-2 ${pathname === '/systems' ? 'text-green-600' : 'text-gray-400'}`}
+                        className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'customer_profile' && searchParams.get('focus') === 'favorites' ? 'text-green-600' : 'text-gray-400'}`}
                     >
-                        <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m8-10a2 2 0 11-4 0 2 2 0 014 0zm0 6a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                        <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
                     </Link>
 
                     <Link
@@ -797,10 +1048,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
                     <div className="relative -top-5">
                         <Link
-                            href={user ? "/?tab=home" : "/"}
+                            href={user ? "/?tab=customer_profile" : "#"}
                             onClick={(event) => {
-                                if (user) return;
-                                event.preventDefault();
+                                if (handleProtectedNavigation(event)) return;
                                 setLeftSidebarOpen(false);
                             }}
                             className="w-14 h-14 bg-green-600 rounded-full flex items-center justify-center text-white shadow-lg border-4 border-gray-50"
@@ -810,16 +1060,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     </div>
 
                     <Link
-                        href="/store"
+                        href="/?tab=health_profiles&profile=consumer"
                         onClick={(event) => {
                             if (handleProtectedNavigation(event)) return;
                         }}
-                        className={`flex flex-col items-center p-2 ${pathname === '/store' ? 'text-green-600' : 'text-gray-400'}`}
+                        className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'health_profiles' ? 'text-green-600' : 'text-gray-400'}`}
                     >
-                        <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
+                        <span className="mb-1 inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-current px-1.5 text-[11px] font-bold leading-none">
+                            HP
+                        </span>
                     </Link>
 
-                    <button onClick={() => setLeftSidebarOpen(true)} className="flex flex-col items-center p-2 text-gray-400">
+                    <button onClick={() => setLeftSidebarOpen((prev) => !prev)} className="flex flex-col items-center p-2 text-gray-400">
                         <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
                     </button>
                 </div>

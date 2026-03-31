@@ -11,7 +11,7 @@ function LandingShell() {
   return (
     <div className="relative">
       <LandingChatInterface />
-      <div className="pointer-events-none fixed bottom-4 left-1/2 z-20 -translate-x-1/2">
+      <div className="pointer-events-none fixed bottom-4 left-1/2 z-20 hidden -translate-x-1/2 md:block">
         <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-white/20 bg-white/85 px-4 py-2 text-xs text-gray-600 shadow-lg backdrop-blur">
           <Link className="underline underline-offset-2 hover:text-green-700" href="/privacy">
             Privacy Policy

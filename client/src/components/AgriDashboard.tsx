@@ -1635,10 +1635,20 @@ export default function AgriDashboard() {
                                          className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 cursor-pointer md:cursor-default"
                                          onClick={() => setIsPanelOpen(!isPanelOpen)}
                                      >
-                                        <div className="flex items-center gap-2">
-                                             <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Suggestions</h3>
-                                             <svg className={`w-4 h-4 text-gray-400 transition-transform md:hidden ${isPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-                                         </div>
+                                         <div className="flex items-center gap-2">
+                                              <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Suggestions</h3>
+                                              <span
+                                                  className={`md:hidden inline-flex h-7 w-7 items-center justify-center rounded-full transition-all ${
+                                                      suggestedPlaces.length > 0
+                                                          ? isPanelOpen
+                                                              ? 'border border-green-300 bg-green-50 text-green-700'
+                                                              : 'animate-pulse border-2 border-green-400 bg-green-50/90 text-green-700 shadow-[0_0_0_6px_rgba(34,197,94,0.12)]'
+                                                          : 'text-gray-400'
+                                                  }`}
+                                              >
+                                                  <svg className={`w-4 h-4 transition-transform ${isPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                                              </span>
+                                          </div>
                                          <div className="flex items-center gap-2">
                                              <button
                                                  type="button"

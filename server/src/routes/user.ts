@@ -45,6 +45,7 @@ function extractConsumerProfileData(profileData: Record<string, unknown>) {
         'allergies',
         'wellness_goals',
         'auto_meal_plan_enabled',
+        'supplements',
         'location',
         'notes',
         'health_documents',

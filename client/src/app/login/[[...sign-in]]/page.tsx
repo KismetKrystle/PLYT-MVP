@@ -15,8 +15,8 @@ function LoginScreen() {
 
     if (!hasClerkPublishableKey) {
         return (
-            <div className="min-h-[calc(100vh-4rem)] bg-[#f5f3ed] px-4 py-10">
-                <div className="mx-auto flex min-h-[calc(100vh-9rem)] max-w-xl items-center justify-center">
+            <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
+                <div className="mx-auto flex w-full max-w-xl items-center justify-center">
                     <div className="w-full rounded-[32px] border border-amber-200 bg-white p-6 shadow-[0_30px_90px_rgba(53,62,33,0.12)] sm:p-8">
                         <h1 className="text-3xl font-semibold text-[#1f2b18]">Sign in unavailable</h1>
                         <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
@@ -32,8 +32,8 @@ function LoginScreen() {
     }
 
     return (
-        <div className="min-h-[calc(100vh-4rem)] bg-[#f5f3ed] px-4 py-10">
-            <div className="mx-auto flex min-h-[calc(100vh-9rem)] max-w-xl items-center justify-center">
+        <div className="flex min-h-screen flex-col items-center justify-center bg-[#f5f3ed] px-4 py-10">
+            <div className="mx-auto flex w-full max-w-xl items-center justify-center">
                 <div className="w-full rounded-[32px] border border-[#d8d1c4] bg-white p-6 shadow-[0_30px_90px_rgba(53,62,33,0.12)] sm:p-8">
                     <div className="mb-6 text-center">
                         <h1 className="text-3xl font-semibold text-[#1f2b18]">Sign in</h1>
@@ -69,7 +69,7 @@ function LoginScreen() {
 
 export default function LoginPage() {
     return (
-        <Suspense fallback={<div className="flex min-h-[calc(100vh-4rem)] items-center justify-center text-sm text-[#6b6d61]">Loading sign in...</div>}>
+        <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] text-sm text-[#6b6d61]">Loading sign in...</div>}>
             <LoginScreen />
         </Suspense>
     );

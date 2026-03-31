@@ -265,8 +265,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // 1. Auth & Loading Guard
     if (loading) return <div className="min-h-screen bg-white"></div>;
 
-    // Only completely hide layout for specific "standalone" pages like Signup
-    if (pathname === '/signup') return <>{children}</>;
+    // Hide the app chrome on standalone auth flows so the forms stay centered.
+    if (pathname === '/signup' || pathname === '/login' || pathname === '/auth/complete') {
+        return <>{children}</>;
+    }
 
     const NAV_ITEMS = [
         {

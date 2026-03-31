@@ -21,7 +21,7 @@ function SignupScreen() {
 
     if (!hasClerkPublishableKey && mode !== 'kyc') {
         return (
-            <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-[#f5f3ed] px-4">
+            <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
                 <div className="max-w-md rounded-[28px] border border-amber-200 bg-white p-8 text-center shadow-sm">
                     <h1 className="text-2xl font-semibold text-[#1f2b18]">Sign up unavailable</h1>
                     <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
@@ -56,7 +56,7 @@ function SignupScreen() {
     if (mode === 'kyc') {
         if (loading) {
             return (
-                <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-[#f5f3ed] px-4">
+                <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
                     <div className="rounded-[28px] border border-[#dfd7c9] bg-white px-6 py-8 text-center shadow-sm">
                         <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-[#234f2e]/20 border-t-[#234f2e]" />
                         <p className="text-sm text-[#6b6d61]">Finishing your secure sign-in...</p>
@@ -67,31 +67,37 @@ function SignupScreen() {
 
         if (!user) {
             return (
-                <motion.div
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mx-auto mt-16 max-w-md rounded-[28px] border border-[#dfd7c9] bg-white p-8 text-center shadow-sm"
-                    initial={{ opacity: 0, y: 16 }}
-                >
-                    <h1 className="text-2xl font-semibold text-[#1f2b18]">Sign in to continue onboarding</h1>
-                    <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
-                        We need your secure session active before we can finish setting up your profile.
-                    </p>
-                    <Link
-                        className="mt-6 inline-flex rounded-full bg-[#234f2e] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1d4226]"
-                        href={loginUrl}
+                <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
+                    <motion.div
+                        animate={{ opacity: 1, y: 0 }}
+                        className="w-full max-w-md rounded-[28px] border border-[#dfd7c9] bg-white p-8 text-center shadow-sm"
+                        initial={{ opacity: 0, y: 16 }}
                     >
-                        Go to login
-                    </Link>
-                </motion.div>
+                        <h1 className="text-2xl font-semibold text-[#1f2b18]">Sign in to continue onboarding</h1>
+                        <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
+                            We need your secure session active before we can finish setting up your profile.
+                        </p>
+                        <Link
+                            className="mt-6 inline-flex rounded-full bg-[#234f2e] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1d4226]"
+                            href={loginUrl}
+                        >
+                            Go to login
+                        </Link>
+                    </motion.div>
+                </div>
             );
         }
 
-        return <KYCForm onComplete={() => router.push(redirectPath)} />;
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
+                <KYCForm onComplete={() => router.push(redirectPath)} />
+            </div>
+        );
     }
 
     if (isAccessWallEnabled) {
         return (
-            <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-[#f5f3ed] px-4">
+            <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
                 <div className="max-w-md rounded-[28px] border border-[#dfd7c9] bg-white p-8 text-center shadow-sm">
                     <h1 className="text-2xl font-semibold text-[#1f2b18]">Registration Unavailable</h1>
                     <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
@@ -106,8 +112,8 @@ function SignupScreen() {
     }
 
     return (
-        <div className="min-h-[calc(100vh-4rem)] bg-[#f5f3ed] px-4 py-10">
-            <div className="mx-auto flex min-h-[calc(100vh-9rem)] max-w-xl items-center justify-center">
+        <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
+            <div className="mx-auto flex w-full max-w-xl items-center justify-center">
                 <div className="w-full rounded-[32px] border border-[#d8d1c4] bg-white p-6 shadow-[0_30px_90px_rgba(53,62,33,0.12)] sm:p-8">
                     <div className="mb-6 text-center">
                         <h1 className="text-3xl font-semibold text-[#1f2b18]">Join the network</h1>
@@ -137,7 +143,7 @@ function SignupScreen() {
 
 export default function SignupPage() {
     return (
-        <Suspense fallback={<div className="flex min-h-[calc(100vh-4rem)] items-center justify-center text-sm text-[#6b6d61]">Loading sign up...</div>}>
+        <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] text-sm text-[#6b6d61]">Loading sign up...</div>}>
             <SignupScreen />
         </Suspense>
     );

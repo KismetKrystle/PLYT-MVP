@@ -2,9 +2,8 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useClerk } from '@clerk/nextjs';
 import { useEffect } from 'react';
 import { useAuth } from '../../lib/auth';
 
@@ -78,9 +77,9 @@ function FallbackAuthModal() {
 
 function ClerkAuthModal() {
     const pathname = usePathname();
+    const router = useRouter();
     const searchParams = useSearchParams();
-    const { openSignIn } = useClerk();
-    const { isLoginModalOpen, closeLoginModal, isAccessWallEnabled } = useAuth();
+    const { isLoginModalOpen, closeLoginModal } = useAuth();
 
     useEffect(() => {
         if (!isLoginModalOpen) {
@@ -89,18 +88,11 @@ function ClerkAuthModal() {
 
         const query = searchParams.toString();
         const redirectPath = query ? `${pathname || '/'}?${query}` : (pathname || '/');
-        const signInRedirect = `/auth/complete?redirect=${encodeURIComponent(redirectPath)}`;
-        const signUpRedirect = `/auth/complete?mode=kyc&redirect=${encodeURIComponent(redirectPath)}`;
+        const loginUrl = `/login?redirect=${encodeURIComponent(redirectPath)}`;
 
         closeLoginModal();
-        openSignIn({
-            fallbackRedirectUrl: signInRedirect,
-            forceRedirectUrl: signInRedirect,
-            signUpFallbackRedirectUrl: signUpRedirect,
-            signUpForceRedirectUrl: signUpRedirect,
-            withSignUp: !isAccessWallEnabled,
-        });
-    }, [closeLoginModal, isAccessWallEnabled, isLoginModalOpen, openSignIn, pathname, searchParams]);
+        router.push(loginUrl);
+    }, [closeLoginModal, isLoginModalOpen, pathname, router, searchParams]);
 
     return null;
 }

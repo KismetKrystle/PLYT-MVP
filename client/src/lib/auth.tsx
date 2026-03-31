@@ -14,6 +14,7 @@ interface User {
     location_address?: string;
     bio?: string;
     avatar_url?: string;
+    profile_data?: Record<string, any>;
 }
 
 interface AuthContextType {

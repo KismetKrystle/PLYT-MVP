@@ -4,6 +4,24 @@ import pool from '../db';
 export const CHAT_HISTORY_RETENTION_DAYS = 7;
 export const ACTIVE_CONVERSATION_WHERE_SQL = `(saved_by_user = TRUE OR health_relevant = TRUE OR expires_at IS NULL OR expires_at > NOW())`;
 
+export type ChatRetentionPreference = '1_day' | '7_days' | '30_days' | 'keep_saved_only';
+
+export function getChatRetentionPreference(profileData: any): ChatRetentionPreference {
+    const preference = String(profileData?.user_settings?.chat_retention_preference || '').trim();
+    if (preference === '1_day' || preference === '30_days' || preference === 'keep_saved_only') {
+        return preference;
+    }
+    return '7_days';
+}
+
+export function getChatRetentionDays(profileData: any): number {
+    const preference = getChatRetentionPreference(profileData);
+    if (preference === '1_day') return 1;
+    if (preference === '30_days') return 30;
+    if (preference === 'keep_saved_only') return 1;
+    return CHAT_HISTORY_RETENTION_DAYS;
+}
+
 type Queryable = Pool | PoolClient;
 
 function hasFavoriteConversation(profileData: any, conversationId: string) {

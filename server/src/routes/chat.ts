@@ -9,9 +9,9 @@ import { fetchRoleProfileData, isProfileComplete } from '../services/profileCont
 import { hydratePlacesWithProfileData, searchManagedPlaceProfiles } from '../services/placeProfiles';
 import {
     ACTIVE_CONVERSATION_WHERE_SQL,
-    CHAT_HISTORY_RETENTION_DAYS,
     cleanupExpiredConversations,
-    ensureConversationRetentionColumns
+    ensureConversationRetentionColumns,
+    getChatRetentionDays
 } from '../services/chatRetention';
 
 const router = express.Router();
@@ -127,6 +127,51 @@ function getPromptProfileFields(profileData: any, userRole?: string) {
         dietaryPreferences: Array.isArray(healthProfile?.dietary_preferences) ? healthProfile.dietary_preferences : [],
         allergies: Array.isArray(healthProfile?.allergies) ? healthProfile.allergies : []
     };
+}
+
+function getUserSettings(profileData: any, userRole?: string) {
+    const healthProfile = getHealthProfile(profileData, userRole);
+    const rawSettings = healthProfile?.user_settings || profileData?.user_settings || {};
+    const responseStyle = rawSettings?.response_style === 'detailed' ? 'detailed' : 'concise';
+    const fulfillmentPreference =
+        rawSettings?.fulfillment_preference === 'recipe_first' || rawSettings?.fulfillment_preference === 'order_first'
+            ? rawSettings.fulfillment_preference
+            : 'balanced';
+
+    return {
+        responseStyle,
+        fulfillmentPreference,
+        proactiveFollowUp: rawSettings?.proactive_follow_up !== false,
+        defaultSearchRadiusKm: Number.isFinite(Number(rawSettings?.default_search_radius_km))
+            ? Number(rawSettings.default_search_radius_km)
+            : 25,
+        chatRetentionDays: getChatRetentionDays(healthProfile)
+    };
+}
+
+function buildUserSettingsInstruction(settings: ReturnType<typeof getUserSettings>) {
+    const sections = [
+        settings.responseStyle === 'detailed'
+            ? '- The user prefers slightly more detailed replies with a bit more explanation when helpful.'
+            : '- The user prefers concise replies that get to the point quickly.'
+    ];
+
+    if (settings.fulfillmentPreference === 'recipe_first') {
+        sections.push('- When the request is broad or ambiguous, lean recipe-first before order-first suggestions.');
+    } else if (settings.fulfillmentPreference === 'order_first') {
+        sections.push('- When the request is broad or ambiguous, lean order-first before recipe-first suggestions.');
+    } else {
+        sections.push('- Keep a balanced mix between recipe ideas and order-ready suggestions unless the user signals a preference.');
+    }
+
+    sections.push(
+        settings.proactiveFollowUp
+            ? '- Asking one short clarifying follow-up is welcome when it genuinely improves the answer.'
+            : '- Avoid proactive follow-up questions unless they are truly necessary to answer well.'
+    );
+
+    return `## USER RESPONSE PREFERENCES
+${sections.join('\n')}`;
 }
 
 function buildLocationLinkRule(profileData: any, requestLocation?: string): string {
@@ -947,6 +992,7 @@ router.post('/', authenticateTokenOptional, async (req: Request, res: Response) 
 
         const intentClassification = classifyIntent(effectiveMessage, normalizedTags);
         const promptFields = getPromptProfileFields(profileData, userRole);
+        const userSettings = getUserSettings(profileData, userRole);
         const locationLinkRule = buildLocationLinkRule(profileData, location);
         const allergySection = promptFields.allergies.length > 0
             ? `## Allergy guardrail
@@ -958,6 +1004,7 @@ router.post('/', authenticateTokenOptional, async (req: Request, res: Response) 
             extraSections: [
                 allergySection,
                 locationLinkRule,
+                buildUserSettingsInstruction(userSettings),
                 buildIntentSystemSection(intentClassification),
                 `## CURRENT USER PROFILE
 User role: ${userRole}
@@ -995,9 +1042,9 @@ Use this profile directly for personalization. Do not ask for details already pr
         if (userId && !activeConversationId) {
             const newConversation = await pool.query(
                 `INSERT INTO conversations (user_id, title, expires_at)
-                 VALUES ($1, $2, NOW() + INTERVAL '${CHAT_HISTORY_RETENTION_DAYS} days')
+                 VALUES ($1, $2, NOW() + ($3::int || ' days')::interval)
                  RETURNING id`,
-                [userId, buildConversationTitle(effectiveMessage)]
+                [userId, buildConversationTitle(effectiveMessage), userSettings.chatRetentionDays]
             );
             activeConversationId = String(newConversation.rows[0].id);
         }
@@ -1079,14 +1126,17 @@ Use this profile directly for personalization. Do not ask for details already pr
             }
         }
 
-        const shouldForceClarifier = shouldOfferFulfillmentClarifier(
-            effectiveMessage,
-            normalizedTags,
-            intentClassification.intent,
-            responseSearchQueries
-        );
-        const shouldAskFulfillmentQuestion =
-            shouldForceClarifier || Boolean(detectFulfillmentFollowUp(aiResponse));
+        const shouldForceClarifier = userSettings.proactiveFollowUp
+            ? shouldOfferFulfillmentClarifier(
+                effectiveMessage,
+                normalizedTags,
+                intentClassification.intent,
+                responseSearchQueries
+            )
+            : false;
+        const shouldAskFulfillmentQuestion = userSettings.proactiveFollowUp
+            ? shouldForceClarifier || Boolean(detectFulfillmentFollowUp(aiResponse))
+            : false;
         const followUpOptions = null;
         aiResponse = emphasizeLeadSuggestion(aiResponse);
         aiResponse = appendFulfillmentQuestion(aiResponse, shouldAskFulfillmentQuestion);
@@ -1107,11 +1157,11 @@ Use this profile directly for personalization. Do not ask for details already pr
                      title = COALESCE(NULLIF(title, ''), $1),
                      expires_at = CASE
                          WHEN saved_by_user = TRUE OR health_relevant = TRUE THEN expires_at
-                         ELSE NOW() + INTERVAL '${CHAT_HISTORY_RETENTION_DAYS} days'
+                         ELSE NOW() + ($4::int || ' days')::interval
                      END,
-                     health_relevant = health_relevant OR $4::boolean
+                     health_relevant = health_relevant OR $5::boolean
                  WHERE id = $2 AND user_id = $3`,
-                [buildConversationTitle(effectiveMessage), activeConversationId, userId, preserveForHealth]
+                [buildConversationTitle(effectiveMessage), activeConversationId, userId, userSettings.chatRetentionDays, preserveForHealth]
             );
         }
 
@@ -1393,17 +1443,25 @@ router.put('/history/:id/suggestion-state', authenticateToken, async (req: Reque
     }
 
     try {
+        const userRes = await pool.query(
+            `SELECT profile_data
+             FROM users
+             WHERE id = $1
+             LIMIT 1`,
+            [userId]
+        );
+        const retentionDays = getChatRetentionDays(userRes.rows[0]?.profile_data || {});
         const updateResult = await pool.query(
             `UPDATE conversations
              SET suggestion_state = $1::jsonb,
                  updated_at = NOW(),
                  expires_at = CASE
                      WHEN saved_by_user = TRUE OR health_relevant = TRUE THEN expires_at
-                     ELSE NOW() + INTERVAL '${CHAT_HISTORY_RETENTION_DAYS} days'
+                     ELSE NOW() + ($4::int || ' days')::interval
                  END
-             WHERE id = $2 AND user_id = $3
-             RETURNING id, suggestion_state`,
-            [JSON.stringify(suggestionState), historyId, userId]
+              WHERE id = $2 AND user_id = $3
+              RETURNING id, suggestion_state`,
+            [JSON.stringify(suggestionState), historyId, userId, retentionDays]
         );
 
         if (updateResult.rows.length === 0) {

@@ -24,6 +24,11 @@ interface PlaceSuggestion {
     distance_km?: number | null;
 }
 
+function getDefaultSearchRadiusKm(profileData: Record<string, any> | undefined) {
+    const radius = Number(profileData?.user_settings?.default_search_radius_km);
+    return SEARCH_RADIUS_OPTIONS_KM.includes(radius) ? radius : 25;
+}
+
 function mentionsSuggestionsPanel(text: string) {
     const normalized = String(text || '').toLowerCase();
     return normalized.includes('suggestions panel') ||
@@ -365,6 +370,7 @@ export default function AgriDashboard() {
 
     const { user, requireAuth, openLoginModal } = useAuth(); // Get user for profile & requireAuth
     const { addToCart } = useCart();
+    const defaultSearchRadiusKm = getDefaultSearchRadiusKm(user?.profile_data);
 
     const isProfileTab = requestedTab === 'customer_profile' || requestedTab === 'health_profiles';
     const shouldShowDelegatedDashboard = !requestedTab || requestedTab === 'home';
@@ -385,7 +391,7 @@ export default function AgriDashboard() {
     const [isLoading, setIsLoading] = useState(false);
     const [prompt, setPrompt] = useState('');
     const [showPreview, setShowPreview] = useState(false);
-    const [searchRadiusKm, setSearchRadiusKm] = useState(25);
+    const [searchRadiusKm, setSearchRadiusKm] = useState(defaultSearchRadiusKm);
     const [visiblePlaceCount, setVisiblePlaceCount] = useState(INITIAL_VISIBLE_PLACE_COUNT);
     const [searchAreaLabel, setSearchAreaLabel] = useState('Current location');
     const [locationSourceLabel, setLocationSourceLabel] = useState('device');
@@ -440,6 +446,11 @@ export default function AgriDashboard() {
     const [pendingIntent, setPendingIntent] = useState<IntentClassification | null>(null);
     const [knowledgeBankCategories, setKnowledgeBankCategories] = useState<LibraryCategory[]>([]);
     const [selectedAssistantMessageIndex, setSelectedAssistantMessageIndex] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (lastPlaceSearch) return;
+        setSearchRadiusKm(defaultSearchRadiusKm);
+    }, [defaultSearchRadiusKm, lastPlaceSearch]);
     const [isSaveChatModalOpen, setIsSaveChatModalOpen] = useState(false);
     const [isLoadingKnowledgeBankCategories, setIsLoadingKnowledgeBankCategories] = useState(false);
     const [isSavingChatDocument, setIsSavingChatDocument] = useState(false);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ProductPreviewPanel, { ProductDetail } from './ProductPreviewPanel';
 import IntentLoader from './chat/IntentLoader';
@@ -13,6 +13,8 @@ interface ProduceItem extends ProductDetail {
 }
 
 interface PlaceSuggestion {
+    id?: string;
+    place_profile_id?: string;
     name: string;
     address: string;
     phone: string;
@@ -22,6 +24,35 @@ interface PlaceSuggestion {
     mapsUrl: string;
     image: string | null;
     distance_km?: number | null;
+    place_kind?: string;
+    network_status?: string;
+}
+
+interface FavoritePlaceRecord {
+    id?: string;
+    place_profile_id?: string;
+    external_place_id?: string;
+    name?: string;
+    address?: string;
+    mapsUrl?: string;
+    [key: string]: unknown;
+}
+
+function getPlaceIdentity(place: {
+    place_profile_id?: string | null;
+    external_place_id?: string | null;
+    id?: string | null;
+    mapsUrl?: string | null;
+    name?: string | null;
+    address?: string | null;
+}) {
+    return String(
+        place.place_profile_id ||
+        place.external_place_id ||
+        place.id ||
+        place.mapsUrl ||
+        `${place.name || ''}|${place.address || ''}`
+    ).trim();
 }
 
 function getDefaultSearchRadiusKm(profileData: Record<string, any> | undefined) {
@@ -39,6 +70,18 @@ function mentionsSuggestionsPanel(text: string) {
 
 function escapeRegExp(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildSuggestionLinkTarget(place: {
+    place_profile_id?: string | null;
+    external_place_id?: string | null;
+    id?: string | null;
+    mapsUrl?: string | null;
+    name?: string | null;
+    address?: string | null;
+}) {
+    const identity = getPlaceIdentity(place);
+    return identity ? `plyt://suggestion/${encodeURIComponent(identity)}` : '';
 }
 
 function stripPanelPlaceLinks(text: string, places: PlaceSuggestion[]) {
@@ -79,9 +122,10 @@ function normalizeSuggestedPlaceLinks(text: string, places: PlaceSuggestion[]) {
         .forEach((place) => {
             const name = String(place.name || '').trim();
             const mapsUrl = String(place.mapsUrl || '').trim();
+            const suggestionHref = buildSuggestionLinkTarget(place);
             const escapedName = escapeRegExp(name);
             const escapedUrl = escapeRegExp(mapsUrl);
-            const markdownLink = `[${name}](${mapsUrl})`;
+            const markdownLink = suggestionHref ? `[${name}](${suggestionHref})` : `[${name}](${mapsUrl})`;
 
             normalizedText = normalizedText.replace(
                 new RegExp(`\\[${escapedName}\\]\\(${escapedUrl}\\)\\s*(?:\\(|-\\s*|:\\s*)?${escapedUrl}\\)?`, 'gi'),
@@ -110,13 +154,19 @@ function linkSuggestedPlaceMentions(text: string, places: PlaceSuggestion[]) {
 
     sortedPlaces.forEach((place) => {
         const name = String(place.name || '').trim();
-        const mapsUrl = String(place.mapsUrl || '').trim();
-        if (!name || !mapsUrl || linkedText.includes(`[${name}](`)) {
+        const suggestionHref = buildSuggestionLinkTarget(place);
+        if (!name || !suggestionHref) {
             return;
         }
 
-        const pattern = new RegExp(`(^|[^\\w])(${escapeRegExp(name)})(?=[^\\w]|$)`, 'g');
-        linkedText = linkedText.replace(pattern, (_match, prefix, matchedName) => `${prefix}[${matchedName}](${mapsUrl})`);
+        const escapedName = escapeRegExp(name);
+        linkedText = linkedText.replace(
+            new RegExp(`\\[${escapedName}\\]\\((?:https?:\\/\\/|plyt:\\/\\/)[^\\s)]*\\)`, 'gi'),
+            `[${name}](${suggestionHref})`
+        );
+
+        const pattern = new RegExp(`(^|[^\\w\\[])(${escapedName})(?=[^\\w]|$)`, 'g');
+        linkedText = linkedText.replace(pattern, (_match, prefix, matchedName) => `${prefix}[${matchedName}](${suggestionHref})`);
     });
 
     return linkedText;
@@ -436,8 +486,16 @@ export default function AgriDashboard() {
     // Chat Tab Suggested Products
     const [suggestedProducts, setSuggestedProducts] = useState<ProduceItem[]>([]);
     const [suggestedPlaces, setSuggestedPlaces] = useState<PlaceSuggestion[]>([]);
+    const [favoritePlaces, setFavoritePlaces] = useState<FavoritePlaceRecord[]>([]);
+    const [isLoadingFavoritePlaces, setIsLoadingFavoritePlaces] = useState(false);
+    const [pendingFavoriteKeys, setPendingFavoriteKeys] = useState<string[]>([]);
     const visibleSuggestedPlaces = suggestedPlaces.slice(0, visiblePlaceCount);
     const hasMoreSuggestedPlaces = suggestedPlaces.length > visiblePlaceCount;
+    const collapsedSuggestionPreview = suggestedPlaces.length > 0
+        ? `${suggestedPlaces[0].name}${suggestedPlaces.length > 1 ? ` +${suggestedPlaces.length - 1} more` : ''}`
+        : suggestedProducts.length > 0
+            ? `${suggestedProducts[0].name}${suggestedProducts.length > 1 ? ` +${suggestedProducts.length - 1} more` : ''}`
+            : '';
     const [lastPlaceSearch, setLastPlaceSearch] = useState<LastPlaceSearch | null>(null);
     const [isRefreshingSuggestions, setIsRefreshingSuggestions] = useState(false);
     const [isSuggestionSettingsOpen, setIsSuggestionSettingsOpen] = useState(false);
@@ -446,6 +504,14 @@ export default function AgriDashboard() {
     const [pendingIntent, setPendingIntent] = useState<IntentClassification | null>(null);
     const [knowledgeBankCategories, setKnowledgeBankCategories] = useState<LibraryCategory[]>([]);
     const [selectedAssistantMessageIndex, setSelectedAssistantMessageIndex] = useState<number | null>(null);
+    const placeCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const [focusedSuggestionIdentity, setFocusedSuggestionIdentity] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!focusedSuggestionIdentity) return;
+        const timeoutId = window.setTimeout(() => setFocusedSuggestionIdentity(null), 2200);
+        return () => window.clearTimeout(timeoutId);
+    }, [focusedSuggestionIdentity]);
 
     useEffect(() => {
         if (lastPlaceSearch) return;
@@ -465,10 +531,65 @@ export default function AgriDashboard() {
 
     const [selectedProduct, setSelectedProduct] = useState<ProductDetail | null>(null);
     const assistantMessageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const favoritePlacesByIdentity = useMemo(() => {
+        const nextMap = new Map<string, FavoritePlaceRecord>();
+
+        favoritePlaces.forEach((place) => {
+            const keys = [
+                getPlaceIdentity(place),
+                String(place.place_profile_id || '').trim(),
+                String(place.external_place_id || '').trim(),
+                String(place.id || '').trim(),
+                String(place.mapsUrl || '').trim()
+            ].filter(Boolean);
+
+            keys.forEach((key) => nextMap.set(key, place));
+        });
+
+        return nextMap;
+    }, [favoritePlaces]);
 
     useEffect(() => {
         setVisiblePlaceCount(INITIAL_VISIBLE_PLACE_COUNT);
     }, [lastPlaceSearch?.message, suggestedPlaces.length]);
+
+    useEffect(() => {
+        if (!user?.id) {
+            setFavoritePlaces([]);
+            setIsLoadingFavoritePlaces(false);
+            setPendingFavoriteKeys([]);
+            return;
+        }
+
+        let cancelled = false;
+        setIsLoadingFavoritePlaces(true);
+
+        const fetchFavoritePlaces = async () => {
+            try {
+                const res = await api.get('/user/favorites/places');
+                if (cancelled) {
+                    return;
+                }
+
+                setFavoritePlaces(Array.isArray(res.data?.favorite_places) ? res.data.favorite_places : []);
+            } catch (error) {
+                if (!cancelled) {
+                    console.warn('Unable to load favorite places.', error);
+                    setFavoritePlaces([]);
+                }
+            } finally {
+                if (!cancelled) {
+                    setIsLoadingFavoritePlaces(false);
+                }
+            }
+        };
+
+        void fetchFavoritePlaces();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [user?.id]);
 
     // Calculate Total Price (Produce + Systems + Containers)
     const produceTotal = produceItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -524,17 +645,65 @@ export default function AgriDashboard() {
         setSuggestedPlaces(normalizeSuggestedPlaces(incoming));
     };
 
+    const focusSuggestedPlaceCard = (matchedPlace: PlaceSuggestion) => {
+        const matchedIndex = suggestedPlaces.findIndex((place) => getPlaceIdentity(place) === getPlaceIdentity(matchedPlace));
+        if (matchedIndex >= 0) {
+            setVisiblePlaceCount((current) => Math.max(current, matchedIndex + 1, INITIAL_VISIBLE_PLACE_COUNT));
+        }
+
+        setIsPanelOpen(true);
+        setFocusedSuggestionIdentity(getPlaceIdentity(matchedPlace));
+
+        window.setTimeout(() => {
+            const targetRef =
+                placeCardRefs.current[getPlaceIdentity(matchedPlace)] ||
+                placeCardRefs.current[String(matchedPlace.mapsUrl || '').trim()] ||
+                null;
+
+            targetRef?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        }, 120);
+    };
+
     const handleAssistantMessageClick = (event: React.MouseEvent<HTMLDivElement>) => {
         const target = event.target as HTMLElement | null;
         const anchor = target?.closest('a');
         if (!anchor) return;
 
         const href = String(anchor.getAttribute('href') || '').trim();
+        if (href.startsWith('plyt://suggestion/')) {
+            const encodedIdentity = href.replace('plyt://suggestion/', '');
+            const decodedIdentity = decodeURIComponent(encodedIdentity || '').trim();
+            const matchedPlace = suggestedPlaces.find((place) => getPlaceIdentity(place) === decodedIdentity);
+
+            if (!matchedPlace) {
+                return;
+            }
+
+            event.preventDefault();
+            focusSuggestedPlaceCard(matchedPlace);
+            return;
+        }
+
         const normalizedHref = href.split('?')[0];
-        if (!AUTH_MODAL_LINKS.has(normalizedHref)) return;
+        if (AUTH_MODAL_LINKS.has(normalizedHref)) {
+            event.preventDefault();
+            openLoginModal();
+            return;
+        }
+
+        const anchorText = String(anchor.textContent || '').trim().toLowerCase();
+        const matchedPlace = suggestedPlaces.find((place) => {
+            const placeName = String(place.name || '').trim().toLowerCase();
+            const placeMapsUrl = String(place.mapsUrl || '').trim();
+            return (placeMapsUrl && placeMapsUrl === href) || (placeName && placeName === anchorText);
+        });
+
+        if (!matchedPlace) {
+            return;
+        }
 
         event.preventDefault();
-        openLoginModal();
+        focusSuggestedPlaceCard(matchedPlace);
     };
 
     const buildSuggestionState = (): SavedSuggestionState => ({
@@ -1356,6 +1525,59 @@ export default function AgriDashboard() {
         }
     };
 
+    const handleToggleFavoritePlace = async (place: PlaceSuggestion) => {
+        const identity = getPlaceIdentity(place);
+        if (!identity) {
+            return;
+        }
+
+        const existingFavorite =
+            favoritePlacesByIdentity.get(identity) ||
+            favoritePlacesByIdentity.get(String(place.place_profile_id || '').trim()) ||
+            favoritePlacesByIdentity.get(String(place.id || '').trim()) ||
+            favoritePlacesByIdentity.get(String(place.mapsUrl || '').trim());
+
+        setPendingFavoriteKeys((current) => current.includes(identity) ? current : [...current, identity]);
+
+        try {
+            if (existingFavorite) {
+                const res = await api.delete('/user/favorites/places', {
+                    data: {
+                        placeId: existingFavorite.external_place_id || existingFavorite.id || place.id || existingFavorite.place_profile_id,
+                        mapsUrl: existingFavorite.mapsUrl || place.mapsUrl,
+                        name: existingFavorite.name || place.name
+                    }
+                });
+
+                setFavoritePlaces(Array.isArray(res.data?.favorite_places) ? res.data.favorite_places : []);
+                return;
+            }
+
+            const res = await api.post('/user/favorites/places', {
+                place: {
+                    id: place.id,
+                    name: place.name,
+                    address: place.address,
+                    phone: place.phone,
+                    rating: place.rating,
+                    reviewsCount: place.reviewsCount,
+                    website: place.website,
+                    mapsUrl: place.mapsUrl,
+                    image: place.image,
+                    distance_km: place.distance_km,
+                    place_kind: place.place_kind,
+                    place_profile_id: place.place_profile_id
+                }
+            });
+
+            setFavoritePlaces(Array.isArray(res.data?.favorite_places) ? res.data.favorite_places : []);
+        } catch (error) {
+            console.warn('Unable to update favorite place.', error);
+        } finally {
+            setPendingFavoriteKeys((current) => current.filter((key) => key !== identity));
+        }
+    };
+
     const handleStartNewChat = () => {
         setSkipAutoRestore(true);
         setCurrentConversationId(null);
@@ -1635,11 +1857,25 @@ export default function AgriDashboard() {
                                          className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 cursor-pointer md:cursor-default"
                                          onClick={() => setIsPanelOpen(!isPanelOpen)}
                                      >
-                                         <div className="flex items-center gap-2">
-                                              <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Suggestions</h3>
+                                         <div className="min-w-0">
+                                              <div className="flex items-center gap-2">
+                                                  <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Suggestions</h3>
+                                                  {!isPanelOpen && collapsedSuggestionPreview ? (
+                                                      <span className="md:hidden rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-green-700">
+                                                          New
+                                                      </span>
+                                                  ) : null}
+                                              </div>
+                                              {!isPanelOpen && collapsedSuggestionPreview ? (
+                                                  <p className="mt-1 max-w-[11rem] truncate text-[11px] font-medium text-gray-500 md:hidden">
+                                                      First match: <span className="text-gray-700">{collapsedSuggestionPreview}</span>
+                                                  </p>
+                                              ) : null}
+                                         </div>
+                                         <div className="flex items-center gap-2 pl-3">
                                               <span
                                                   className={`md:hidden inline-flex h-7 w-7 items-center justify-center rounded-full transition-all ${
-                                                      suggestedPlaces.length > 0
+                                                      suggestedPlaces.length > 0 || suggestedProducts.length > 0
                                                           ? isPanelOpen
                                                               ? 'border border-green-300 bg-green-50 text-green-700'
                                                               : 'animate-pulse border-2 border-green-400 bg-green-50/90 text-green-700 shadow-[0_0_0_6px_rgba(34,197,94,0.12)]'
@@ -1648,11 +1884,9 @@ export default function AgriDashboard() {
                                               >
                                                   <svg className={`w-4 h-4 transition-transform ${isPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
                                               </span>
-                                          </div>
-                                         <div className="flex items-center gap-2">
-                                             <button
-                                                 type="button"
-                                                 onClick={(e) => {
+                                              <button
+                                                  type="button"
+                                                  onClick={(e) => {
                                                      e.stopPropagation();
                                                      void handleRefreshSuggestions();
                                                  }}
@@ -1719,22 +1953,55 @@ export default function AgriDashboard() {
                                      <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3">
                                          {suggestedPlaces.length > 0 ? (
                                              <>
-                                             {visibleSuggestedPlaces.map((place, idx) => (
-                                                 <motion.div
-                                                     key={`${place.name}-${idx}`}
-                                                     initial={{ opacity: 0, x: 20 }}
-                                                    animate={{ opacity: 1, x: 0 }}
-                                                    className="p-3 bg-white rounded-xl border border-gray-100 shadow-sm"
-                                                >
-                                                    <div className="flex gap-3">
-                                                        <div className="w-14 h-14 rounded-lg bg-gray-100 shrink-0 overflow-hidden">
-                                                            <PlaceThumbnail image={place.image} name={place.name} />
-                                                        </div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <h4 className="text-sm font-bold text-gray-800 leading-snug">{place.name}</h4>
-                                                            <p className="text-xs text-gray-500 mt-1">{place.address || 'Address unavailable'}</p>
-                                                            {typeof place.distance_km === 'number' ? (
-                                                                <p className="mt-1 text-[11px] font-semibold text-green-700">
+                                              {visibleSuggestedPlaces.map((place, idx) => {
+                                                  const placeIdentity = getPlaceIdentity(place);
+                                                  const favoritePlace =
+                                                      favoritePlacesByIdentity.get(placeIdentity) ||
+                                                      favoritePlacesByIdentity.get(String(place.place_profile_id || '').trim()) ||
+                                                      favoritePlacesByIdentity.get(String(place.id || '').trim()) ||
+                                                      favoritePlacesByIdentity.get(String(place.mapsUrl || '').trim());
+                                                  const isFavorited = Boolean(favoritePlace);
+                                                  const isFavoritePending = pendingFavoriteKeys.includes(placeIdentity);
+
+                                                  return (
+                                                   <motion.div
+                                                       key={`${place.name}-${idx}`}
+                                                       initial={{ opacity: 0, x: 20 }}
+                                                      animate={{
+                                                          opacity: 1,
+                                                          x: 0,
+                                                          scale: focusedSuggestionIdentity === placeIdentity ? 1.01 : 1
+                                                      }}
+                                                      ref={(node) => {
+                                                          placeCardRefs.current[placeIdentity] = node;
+                                                          if (place.mapsUrl) {
+                                                              placeCardRefs.current[String(place.mapsUrl).trim()] = node;
+                                                          }
+                                                      }}
+                                                      className={`p-3 rounded-xl border shadow-sm transition ${
+                                                          focusedSuggestionIdentity === placeIdentity
+                                                              ? 'border-green-300 bg-green-50/70 ring-2 ring-green-100'
+                                                              : isFavorited
+                                                                  ? 'border-emerald-200 bg-emerald-50/40'
+                                                                  : 'border-gray-100 bg-white'
+                                                      }`}
+                                                  >
+                                                     <div className="flex gap-3">
+                                                         <div className="w-14 h-14 rounded-lg bg-gray-100 shrink-0 overflow-hidden">
+                                                             <PlaceThumbnail image={place.image} name={place.name} />
+                                                         </div>
+                                                         <div className="flex-1 min-w-0">
+                                                             <div className="flex items-start justify-between gap-3">
+                                                                 <h4 className="text-sm font-bold text-gray-800 leading-snug">{place.name}</h4>
+                                                                 {isFavorited ? (
+                                                                     <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">
+                                                                         Saved
+                                                                     </span>
+                                                                 ) : null}
+                                                             </div>
+                                                             <p className="text-xs text-gray-500 mt-1">{place.address || 'Address unavailable'}</p>
+                                                             {typeof place.distance_km === 'number' ? (
+                                                                 <p className="mt-1 text-[11px] font-semibold text-green-700">
                                                                     {place.distance_km < 1
                                                                         ? `${Math.round(place.distance_km * 1000)} m away`
                                                                         : `${place.distance_km.toFixed(1)} km away`}
@@ -1749,11 +2016,31 @@ export default function AgriDashboard() {
                                                                 {place.phone && (
                                                                     <p className="text-xs text-gray-600">{place.phone}</p>
                                                                 )}
-                                                            </div>
-                                                            <div className="mt-2 flex flex-wrap gap-3">
-                                                                <a
-                                                                    href={place.mapsUrl}
-                                                                    target="_blank"
+                                                             </div>
+                                                             <div className="mt-2 flex flex-wrap gap-3">
+                                                                 <button
+                                                                     type="button"
+                                                                     onClick={() => requireAuth(() => { void handleToggleFavoritePlace(place); })}
+                                                                     disabled={isFavoritePending || isLoadingFavoritePlaces}
+                                                                     className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                                                                         isFavorited
+                                                                             ? 'border-emerald-300 bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                                                             : 'border-gray-200 bg-white text-gray-700 hover:border-emerald-200 hover:text-emerald-700'
+                                                                     } disabled:cursor-not-allowed disabled:opacity-60`}
+                                                                 >
+                                                                     <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill={isFavorited ? 'currentColor' : 'none'} stroke="currentColor">
+                                                                         <path
+                                                                             d="M10 17l-1.45-1.32C4.4 11.9 2 9.72 2 7.05 2 4.88 3.79 3 6 3c1.25 0 2.45.58 3.22 1.5C9.99 3.58 11.19 3 12.44 3 14.65 3 16.44 4.88 16.44 7.05c0 2.67-2.4 4.85-6.55 8.64L10 17z"
+                                                                             strokeWidth="1.5"
+                                                                             strokeLinecap="round"
+                                                                             strokeLinejoin="round"
+                                                                         />
+                                                                     </svg>
+                                                                     {isFavoritePending ? 'Saving...' : (isFavorited ? 'Saved' : 'Favorite')}
+                                                                 </button>
+                                                                 <a
+                                                                     href={place.mapsUrl}
+                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
                                                                     className="text-xs font-semibold text-blue-600 hover:underline"
                                                                 >
@@ -1769,11 +2056,12 @@ export default function AgriDashboard() {
                                                                         Website
                                                                     </a>
                                                                 )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                 </motion.div>
-                                             ))}
+                                                             </div>
+                                                         </div>
+                                                     </div>
+                                                  </motion.div>
+                                              );
+                                              })}
                                              {suggestedPlaces.length > INITIAL_VISIBLE_PLACE_COUNT ? (
                                                  <div className="pt-1">
                                                      {hasMoreSuggestedPlaces ? (

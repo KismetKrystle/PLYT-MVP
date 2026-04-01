@@ -302,7 +302,10 @@ function appendFulfillmentQuestion(responseText: string, shouldAskQuestion: bool
         return normalizedResponse;
     }
 
-    if (/(would you like|do you want|which one|which option|what sounds better|are you after).*\?/i.test(normalizedResponse)) {
+    if (
+        /(would you like|do you want|which one|which option|what sounds better|are you after).*\?/i.test(normalizedResponse) ||
+        /are you looking for something to order.*recipe to cook.*meal prep.*ingredients to buy\?/i.test(normalizedResponse)
+    ) {
         return normalizedResponse;
     }
 
@@ -932,6 +935,8 @@ async function buildSuggestionAwareReply(message: string, places: any[], profile
 - The user is asking about the currently displayed suggestion list.
 - Only refer to places that appear in the provided list.
 - Treat the list as the source of truth.
+- Never introduce a new place name that does not appear in the provided list.
+- Preserve the exact place names from the provided list when you mention them.
 - If the user asks whether these places have a specific item, be honest when you cannot confirm exact menu availability.
 - In that case, say which places are the best candidates from the current list instead of pretending to know.
 - If raw_inventory_context is available, use it to name specific produce or ingredient items.
@@ -950,7 +955,7 @@ ${message}
 Current displayed suggestions:
 ${JSON.stringify(topPlaces, null, 2)}
 
-Answer the user's follow-up using this exact list. If exact menu availability is unknown, say that clearly and point them to the best candidates from the current list. If a place has raw_inventory_context or menu_context, use that to be more specific.`;
+Answer the user's follow-up using this exact list. Do not mention any place name that is not in the list. If exact menu availability is unknown, say that clearly and point them to the best candidates from the current list. If a place has raw_inventory_context or menu_context, use that to be more specific.`;
 
     try {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);

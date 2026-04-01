@@ -40,9 +40,9 @@ function FallbackAuthModal() {
                         </button>
 
                         <div className="mb-8 text-center">
-                            <h2 className="mb-2 text-2xl font-bold text-gray-900">Secure Sign In</h2>
+                            <h2 className="mb-2 text-2xl font-bold text-gray-900">Sign In</h2>
                             <p className="text-gray-500">
-                                Use the new Clerk-powered sign-in flow to access your profile, archive, and saved progress.
+                                Access your profile, archive, and saved progress.
                             </p>
                         </div>
 
@@ -66,7 +66,7 @@ function FallbackAuthModal() {
                         </div>
 
                         <p className="mt-6 text-center text-sm text-gray-500">
-                            Your existing PLYT data stays connected after sign-in.
+                            Your existing Plyant data stays connected after sign-in.
                         </p>
                     </motion.div>
                 </div>

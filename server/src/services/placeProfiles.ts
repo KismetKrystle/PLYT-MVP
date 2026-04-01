@@ -84,6 +84,30 @@ export async function ensurePlaceProfileSchema(client?: PoolClient) {
                         UNIQUE (place_profile_id, user_id)
                     );
                 `);
+
+                await localClient.query(`
+                    CREATE TABLE IF NOT EXISTS place_visits (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        place_profile_id UUID REFERENCES place_profiles(id) ON DELETE CASCADE,
+                        user_id ${usersIdType} REFERENCES users(id) ON DELETE CASCADE,
+                        visited_at TIMESTAMP NULL,
+                        meal_name TEXT,
+                        meal_notes TEXT,
+                        rating INTEGER,
+                        body_response TEXT,
+                        liked_it BOOLEAN,
+                        would_repeat BOOLEAN,
+                        keep_as_favorite BOOLEAN,
+                        profile_data JSONB DEFAULT '{}'::jsonb,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        updated_at TIMESTAMP DEFAULT NOW()
+                    );
+                `);
+
+                await localClient.query(`
+                    ALTER TABLE place_profiles
+                    ADD COLUMN IF NOT EXISTS visit_count INTEGER NOT NULL DEFAULT 0;
+                `);
             } finally {
                 if (shouldRelease) localClient.release();
             }
@@ -298,12 +322,77 @@ export function normalizePlaceProfileInput(place: any) {
     };
 }
 
+function toUserFavoritePlace(row: any) {
+    const profileData = row?.profile_data || {};
+    const googleMetadata = profileData?.google_metadata || {};
+    const savedPlaceData = row?.saved_place_data || {};
+
+    return {
+        id: String(savedPlaceData?.id || row?.external_place_id || row?.place_profile_id || '').trim(),
+        place_profile_id: String(row?.place_profile_id || row?.id || '').trim(),
+        external_source: String(row?.external_source || 'google_places'),
+        external_place_id: String(row?.external_place_id || '').trim(),
+        name: String(savedPlaceData?.name || row?.name || '').trim(),
+        title: savedPlaceData?.title ? String(savedPlaceData.title).trim() : undefined,
+        address: String(savedPlaceData?.address || profileData?.address || googleMetadata?.address || '').trim(),
+        city: savedPlaceData?.city ? String(savedPlaceData.city).trim() : undefined,
+        location: savedPlaceData?.location ? String(savedPlaceData.location).trim() : undefined,
+        mapsUrl: String(savedPlaceData?.mapsUrl || profileData?.mapsUrl || googleMetadata?.mapsUrl || '').trim(),
+        image: savedPlaceData?.image || profileData?.image || googleMetadata?.image || null,
+        notes: savedPlaceData?.notes ? String(savedPlaceData.notes).trim() : undefined,
+        website: String(savedPlaceData?.website || profileData?.website || googleMetadata?.website || '').trim(),
+        phone: String(savedPlaceData?.phone || profileData?.phone || googleMetadata?.phone || '').trim(),
+        rating: Number.isFinite(Number(savedPlaceData?.rating))
+            ? Number(savedPlaceData.rating)
+            : (Number.isFinite(Number(googleMetadata?.rating)) ? Number(googleMetadata.rating) : null),
+        reviewsCount: Number.isFinite(Number(savedPlaceData?.reviewsCount))
+            ? Number(savedPlaceData.reviewsCount)
+            : (Number.isFinite(Number(googleMetadata?.reviewsCount)) ? Number(googleMetadata.reviewsCount) : 0),
+        distance_km: Number.isFinite(Number(savedPlaceData?.distance_km))
+            ? Number(savedPlaceData.distance_km)
+            : (Number.isFinite(Number(googleMetadata?.distance_km)) ? Number(googleMetadata.distance_km) : null),
+        place_kind: String(row?.place_kind || savedPlaceData?.place_kind || inferPlaceKind(savedPlaceData || row)),
+        network_status: String(row?.network_status || 'not_on_network'),
+        save_count: Number.isFinite(Number(row?.save_count)) ? Number(row.save_count) : 0,
+        visit_count: Number.isFinite(Number(row?.visit_count)) ? Number(row.visit_count) : 0,
+        feedback_count: Number.isFinite(Number(row?.feedback_count)) ? Number(row.feedback_count) : 0,
+        average_rating: Number.isFinite(Number(row?.average_rating)) ? Number(row.average_rating) : 0,
+        saved_at: String(savedPlaceData?.saved_at || row?.favorite_created_at || row?.favorite_updated_at || ''),
+        created_at: row?.favorite_created_at || null,
+        updated_at: row?.favorite_updated_at || null
+    };
+}
+
+function toPlaceVisit(row: any) {
+    return {
+        id: String(row?.id || '').trim(),
+        place_profile_id: String(row?.place_profile_id || '').trim(),
+        user_id: row?.user_id ?? null,
+        visited_at: row?.visited_at || null,
+        meal_name: row?.meal_name ? String(row.meal_name).trim() : '',
+        meal_notes: row?.meal_notes ? String(row.meal_notes).trim() : '',
+        rating: Number.isFinite(Number(row?.rating)) ? Number(row.rating) : null,
+        body_response: row?.body_response ? String(row.body_response).trim() : '',
+        liked_it: typeof row?.liked_it === 'boolean' ? row.liked_it : null,
+        would_repeat: typeof row?.would_repeat === 'boolean' ? row.would_repeat : null,
+        keep_as_favorite: typeof row?.keep_as_favorite === 'boolean' ? row.keep_as_favorite : null,
+        profile_data: row?.profile_data && typeof row.profile_data === 'object' ? row.profile_data : {},
+        created_at: row?.created_at || null,
+        updated_at: row?.updated_at || null
+    };
+}
+
 async function refreshPlaceProfileAggregates(client: PoolClient, placeProfileId: string) {
     const countsResult = await client.query(
         `SELECT
             (SELECT COUNT(*)::int FROM user_place_favorites WHERE place_profile_id = $1) AS save_count,
+            (SELECT COUNT(*)::int FROM place_visits WHERE place_profile_id = $1) AS visit_count,
             (SELECT COUNT(*)::int FROM place_profile_feedback WHERE place_profile_id = $1) AS feedback_count,
-            (SELECT COALESCE(AVG(rating), 0)::numeric(4,2) FROM place_profile_feedback WHERE place_profile_id = $1 AND rating IS NOT NULL) AS average_rating`,
+            CASE
+                WHEN (SELECT COUNT(*)::int FROM place_visits WHERE place_profile_id = $1 AND rating IS NOT NULL) > 0
+                    THEN (SELECT COALESCE(AVG(rating), 0)::numeric(4,2) FROM place_visits WHERE place_profile_id = $1 AND rating IS NOT NULL)
+                ELSE (SELECT COALESCE(AVG(rating), 0)::numeric(4,2) FROM place_profile_feedback WHERE place_profile_id = $1 AND rating IS NOT NULL)
+            END AS average_rating`,
         [placeProfileId]
     );
 
@@ -312,12 +401,14 @@ async function refreshPlaceProfileAggregates(client: PoolClient, placeProfileId:
     await client.query(
         `UPDATE place_profiles
          SET save_count = $1,
-             feedback_count = $2,
-             average_rating = $3,
+             visit_count = $2,
+             feedback_count = $3,
+             average_rating = $4,
              updated_at = NOW()
-         WHERE id = $4`,
+         WHERE id = $5`,
         [
             counts.save_count || 0,
+            counts.visit_count || 0,
             counts.feedback_count || 0,
             Number(counts.average_rating || 0),
             placeProfileId
@@ -413,6 +504,177 @@ export async function removePlaceFavorite(client: PoolClient, userId: string | n
     );
 
     return refreshed.rows[0] || null;
+}
+
+export async function listUserFavoritePlaces(userId: string | number, client?: PoolClient) {
+    await ensurePlaceProfileSchema(client);
+
+    const localClient: any = client || pool;
+    const result = await localClient.query(
+        `SELECT
+            pp.id AS place_profile_id,
+            pp.external_source,
+            pp.external_place_id,
+            pp.name,
+            pp.place_kind,
+            pp.network_status,
+            pp.save_count,
+            pp.visit_count,
+            pp.feedback_count,
+            pp.average_rating,
+            pp.profile_data,
+            uf.saved_place_data,
+            uf.created_at AS favorite_created_at,
+            uf.updated_at AS favorite_updated_at
+         FROM user_place_favorites uf
+         INNER JOIN place_profiles pp ON pp.id = uf.place_profile_id
+         WHERE uf.user_id = $1
+         ORDER BY uf.updated_at DESC, uf.created_at DESC`,
+        [userId]
+    );
+
+    return result.rows.map((row: any) => toUserFavoritePlace(row));
+}
+
+export async function listUserPlaceVisits(placeProfileId: string, userId: string | number, client?: PoolClient) {
+    await ensurePlaceProfileSchema(client);
+
+    const localClient: any = client || pool;
+    const result = await localClient.query(
+        `SELECT id, place_profile_id, user_id, visited_at, meal_name, meal_notes, rating, body_response, liked_it, would_repeat, keep_as_favorite, profile_data, created_at, updated_at
+         FROM place_visits
+         WHERE place_profile_id = $1 AND user_id = $2
+         ORDER BY COALESCE(visited_at, updated_at, created_at) DESC, updated_at DESC, created_at DESC`,
+        [placeProfileId, userId]
+    );
+
+    return result.rows.map((row: any) => toPlaceVisit(row));
+}
+
+export async function createUserPlaceVisit(client: PoolClient, placeProfileId: string, userId: string | number, visit: any) {
+    await ensurePlaceProfileSchema(client);
+
+    const profileExists = await client.query(
+        `SELECT id FROM place_profiles WHERE id = $1 LIMIT 1`,
+        [placeProfileId]
+    );
+
+    if (profileExists.rows.length === 0) {
+        throw new Error('PLACE_PROFILE_NOT_FOUND');
+    }
+
+    const visitedAt = typeof visit?.visited_at === 'string' && visit.visited_at.trim()
+        ? visit.visited_at.trim()
+        : null;
+
+    const result = await client.query(
+        `INSERT INTO place_visits (
+            place_profile_id,
+            user_id,
+            visited_at,
+            meal_name,
+            meal_notes,
+            rating,
+            body_response,
+            liked_it,
+            would_repeat,
+            keep_as_favorite,
+            profile_data,
+            updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NOW())
+         RETURNING id, place_profile_id, user_id, visited_at, meal_name, meal_notes, rating, body_response, liked_it, would_repeat, keep_as_favorite, profile_data, created_at, updated_at`,
+        [
+            placeProfileId,
+            userId,
+            visitedAt,
+            typeof visit?.meal_name === 'string' ? visit.meal_name.trim() : null,
+            typeof visit?.meal_notes === 'string' ? visit.meal_notes.trim() : null,
+            Number.isFinite(Number(visit?.rating)) ? Number(visit.rating) : null,
+            typeof visit?.body_response === 'string' ? visit.body_response.trim() : null,
+            typeof visit?.liked_it === 'boolean' ? visit.liked_it : null,
+            typeof visit?.would_repeat === 'boolean' ? visit.would_repeat : null,
+            typeof visit?.keep_as_favorite === 'boolean' ? visit.keep_as_favorite : null,
+            JSON.stringify(visit?.profile_data && typeof visit.profile_data === 'object' ? visit.profile_data : {})
+        ]
+    );
+
+    await refreshPlaceProfileAggregates(client, placeProfileId);
+
+    return toPlaceVisit(result.rows[0]);
+}
+
+export async function updateUserPlaceVisit(client: PoolClient, visitId: string, userId: string | number, visit: any) {
+    await ensurePlaceProfileSchema(client);
+
+    const currentResult = await client.query(
+        `SELECT id, place_profile_id
+         FROM place_visits
+         WHERE id = $1 AND user_id = $2
+         LIMIT 1`,
+        [visitId, userId]
+    );
+
+    if (currentResult.rows.length === 0) {
+        throw new Error('PLACE_VISIT_NOT_FOUND');
+    }
+
+    const current = currentResult.rows[0];
+    const visitedAt = typeof visit?.visited_at === 'string' && visit.visited_at.trim()
+        ? visit.visited_at.trim()
+        : null;
+
+    const result = await client.query(
+        `UPDATE place_visits
+         SET visited_at = $1,
+             meal_name = $2,
+             meal_notes = $3,
+             rating = $4,
+             body_response = $5,
+             liked_it = $6,
+             would_repeat = $7,
+             keep_as_favorite = $8,
+             profile_data = $9::jsonb,
+             updated_at = NOW()
+         WHERE id = $10 AND user_id = $11
+         RETURNING id, place_profile_id, user_id, visited_at, meal_name, meal_notes, rating, body_response, liked_it, would_repeat, keep_as_favorite, profile_data, created_at, updated_at`,
+        [
+            visitedAt,
+            typeof visit?.meal_name === 'string' ? visit.meal_name.trim() : null,
+            typeof visit?.meal_notes === 'string' ? visit.meal_notes.trim() : null,
+            Number.isFinite(Number(visit?.rating)) ? Number(visit.rating) : null,
+            typeof visit?.body_response === 'string' ? visit.body_response.trim() : null,
+            typeof visit?.liked_it === 'boolean' ? visit.liked_it : null,
+            typeof visit?.would_repeat === 'boolean' ? visit.would_repeat : null,
+            typeof visit?.keep_as_favorite === 'boolean' ? visit.keep_as_favorite : null,
+            JSON.stringify(visit?.profile_data && typeof visit.profile_data === 'object' ? visit.profile_data : {}),
+            visitId,
+            userId
+        ]
+    );
+
+    await refreshPlaceProfileAggregates(client, String(current.place_profile_id));
+
+    return toPlaceVisit(result.rows[0]);
+}
+
+export async function deleteUserPlaceVisit(client: PoolClient, visitId: string, userId: string | number) {
+    await ensurePlaceProfileSchema(client);
+
+    const result = await client.query(
+        `DELETE FROM place_visits
+         WHERE id = $1 AND user_id = $2
+         RETURNING id, place_profile_id, user_id, visited_at, meal_name, meal_notes, rating, body_response, liked_it, would_repeat, keep_as_favorite, profile_data, created_at, updated_at`,
+        [visitId, userId]
+    );
+
+    if (result.rows.length === 0) {
+        throw new Error('PLACE_VISIT_NOT_FOUND');
+    }
+
+    const deletedVisit = toPlaceVisit(result.rows[0]);
+    await refreshPlaceProfileAggregates(client, String(deletedVisit.place_profile_id));
+    return deletedVisit;
 }
 
 export async function getPlaceProfileByExternalId(externalPlaceId: string) {

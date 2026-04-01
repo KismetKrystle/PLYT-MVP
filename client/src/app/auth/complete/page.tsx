@@ -19,13 +19,14 @@ function AuthCompleteScreen() {
     const [syncError, setSyncError] = useState<string | null>(null);
     const [retryTick, setRetryTick] = useState(0);
     const [retryCount, setRetryCount] = useState(0);
+    const [resolvedDestination, setResolvedDestination] = useState<string | null>(null);
     const retryTimeoutRef = useRef<number | null>(null);
     const isSyncingRef = useRef(false);
     const maxRetryCount = 2;
 
     const redirectPath = searchParams.get('redirect') || '/';
     const mode = searchParams.get('mode');
-    const destination = useMemo(() => {
+    const defaultDestination = useMemo(() => {
         if (mode === 'kyc') {
             return `/signup?mode=kyc&redirect=${encodeURIComponent(redirectPath)}`;
         }
@@ -34,15 +35,19 @@ function AuthCompleteScreen() {
     }, [mode, redirectPath]);
 
     useEffect(() => {
+        setResolvedDestination(defaultDestination);
+    }, [defaultDestination]);
+
+    useEffect(() => {
         const timer = window.setTimeout(() => setTimedOut(true), 8000);
         return () => window.clearTimeout(timer);
     }, []);
 
     useEffect(() => {
-        if (!loading && user) {
-            router.replace(destination);
+        if (!loading && user && resolvedDestination) {
+            router.replace(resolvedDestination);
         }
-    }, [destination, loading, router, user]);
+    }, [loading, resolvedDestination, router, user]);
 
     useEffect(() => {
         if (loading || user || !isClerkLoaded || !isClerkUserLoaded || !isSignedIn || !clerkUser?.id) {
@@ -67,6 +72,11 @@ function AuthCompleteScreen() {
                 const response = await api.post('/auth/clerk-login', { clerkToken });
                 if (cancelled) return;
 
+                const nextDestination = response.data?.requiresOnboarding
+                    ? `/signup?mode=kyc&redirect=${encodeURIComponent(redirectPath)}`
+                    : defaultDestination;
+
+                setResolvedDestination(nextDestination);
                 login(response.data.token, response.data.user);
                 if (typeof window !== 'undefined') {
                     localStorage.setItem('clerk_user_id', clerkUser.id);
@@ -105,7 +115,7 @@ function AuthCompleteScreen() {
             }
             isSyncingRef.current = false;
         };
-    }, [clerkUser?.id, getToken, isClerkLoaded, isClerkUserLoaded, isSignedIn, loading, login, retryCount, retryTick, user]);
+    }, [clerkUser?.id, defaultDestination, getToken, isClerkLoaded, isClerkUserLoaded, isSignedIn, loading, login, redirectPath, retryCount, retryTick, user]);
 
     return (
         <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-[#f5f3ed] px-4">

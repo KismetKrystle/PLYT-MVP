@@ -23,8 +23,8 @@ export default function AboutYouListPanel({
             <div className="max-w-7xl mx-auto mb-4 border-b border-gray-200 pb-4">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div>
-                        <p className="text-xs font-bold uppercase tracking-[0.22em] text-gray-400">About You View</p>
-                        <h2 className="mt-1 text-lg font-bold text-gray-900">Listed View of your content.</h2>
+                        <p className="text-xs font-bold uppercase tracking-[0.22em] text-gray-400">About You</p>
+                        <h2 className="mt-1 text-lg font-bold text-gray-900">Your living library.</h2>
                     </div>
                     <div className="inline-flex rounded-2xl border border-gray-200 bg-gray-50 p-1">
                         <button

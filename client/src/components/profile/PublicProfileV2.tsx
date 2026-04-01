@@ -201,6 +201,48 @@ function extractProfileData(record: any) {
         : rawData;
 }
 
+function extractLegacyFavoritePlaces(profile: any) {
+    const candidates =
+        profile?.favorite_places ||
+        profile?.favorited_places ||
+        profile?.saved_places ||
+        [];
+
+    return Array.isArray(candidates) ? candidates : [];
+}
+
+function createEmptyPlaceVisitForm() {
+    return {
+        visited_at: getLocalIsoDate(),
+        meal_name: '',
+        meal_notes: '',
+        rating: '',
+        body_response: '',
+        liked_it: '',
+        would_repeat: '',
+        keep_as_favorite: ''
+    };
+}
+
+function visitToFormState(visit: any) {
+    return {
+        visited_at: visit?.visited_at ? String(visit.visited_at).slice(0, 10) : getLocalIsoDate(),
+        meal_name: visit?.meal_name ? String(visit.meal_name) : '',
+        meal_notes: visit?.meal_notes ? String(visit.meal_notes) : '',
+        rating: Number.isFinite(Number(visit?.rating)) ? String(visit.rating) : '',
+        body_response: visit?.body_response ? String(visit.body_response) : '',
+        liked_it: typeof visit?.liked_it === 'boolean' ? (visit.liked_it ? 'yes' : 'no') : '',
+        would_repeat: typeof visit?.would_repeat === 'boolean' ? (visit.would_repeat ? 'yes' : 'no') : '',
+        keep_as_favorite: typeof visit?.keep_as_favorite === 'boolean' ? (visit.keep_as_favorite ? 'yes' : 'no') : ''
+    };
+}
+
+function parseBooleanChoice(value: string) {
+    if (value === 'yes') return true;
+    if (value === 'no') return false;
+    return null;
+}
+
 type MealEntry = { breakfast: string; lunch: string; dinner: string; notes: string };
 
 function getLocalIsoDate() {
@@ -291,6 +333,14 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     const [isEditingUsefulLinks, setIsEditingUsefulLinks] = useState(false);
     const [newUsefulLink, setNewUsefulLink] = useState('');
     const [profileData, setProfileData] = useState<any>(() => extractProfileData(user));
+    const [favoritePlaces, setFavoritePlaces] = useState<any[] | null>(null);
+    const [isLoadingFavoritePlaces, setIsLoadingFavoritePlaces] = useState(false);
+    const [selectedFavoritePlace, setSelectedFavoritePlace] = useState<any | null>(null);
+    const [placeVisits, setPlaceVisits] = useState<any[]>([]);
+    const [isLoadingPlaceVisits, setIsLoadingPlaceVisits] = useState(false);
+    const [isSavingPlaceVisit, setIsSavingPlaceVisit] = useState(false);
+    const [editingPlaceVisitId, setEditingPlaceVisitId] = useState<string | null>(null);
+    const [placeVisitForm, setPlaceVisitForm] = useState(createEmptyPlaceVisitForm);
     const [savedChats, setSavedChats] = useState<Array<{ id: string; title: string; updated_at?: string }>>([]);
     const [healthyDays, setHealthyDays] = useState(1);
     const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
@@ -335,7 +385,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     const profileBio = user?.bio || 'Passionate about sustainable living. Join me on my journey!';
     const profileLocation = [user?.location_city, user?.location_address].filter(Boolean).join(', ');
     const quoteText = 'To plant a garden is to believe in tomorrow.';
-    const favoritesEnabled = false;
+    const favoritesEnabled = isOwner;
     const visibleJournalExampleEntries = useMemo(
         () => JOURNAL_WALL_MOCK_ENTRIES
             .filter((entry) => !hiddenJournalExampleIds.includes(entry.id))
@@ -655,6 +705,8 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             if (!isOwner) {
                 setSavedChats([]);
             }
+            setFavoritePlaces(null);
+            setIsLoadingFavoritePlaces(false);
             return;
         }
 
@@ -703,8 +755,30 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             }
         };
 
+        const fetchFavoritePlaces = async () => {
+            if (isCancelled) return;
+
+            setIsLoadingFavoritePlaces(true);
+
+            try {
+                const res = await api.get('/user/favorites/places');
+                if (!isCancelled) {
+                    setFavoritePlaces(Array.isArray(res.data?.favorite_places) ? res.data.favorite_places : []);
+                }
+            } catch {
+                if (!isCancelled) {
+                    setFavoritePlaces(null);
+                }
+            } finally {
+                if (!isCancelled) {
+                    setIsLoadingFavoritePlaces(false);
+                }
+            }
+        };
+
         void fetchFreshProfileData();
         void fetchSavedChats();
+        void fetchFavoritePlaces();
 
         return () => {
             isCancelled = true;
@@ -712,14 +786,12 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     }, [authLoading, isOwner, token]);
 
     const favoritedPlaces = useMemo(() => {
-        const candidates =
-            profileData?.favorite_places ||
-            profileData?.favorited_places ||
-            profileData?.saved_places ||
-            [];
+        if (Array.isArray(favoritePlaces)) {
+            return favoritePlaces;
+        }
 
-        return Array.isArray(candidates) ? candidates : [];
-    }, [profileData]);
+        return extractLegacyFavoritePlaces(profileData);
+    }, [favoritePlaces, profileData]);
 
     const favoritedChats = useMemo(() => {
         const candidates = profileData?.favorite_chats || profileData?.favorited_chats;
@@ -752,7 +824,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             label: 'Places',
             count: favoritedPlaces.length,
             items: favoritedPlaces,
-            emptyState: 'No favorite places yet.'
+            emptyState: isLoadingFavoritePlaces ? 'Loading favorite places...' : 'No favorite places yet.'
         },
         {
             key: 'favorites_chats',
@@ -773,6 +845,124 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     const openExternalLink = (url: string) => {
         if (typeof window !== 'undefined') {
             window.open(url, '_blank', 'noopener,noreferrer');
+        }
+    };
+
+    const resetPlaceVisitEditor = () => {
+        setEditingPlaceVisitId(null);
+        setPlaceVisitForm(createEmptyPlaceVisitForm());
+    };
+
+    const loadPlaceVisits = async (place: any) => {
+        const placeProfileId = String(place?.place_profile_id || '').trim();
+        if (!placeProfileId || !token) {
+            setPlaceVisits([]);
+            setIsLoadingPlaceVisits(false);
+            return;
+        }
+
+        setIsLoadingPlaceVisits(true);
+
+        try {
+            const res = await api.get(`/place-profiles/${placeProfileId}/visits/mine`);
+            setPlaceVisits(Array.isArray(res.data?.visits) ? res.data.visits : []);
+        } catch {
+            setPlaceVisits([]);
+        } finally {
+            setIsLoadingPlaceVisits(false);
+        }
+    };
+
+    const handleOpenPlaceVisits = async (place: any) => {
+        setSelectedFavoritePlace(place);
+        resetPlaceVisitEditor();
+        setPlaceVisits([]);
+        setActiveModal('favorite_place_visits');
+        await loadPlaceVisits(place);
+    };
+
+    const handleEditPlaceVisit = (visit: any) => {
+        setEditingPlaceVisitId(String(visit?.id || ''));
+        setPlaceVisitForm(visitToFormState(visit));
+    };
+
+    const handleSavePlaceVisit = async () => {
+        const placeProfileId = String(selectedFavoritePlace?.place_profile_id || '').trim();
+        if (!placeProfileId || !token) {
+            return;
+        }
+
+        setIsSavingPlaceVisit(true);
+
+        try {
+            const payload = {
+                visit: {
+                    visited_at: placeVisitForm.visited_at ? `${placeVisitForm.visited_at}T12:00:00.000Z` : null,
+                    meal_name: placeVisitForm.meal_name.trim(),
+                    meal_notes: placeVisitForm.meal_notes.trim(),
+                    rating: placeVisitForm.rating ? Number(placeVisitForm.rating) : null,
+                    body_response: placeVisitForm.body_response.trim(),
+                    liked_it: parseBooleanChoice(placeVisitForm.liked_it),
+                    would_repeat: parseBooleanChoice(placeVisitForm.would_repeat),
+                    keep_as_favorite: parseBooleanChoice(placeVisitForm.keep_as_favorite)
+                }
+            };
+
+            const res = editingPlaceVisitId
+                ? await api.put(`/place-profiles/visits/${editingPlaceVisitId}`, payload)
+                : await api.post(`/place-profiles/${placeProfileId}/visits`, payload);
+
+            setPlaceVisits(Array.isArray(res.data?.visits) ? res.data.visits : []);
+            resetPlaceVisitEditor();
+
+            if (editingPlaceVisitId == null) {
+                setFavoritePlaces((current) => Array.isArray(current)
+                    ? current.map((place) => (
+                        String(place?.place_profile_id || '') === placeProfileId
+                            ? {
+                                ...place,
+                                visit_count: Number(place?.visit_count || 0) + 1
+                            }
+                            : place
+                    ))
+                    : current);
+            }
+        } catch {
+            // Keep the form state intact so the user does not lose their entry.
+        } finally {
+            setIsSavingPlaceVisit(false);
+        }
+    };
+
+    const handleDeletePlaceVisit = async (visitId: string) => {
+        if (!visitId || !token || !selectedFavoritePlace?.place_profile_id) {
+            return;
+        }
+
+        setIsSavingPlaceVisit(true);
+
+        try {
+            const res = await api.delete(`/place-profiles/visits/${visitId}`);
+            setPlaceVisits(Array.isArray(res.data?.visits) ? res.data.visits : []);
+
+            setFavoritePlaces((current) => Array.isArray(current)
+                ? current.map((place) => (
+                    String(place?.place_profile_id || '') === String(selectedFavoritePlace.place_profile_id)
+                        ? {
+                            ...place,
+                            visit_count: Math.max(0, Number(place?.visit_count || 0) - 1)
+                        }
+                        : place
+                ))
+                : current);
+
+            if (editingPlaceVisitId === visitId) {
+                resetPlaceVisitEditor();
+            }
+        } catch {
+            // Leave current state in place on failure.
+        } finally {
+            setIsSavingPlaceVisit(false);
         }
     };
 
@@ -1647,7 +1837,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     };
 
     return (
-        <div className="w-full h-full overflow-y-auto bg-gray-50 p-4 md:p-8 no-scrollbar relative">
+        <div className="relative h-full w-full overflow-y-auto overflow-x-hidden bg-gray-50 p-4 md:p-8 no-scrollbar">
             <AboutYouListPanel
                 viewMode={viewMode}
                 onViewModeChange={toggleViewMode}
@@ -1658,7 +1848,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             />
 
             {viewMode !== 'list' && (
-            <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 auto-rows-min">
+            <div className="mx-auto grid max-w-7xl grid-cols-2 gap-4 auto-rows-min md:grid-cols-4">
 
                 {/* -- Box 1: Identity (Row 1, Col 1-2) -- */}
                 <div
@@ -1738,7 +1928,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 {/* -- Box 5: Videos I Love (Vertical) -- */}
                 <div
                     onClick={() => setActiveModal('grow')}
-                    className="col-span-1 md:col-span-1 md:row-span-2 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 relative overflow-hidden group cursor-pointer"
+                    className="col-span-1 min-w-0 md:col-span-1 md:row-span-2 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 relative overflow-hidden group cursor-pointer"
                 >
                     {featuredVideo ? (
                         <>
@@ -1751,14 +1941,14 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
                             </div>
 
-                            <div className="relative z-10 flex h-full min-h-[220px] flex-col justify-end p-6">
-                                <h3 className="mb-2 flex items-center gap-2 whitespace-nowrap text-[1.9rem] font-extrabold tracking-tight text-white">
+                            <div className="relative z-10 flex h-full min-h-[220px] flex-col justify-end px-2 pb-3 pt-4 md:px-3 md:pb-4 md:pt-5">
+                                <h3 className="mb-2 flex items-center gap-2 text-[1.65rem] font-extrabold tracking-tight text-white md:text-[1.9rem]">
                                     <span className="w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.8)] shrink-0"></span>
                                     Videos
                                 </h3>
-                                <div>
-                                    <p className="mb-1 border-l-4 border-blue-500 pl-3 text-lg font-bold leading-tight text-white">{featuredVideo.title}</p>
-                                    <p className="pl-4 text-sm text-white/80">{featuredVideo.channel}</p>
+                                <div className="min-w-0">
+                                    <p className="mb-1 border-l-4 border-blue-500 pl-2 text-lg font-bold leading-tight text-white">{featuredVideo.title}</p>
+                                    <p className="pl-3 text-sm text-white/80">{featuredVideo.channel}</p>
                                 </div>
                             </div>
                         </>
@@ -1794,7 +1984,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 {/* -- Box 6: Supplements (Row 3, Col 3-4) -- */}
                 <div
                     onClick={() => setActiveModal('supplements')}
-                    className="order-3 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden"
+                    className="order-3 min-w-0 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden"
                 >
                     <div className="relative h-36 bg-emerald-50">
                         {featuredSupplement ? (
@@ -2164,14 +2354,14 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                        className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50 p-3 pt-4 backdrop-blur-sm sm:items-center sm:p-4"
                         onClick={() => setActiveModal(null)}
                     >
                         <motion.div
                             initial={{ scale: 0.9, y: 20 }}
                             animate={{ scale: 1, y: 0 }}
                             exit={{ scale: 0.9, y: 20 }}
-                            className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl relative"
+                            className="relative w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[90vh]"
                             onClick={(e) => e.stopPropagation()}
                         >
                             {/* Header */}
@@ -2185,6 +2375,11 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                     {activeModal === 'meal_plan' && 'Meal Plan'}
                                     {activeModal === 'learn' && 'Useful Links'}
                                     {activeModal === 'edit' && 'Edit Profile'}
+                                    {activeModal === 'favorite_place_visits' && (
+                                        selectedFavoritePlace?.name || selectedFavoritePlace?.title
+                                            ? `${selectedFavoritePlace?.name || selectedFavoritePlace?.title} visit notes`
+                                            : 'Place visits'
+                                    )}
                                     {(activeModal && FAVORITE_MODAL_TITLES[activeModal]) || ''}
                                 </h2>
                                 <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-gray-100 rounded-full transition">
@@ -2193,7 +2388,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             </div>
 
                             {/* Content Scroller */}
-                            <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+                            <div className="overflow-y-auto p-6 pb-24 max-h-[calc(100dvh-5.5rem)] sm:max-h-[calc(90vh-80px)] sm:pb-6">
                                 {activeModal === 'edit' && (
                                     <div className="space-y-6">
                                         <div className="flex items-center justify-between rounded-2xl border border-green-100 bg-green-50/70 px-4 py-3">
@@ -3123,16 +3318,28 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                                 {activeModal === 'favorites_places' && (
                                     <div className="space-y-4">
-                                        {favoritedPlaces.length > 0 ? favoritedPlaces.map((place: any, index: number) => {
+                                        {isLoadingFavoritePlaces ? (
+                                            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center text-sm text-gray-500">
+                                                Loading favorite places...
+                                            </div>
+                                        ) : favoritedPlaces.length > 0 ? favoritedPlaces.map((place: any, index: number) => {
                                             const label = place?.name || place?.title || place?.label || `Saved place ${index + 1}`;
                                             const detail = place?.location || place?.address || place?.city || place?.notes || '';
                                             const mapsUrl = place?.mapsUrl || place?.map_url || place?.url;
+                                            const visitCount = Number(place?.visit_count || 0);
 
-                                            const content = (
-                                                <div className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 transition hover:border-emerald-200 hover:bg-emerald-50/50">
+                                            return (
+                                                <div key={`${label}-${index}`} className="rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 transition hover:border-emerald-200 hover:bg-emerald-50/50">
                                                     <div className="flex items-start justify-between gap-4">
                                                         <div>
-                                                            <p className="text-sm font-bold text-gray-900">{label}</p>
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <p className="text-sm font-bold text-gray-900">{label}</p>
+                                                                {visitCount > 0 ? (
+                                                                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 shadow-sm">
+                                                                        {visitCount} visit{visitCount === 1 ? '' : 's'}
+                                                                    </span>
+                                                                ) : null}
+                                                            </div>
                                                             {detail ? <p className="mt-1 text-sm text-gray-500">{detail}</p> : null}
                                                         </div>
                                                         {place?.rating ? (
@@ -3141,21 +3348,288 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                                             </span>
                                                         ) : null}
                                                     </div>
+                                                    <div className="mt-4 flex flex-wrap gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => void handleOpenPlaceVisits(place)}
+                                                            className="inline-flex items-center justify-center rounded-full border border-emerald-200 bg-white px-4 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-50"
+                                                        >
+                                                            {visitCount > 0 ? 'Open visit log' : 'Add first visit'}
+                                                        </button>
+                                                        {mapsUrl ? (
+                                                            <a
+                                                                href={mapsUrl}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-100"
+                                                            >
+                                                                Open map
+                                                            </a>
+                                                        ) : null}
+                                                    </div>
                                                 </div>
-                                            );
-
-                                            return mapsUrl ? (
-                                                <a key={`${label}-${index}`} href={mapsUrl} target="_blank" rel="noreferrer" className="block">
-                                                    {content}
-                                                </a>
-                                            ) : (
-                                                <div key={`${label}-${index}`}>{content}</div>
                                             );
                                         }) : (
                                             <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center text-sm text-gray-500">
                                                 No favorite places yet.
                                             </div>
                                         )}
+                                    </div>
+                                )}
+
+                                {activeModal === 'favorite_place_visits' && (
+                                    <div className="space-y-6">
+                                        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5">
+                                            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-gray-900">
+                                                        {selectedFavoritePlace?.name || selectedFavoritePlace?.title || 'Track how each visit went'}
+                                                    </p>
+                                                    <p className="mt-1 text-sm text-gray-600">
+                                                        Add different meals, reactions, and repeat-visit notes for {selectedFavoritePlace?.name || selectedFavoritePlace?.title || 'this place'} over time.
+                                                    </p>
+                                                </div>
+                                                {selectedFavoritePlace?.mapsUrl ? (
+                                                    <a
+                                                        href={selectedFavoritePlace.mapsUrl}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="inline-flex items-center justify-center rounded-full border border-emerald-200 bg-white px-4 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100"
+                                                    >
+                                                        Open map
+                                                    </a>
+                                                ) : null}
+                                            </div>
+                                        </div>
+
+                                        <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+                                            <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-gray-900">
+                                                            {editingPlaceVisitId ? 'Edit visit entry' : 'Log a new visit'}
+                                                        </p>
+                                                        <p className="mt-1 text-sm text-gray-500">
+                                                            Capture the meal, how it felt, and whether you would go back.
+                                                        </p>
+                                                    </div>
+                                                    {editingPlaceVisitId ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={resetPlaceVisitEditor}
+                                                            className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 transition hover:bg-gray-50"
+                                                        >
+                                                            Cancel edit
+                                                        </button>
+                                                    ) : null}
+                                                </div>
+
+                                                <div className="mt-5 space-y-4">
+                                                    <div className="grid gap-4 md:grid-cols-2">
+                                                        <div>
+                                                            <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-gray-500">Visit date</label>
+                                                            <input
+                                                                type="date"
+                                                                value={placeVisitForm.visited_at}
+                                                                onChange={(event) => setPlaceVisitForm((current) => ({ ...current, visited_at: event.target.value }))}
+                                                                className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-gray-500">Rating</label>
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                max="5"
+                                                                step="1"
+                                                                value={placeVisitForm.rating}
+                                                                onChange={(event) => setPlaceVisitForm((current) => ({ ...current, rating: event.target.value }))}
+                                                                placeholder="1 to 5"
+                                                                className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-gray-500">Meal</label>
+                                                        <input
+                                                            type="text"
+                                                            value={placeVisitForm.meal_name}
+                                                            onChange={(event) => setPlaceVisitForm((current) => ({ ...current, meal_name: event.target.value }))}
+                                                            placeholder="Example: grilled salmon bowl"
+                                                            className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-gray-500">Meal notes</label>
+                                                        <textarea
+                                                            rows={3}
+                                                            value={placeVisitForm.meal_notes}
+                                                            onChange={(event) => setPlaceVisitForm((current) => ({ ...current, meal_notes: event.target.value }))}
+                                                            placeholder="What did you order, what stood out, or what ingredients mattered?"
+                                                            className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400 resize-none"
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-gray-500">Body response</label>
+                                                        <textarea
+                                                            rows={3}
+                                                            value={placeVisitForm.body_response}
+                                                            onChange={(event) => setPlaceVisitForm((current) => ({ ...current, body_response: event.target.value }))}
+                                                            placeholder="How did it make you feel afterward?"
+                                                            className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400 resize-none"
+                                                        />
+                                                    </div>
+
+                                                    <div className="grid gap-4 md:grid-cols-3">
+                                                        <div>
+                                                            <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-gray-500">Liked it?</label>
+                                                            <select
+                                                                value={placeVisitForm.liked_it}
+                                                                onChange={(event) => setPlaceVisitForm((current) => ({ ...current, liked_it: event.target.value }))}
+                                                                className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
+                                                            >
+                                                                <option value="">Not set</option>
+                                                                <option value="yes">Yes</option>
+                                                                <option value="no">No</option>
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-gray-500">Would repeat?</label>
+                                                            <select
+                                                                value={placeVisitForm.would_repeat}
+                                                                onChange={(event) => setPlaceVisitForm((current) => ({ ...current, would_repeat: event.target.value }))}
+                                                                className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
+                                                            >
+                                                                <option value="">Not set</option>
+                                                                <option value="yes">Yes</option>
+                                                                <option value="no">No</option>
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-gray-500">Keep saved?</label>
+                                                            <select
+                                                                value={placeVisitForm.keep_as_favorite}
+                                                                onChange={(event) => setPlaceVisitForm((current) => ({ ...current, keep_as_favorite: event.target.value }))}
+                                                                className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
+                                                            >
+                                                                <option value="">Not set</option>
+                                                                <option value="yes">Yes</option>
+                                                                <option value="no">No</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-5 flex flex-wrap justify-end gap-3 border-t border-gray-100 pt-4">
+                                                    <button
+                                                        type="button"
+                                                        onClick={resetPlaceVisitEditor}
+                                                        className="rounded-full border border-gray-200 px-4 py-2 text-sm font-bold text-gray-600 transition hover:bg-gray-50"
+                                                    >
+                                                        Reset
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleSavePlaceVisit}
+                                                        disabled={isSavingPlaceVisit || !selectedFavoritePlace?.place_profile_id}
+                                                        className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                                    >
+                                                        {isSavingPlaceVisit ? 'Saving...' : (editingPlaceVisitId ? 'Update visit' : 'Save visit')}
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-gray-900">Your visit history</p>
+                                                        <p className="mt-1 text-sm text-gray-500">
+                                                            Each visit stays separate so your notes can evolve over time.
+                                                        </p>
+                                                    </div>
+                                                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-600">
+                                                        {placeVisits.length}
+                                                    </span>
+                                                </div>
+
+                                                <div className="mt-5 space-y-3">
+                                                    {isLoadingPlaceVisits ? (
+                                                        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center text-sm text-gray-500">
+                                                            Loading visits...
+                                                        </div>
+                                                    ) : placeVisits.length > 0 ? placeVisits.map((visit: any) => (
+                                                        <div key={visit.id} className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-4">
+                                                            <div className="flex items-start justify-between gap-4">
+                                                                <div>
+                                                                    <div className="flex flex-wrap items-center gap-2">
+                                                                        <p className="text-sm font-bold text-gray-900">
+                                                                            {visit?.meal_name || 'Visit entry'}
+                                                                        </p>
+                                                                        {visit?.rating ? (
+                                                                            <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 shadow-sm">
+                                                                                {Number(visit.rating).toFixed(0)}/5
+                                                                            </span>
+                                                                        ) : null}
+                                                                    </div>
+                                                                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">
+                                                                        {visit?.visited_at ? new Date(visit.visited_at).toLocaleDateString() : 'Date not set'}
+                                                                    </p>
+                                                                </div>
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleEditPlaceVisit(visit)}
+                                                                        className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-600 transition hover:bg-gray-100"
+                                                                    >
+                                                                        Edit
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => void handleDeletePlaceVisit(String(visit.id || ''))}
+                                                                        disabled={isSavingPlaceVisit}
+                                                                        className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-500 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                                                    >
+                                                                        Delete
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+
+                                                            {visit?.meal_notes ? (
+                                                                <p className="mt-3 text-sm text-gray-600">{visit.meal_notes}</p>
+                                                            ) : null}
+                                                            {visit?.body_response ? (
+                                                                <p className="mt-2 text-sm text-gray-500">{visit.body_response}</p>
+                                                            ) : null}
+
+                                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                                {typeof visit?.liked_it === 'boolean' ? (
+                                                                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-600">
+                                                                        {visit.liked_it ? 'Liked it' : 'Did not like it'}
+                                                                    </span>
+                                                                ) : null}
+                                                                {typeof visit?.would_repeat === 'boolean' ? (
+                                                                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-600">
+                                                                        {visit.would_repeat ? 'Would repeat' : 'Would not repeat'}
+                                                                    </span>
+                                                                ) : null}
+                                                                {typeof visit?.keep_as_favorite === 'boolean' ? (
+                                                                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-600">
+                                                                        {visit.keep_as_favorite ? 'Keep saved' : 'Do not keep saved'}
+                                                                    </span>
+                                                                ) : null}
+                                                            </div>
+                                                        </div>
+                                                    )) : (
+                                                        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-5 py-8 text-center text-sm text-gray-500">
+                                                            No visits logged yet for this place.
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
 

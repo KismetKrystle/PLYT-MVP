@@ -35,12 +35,12 @@ function LoginScreen() {
 
     if (!hasClerkPublishableKey) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
+            <div className="flex min-h-screen items-center justify-center bg-white px-4 py-10">
                 <div className="mx-auto flex w-full max-w-xl items-center justify-center">
                     <div className="w-full rounded-[32px] border border-amber-200 bg-white p-6 shadow-[0_30px_90px_rgba(53,62,33,0.12)] sm:p-8">
                         <h1 className="text-3xl font-semibold text-[#1f2b18]">Sign in unavailable</h1>
                         <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
-                            Clerk is not ready yet in this client session. Restart the client dev server so it picks up <code className="rounded bg-[#f5f3ed] px-1 py-0.5">NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code>, then try again.
+                            Clerk is not ready yet in this client session. Restart the client dev server so it picks up <code className="rounded bg-[#f4f4f4] px-1 py-0.5">NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code>, then try again.
                         </p>
                         <Link className="mt-6 inline-flex font-semibold text-[#234f2e] hover:underline" href="/">
                             Back to home
@@ -52,7 +52,7 @@ function LoginScreen() {
     }
 
     return (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-[#f5f3ed] px-4 py-10">
+        <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-white px-4 py-6 sm:min-h-screen sm:py-10">
             <ClerkProvider localization={clerkLocalization}>
                 <SignIn
                     appearance={clerkAppearance}
@@ -63,19 +63,13 @@ function LoginScreen() {
                     signUpUrl={signUpUrl}
                 />
             </ClerkProvider>
-            <div className="mt-6 text-center text-sm text-[#6b6d61]">
-                Need to create an account instead?{' '}
-                <Link className="font-semibold text-[#234f2e] hover:underline" href={signUpUrl}>
-                    Go to sign up
-                </Link>
-            </div>
         </div>
     );
 }
 
 export default function LoginPage() {
     return (
-        <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] text-sm text-[#6b6d61]">Loading sign in...</div>}>
+        <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-white text-sm text-[#6b6d61]">Loading sign in...</div>}>
             <LoginScreen />
         </Suspense>
     );

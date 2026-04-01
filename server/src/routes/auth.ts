@@ -24,6 +24,37 @@ function buildProfileDataPatch(fullName?: string | null) {
     return normalized ? { full_name: normalized } : {};
 }
 
+function hasNonEmptyArray(value: unknown) {
+    return Array.isArray(value) && value.some((item) => String(item || '').trim().length > 0);
+}
+
+function hasCompletedConsumerOnboarding(profileData: Record<string, any> | null | undefined) {
+    if (!profileData || typeof profileData !== 'object' || Array.isArray(profileData)) {
+        return false;
+    }
+
+    const rawLocation = profileData.location;
+    const hasLocation = Boolean(
+        (typeof rawLocation === 'string' && rawLocation.trim()) ||
+        (rawLocation && typeof rawLocation === 'object' && !Array.isArray(rawLocation) && (
+            String((rawLocation as Record<string, any>).city || '').trim() ||
+            String((rawLocation as Record<string, any>).address || '').trim()
+        )) ||
+        String(profileData.location_city || '').trim() ||
+        String(profileData.location_address || '').trim()
+    );
+
+    return hasNonEmptyArray(profileData.health_areas) ||
+        hasNonEmptyArray(profileData.health_conditions) ||
+        hasNonEmptyArray(profileData.dietary_preferences) ||
+        hasNonEmptyArray(profileData.allergies) ||
+        hasLocation;
+}
+
+function shouldRequireOnboarding(role: string | null | undefined, profileData: Record<string, any> | null | undefined) {
+    return role === 'consumer' && !hasCompletedConsumerOnboarding(profileData);
+}
+
 function signToken(user: { id: string | number; email: string; role: string }) {
     return jwt.sign(
         { id: user.id, email: user.email, role: user.role },
@@ -123,7 +154,7 @@ router.post('/google-login', async (req: Request, res: Response) => {
 
             const user = sanitizeUser(created.rows[0]);
             const token = signToken(user);
-            res.status(201).json({ token, user, isNewUser: true });
+            res.status(201).json({ token, user, isNewUser: true, requiresOnboarding: true });
             return;
         }
 
@@ -145,7 +176,11 @@ router.post('/google-login', async (req: Request, res: Response) => {
 
         const user = sanitizeUser(updated.rows[0]);
         const token = signToken(user);
-        res.json({ token, user });
+        res.json({
+            token,
+            user,
+            requiresOnboarding: shouldRequireOnboarding(user.role, mergedProfileData)
+        });
     } catch (error) {
         console.error('Google login error:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -213,6 +248,7 @@ router.post('/clerk-login', async (req: Request, res: Response) => {
 
         let appUser;
         let isNewUser = false;
+        let nextProfileData = profileDataPatch;
 
         if (existing.rows.length === 0) {
             const created = await pool.query(
@@ -230,6 +266,7 @@ router.post('/clerk-login', async (req: Request, res: Response) => {
                 ...(existingUser.profile_data || {}),
                 ...profileDataPatch
             };
+            nextProfileData = mergedProfileData;
 
             const updated = await pool.query(
                 `UPDATE users
@@ -247,7 +284,12 @@ router.post('/clerk-login', async (req: Request, res: Response) => {
 
         const user = sanitizeUser(appUser);
         const token = signToken(user);
-        res.json({ token, user, isNewUser });
+        res.json({
+            token,
+            user,
+            isNewUser,
+            requiresOnboarding: isNewUser || shouldRequireOnboarding(user.role, nextProfileData)
+        });
     } catch (error) {
         console.error('Clerk login error:', error);
         const message = error instanceof Error && error.message

@@ -4,7 +4,8 @@ import pool from '../db';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import {
     upsertPlaceProfileFromFavorite,
-    removePlaceFavorite
+    removePlaceFavorite,
+    listUserFavoritePlaces
 } from '../services/placeProfiles';
 import {
     ensureConversationRetentionColumns,
@@ -248,6 +249,17 @@ router.get('/favorites', authenticateToken, async (req: AuthRequest, res: Respon
     }
 });
 
+router.get('/favorites/places', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const favoritePlaces = await listUserFavoritePlaces(userId as string | number);
+        res.json({ favorite_places: favoritePlaces });
+    } catch (error) {
+        console.error('Get normalized favorite places error:', error);
+        res.status(500).json({ error: 'Failed to fetch favorite places' });
+    }
+});
+
 router.post('/favorites/places', authenticateToken, async (req: AuthRequest, res: Response) => {
     const client = await pool.connect();
 
@@ -292,15 +304,14 @@ router.post('/favorites/places', authenticateToken, async (req: AuthRequest, res
             ...normalizedPlace
         });
 
-        const updatedUser = await syncUserProfileData(client, userId as string | number, userRole, {
+        await syncUserProfileData(client, userId as string | number, userRole, {
             favorite_places: nextPlaces
         });
+        const favoritePlaces = await listUserFavoritePlaces(userId as string | number, client);
 
         await client.query('COMMIT');
         res.json({
-            favorite_places: Array.isArray(updatedUser.profile_data?.favorite_places)
-                ? updatedUser.profile_data.favorite_places
-                : [],
+            favorite_places: favoritePlaces,
             place_profile: placeProfile
         });
     } catch (error) {
@@ -348,15 +359,14 @@ router.delete('/favorites/places', authenticateToken, async (req: AuthRequest, r
 
         const placeProfile = await removePlaceFavorite(client, userId as string | number, targetIdentity);
 
-        const updatedUser = await syncUserProfileData(client, userId as string | number, userRole, {
+        await syncUserProfileData(client, userId as string | number, userRole, {
             favorite_places: nextPlaces
         });
+        const favoritePlaces = await listUserFavoritePlaces(userId as string | number, client);
 
         await client.query('COMMIT');
         res.json({
-            favorite_places: Array.isArray(updatedUser.profile_data?.favorite_places)
-                ? updatedUser.profile_data.favorite_places
-                : [],
+            favorite_places: favoritePlaces,
             place_profile: placeProfile
         });
     } catch (error) {

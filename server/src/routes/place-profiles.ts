@@ -3,11 +3,15 @@ import pool from '../db';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import {
     ensurePlaceProfileSchema,
+    createUserPlaceVisit,
+    deleteUserPlaceVisit,
     getPlaceProfileByExternalId,
     getPlaceProfileById,
     listManagedPlaceProfiles,
     listPlaceFeedback,
-    normalizeManagedPlaceKind
+    listUserPlaceVisits,
+    normalizeManagedPlaceKind,
+    updateUserPlaceVisit
 } from '../services/placeProfiles';
 
 const router = express.Router();
@@ -305,6 +309,137 @@ router.post('/:placeProfileId/feedback', authenticateToken, async (req: AuthRequ
     } catch (error) {
         console.error('Save place feedback error:', error);
         res.status(500).json({ error: 'Failed to save place feedback' });
+    } finally {
+        client.release();
+    }
+});
+
+router.get('/:placeProfileId/visits/mine', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const placeProfileId = String(req.params.placeProfileId || '').trim();
+        const userId = req.user?.id;
+
+        if (!placeProfileId) {
+            res.status(400).json({ error: 'placeProfileId is required' });
+            return;
+        }
+
+        const visits = await listUserPlaceVisits(placeProfileId, userId as string | number);
+        res.json({ visits });
+    } catch (error) {
+        console.error('List user place visits error:', error);
+        res.status(500).json({ error: 'Failed to fetch place visits' });
+    }
+});
+
+router.post('/:placeProfileId/visits', authenticateToken, async (req: AuthRequest, res: Response) => {
+    const client = await pool.connect();
+
+    try {
+        const placeProfileId = String(req.params.placeProfileId || '').trim();
+        const userId = req.user?.id;
+        const { visit } = req.body || {};
+
+        if (!placeProfileId) {
+            res.status(400).json({ error: 'placeProfileId is required' });
+            return;
+        }
+
+        await client.query('BEGIN');
+        const createdVisit = await createUserPlaceVisit(client, placeProfileId, userId as string | number, visit || {});
+        const visits = await listUserPlaceVisits(placeProfileId, userId as string | number, client);
+        await client.query('COMMIT');
+
+        res.status(201).json({ visit: createdVisit, visits });
+    } catch (error: any) {
+        try {
+            await client.query('ROLLBACK');
+        } catch {
+            // ignore rollback failure
+        }
+
+        if (error?.message === 'PLACE_PROFILE_NOT_FOUND') {
+            res.status(404).json({ error: 'Place profile not found' });
+            return;
+        }
+
+        console.error('Create place visit error:', error);
+        res.status(500).json({ error: 'Failed to create place visit' });
+    } finally {
+        client.release();
+    }
+});
+
+router.put('/visits/:visitId', authenticateToken, async (req: AuthRequest, res: Response) => {
+    const client = await pool.connect();
+
+    try {
+        const visitId = String(req.params.visitId || '').trim();
+        const userId = req.user?.id;
+        const { visit } = req.body || {};
+
+        if (!visitId) {
+            res.status(400).json({ error: 'visitId is required' });
+            return;
+        }
+
+        await client.query('BEGIN');
+        const updatedVisit = await updateUserPlaceVisit(client, visitId, userId as string | number, visit || {});
+        const visits = await listUserPlaceVisits(String(updatedVisit.place_profile_id), userId as string | number, client);
+        await client.query('COMMIT');
+
+        res.json({ visit: updatedVisit, visits });
+    } catch (error: any) {
+        try {
+            await client.query('ROLLBACK');
+        } catch {
+            // ignore rollback failure
+        }
+
+        if (error?.message === 'PLACE_VISIT_NOT_FOUND') {
+            res.status(404).json({ error: 'Place visit not found' });
+            return;
+        }
+
+        console.error('Update place visit error:', error);
+        res.status(500).json({ error: 'Failed to update place visit' });
+    } finally {
+        client.release();
+    }
+});
+
+router.delete('/visits/:visitId', authenticateToken, async (req: AuthRequest, res: Response) => {
+    const client = await pool.connect();
+
+    try {
+        const visitId = String(req.params.visitId || '').trim();
+        const userId = req.user?.id;
+
+        if (!visitId) {
+            res.status(400).json({ error: 'visitId is required' });
+            return;
+        }
+
+        await client.query('BEGIN');
+        const deletedVisit = await deleteUserPlaceVisit(client, visitId, userId as string | number);
+        const visits = await listUserPlaceVisits(String(deletedVisit.place_profile_id), userId as string | number, client);
+        await client.query('COMMIT');
+
+        res.json({ visit: deletedVisit, visits });
+    } catch (error: any) {
+        try {
+            await client.query('ROLLBACK');
+        } catch {
+            // ignore rollback failure
+        }
+
+        if (error?.message === 'PLACE_VISIT_NOT_FOUND') {
+            res.status(404).json({ error: 'Place visit not found' });
+            return;
+        }
+
+        console.error('Delete place visit error:', error);
+        res.status(500).json({ error: 'Failed to delete place visit' });
     } finally {
         client.release();
     }

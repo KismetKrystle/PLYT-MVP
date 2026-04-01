@@ -20,6 +20,24 @@ type ChatConversationSummary = {
     updated_at: string;
 };
 
+const APP_NAV_HISTORY_KEY = 'plyt-app-nav-history-v1';
+
+function readAppNavHistory() {
+    if (typeof window === 'undefined') return [] as string[];
+
+    try {
+        const parsed = JSON.parse(sessionStorage.getItem(APP_NAV_HISTORY_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === 'string' && entry.trim()) : [];
+    } catch {
+        return [];
+    }
+}
+
+function writeAppNavHistory(history: string[]) {
+    if (typeof window === 'undefined') return;
+    sessionStorage.setItem(APP_NAV_HISTORY_KEY, JSON.stringify(history.slice(-25)));
+}
+
 function extractFavoriteConversationIds(favoriteChats: unknown): string[] {
     if (!Array.isArray(favoriteChats)) return [];
 
@@ -46,7 +64,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [isChatHistoryOpen, setIsChatHistoryOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [currency, setCurrency] = useState<Currency>('IDR');
-    const [isSearchTipOpen, setIsSearchTipOpen] = useState(false);
     const [conversationList, setConversationList] = useState<ChatConversationSummary[]>([]);
     const [favoriteConversationIds, setFavoriteConversationIds] = useState<string[]>([]);
     const [conversationActionIds, setConversationActionIds] = useState<string[]>([]);
@@ -56,7 +73,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [feedbackEmail, setFeedbackEmail] = useState('');
     const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
     const [feedbackStatus, setFeedbackStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+    const [canGoBackInApp, setCanGoBackInApp] = useState(false);
     const { savedLessons, activeLesson, setActiveLesson } = useLessons();
+    const isStandaloneAuthPath = pathname === '/signup' || pathname === '/login' || pathname === '/auth/complete';
+    const currentAppLocation = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
 
     const requestSignIn = () => {
         setLeftSidebarOpen(false);
@@ -124,6 +144,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             setIsChatsOpen(true);
         }
     }, [searchParams]);
+
+    useEffect(() => {
+        if (isStandaloneAuthPath) {
+            setCanGoBackInApp(false);
+            return;
+        }
+
+        const existingHistory = readAppNavHistory();
+        const lastEntry = existingHistory[existingHistory.length - 1];
+
+        if (lastEntry === currentAppLocation) {
+            setCanGoBackInApp(existingHistory.length > 1);
+            return;
+        }
+
+        const existingIndex = existingHistory.lastIndexOf(currentAppLocation);
+        const nextHistory = existingIndex >= 0
+            ? existingHistory.slice(0, existingIndex + 1)
+            : [...existingHistory, currentAppLocation];
+
+        writeAppNavHistory(nextHistory);
+        setCanGoBackInApp(nextHistory.length > 1);
+    }, [currentAppLocation, isStandaloneAuthPath]);
 
     useEffect(() => {
         if (!user?.id) {
@@ -240,29 +283,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         }
     };
 
-    useEffect(() => {
-        if (!user?.id) {
-            setIsSearchTipOpen(false);
-            return;
+    const handleMobileHeaderBack = () => {
+        setIsProfileOpen(false);
+
+        const existingHistory = readAppNavHistory();
+        if (existingHistory.length > 1) {
+            const nextHistory = existingHistory.slice(0, -1);
+            const previousLocation = nextHistory[nextHistory.length - 1];
+
+            writeAppNavHistory(nextHistory);
+            setCanGoBackInApp(nextHistory.length > 1);
+            setLeftSidebarOpen(false);
+
+            if (previousLocation) {
+                router.push(previousLocation);
+                return;
+            }
         }
 
-        const storageKey = `plyt-search-tip-seen-${user.id}`;
-        const hasSeenTip = localStorage.getItem(storageKey) === 'true';
-        setIsSearchTipOpen(!hasSeenTip);
-    }, [user?.id]);
-
-    const closeSearchTip = () => {
-        if (user?.id) {
-            localStorage.setItem(`plyt-search-tip-seen-${user.id}`, 'true');
-        }
-        setIsSearchTipOpen(false);
+        setLeftSidebarOpen(true);
     };
 
     // 1. Auth & Loading Guard
     if (loading) return <div className="min-h-screen bg-white"></div>;
 
     // Hide the app chrome on standalone auth flows so the forms stay centered.
-    if (pathname === '/signup' || pathname === '/login' || pathname === '/auth/complete') {
+    if (isStandaloneAuthPath) {
         return <>{children}</>;
     }
 
@@ -323,43 +369,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     return (
         <div className="flex h-screen bg-gray-50 overflow-hidden relative">
-            {user && isSearchTipOpen ? (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 backdrop-blur-sm">
-                    <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-gray-200">
-                        <div className="flex items-start justify-between gap-4">
-                            <div>
-                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-green-600">Search Tips</p>
-                                <h2 className="mt-2 text-2xl font-bold text-gray-900">PLYT now searches for you automatically</h2>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={closeSearchTip}
-                                className="rounded-full p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
-                                aria-label="Close search tips"
-                            >
-                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-                        <div className="mt-4 space-y-3 text-sm text-gray-600">
-                            <p>PLYT uses broad health guidance to decide what foods fit you best.</p>
-                            <p>When it helps you source produce or ready-to-eat food, it searches local-first using your current location, then your saved home location if live location is unavailable.</p>
-                            <p>If you want another area, just type it naturally in chat, like “find produce in Austin.”</p>
-                        </div>
-                        <div className="mt-6 flex justify-end">
-                            <button
-                                type="button"
-                                onClick={closeSearchTip}
-                                className="rounded-full bg-green-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700"
-                            >
-                                Got it
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            ) : null}
-
             {isFeedbackOpen ? (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 backdrop-blur-sm">
                     <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-gray-200">
@@ -728,16 +737,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <div className="flex items-center gap-4 md:hidden w-full">
                         <button
                             type="button"
-                            onClick={() => {
-                                if (window.history.length > 1) {
-                                    router.back();
-                                    return;
-                                }
-                                router.push('/?tab=customer_profile');
-                                setIsProfileOpen(false);
-                            }}
+                            onClick={handleMobileHeaderBack}
                             className="text-gray-600"
-                            aria-label="Go back"
+                            aria-label={canGoBackInApp ? 'Go back' : 'Open menu'}
                         >
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                         </button>
@@ -1050,25 +1052,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     </Link>
 
                     <Link
-                        href="/?tab=chat"
+                        href={user ? "/?tab=customer_profile" : "#"}
                         onClick={(event) => {
                             if (handleProtectedNavigation(event)) return;
+                            setLeftSidebarOpen(false);
                         }}
-                        className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'chat' ? 'text-green-600' : 'text-gray-400'}`}
+                        className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'customer_profile' && !searchParams.get('focus') ? 'text-green-600' : 'text-gray-400'}`}
                     >
-                        <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                        <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
                     </Link>
 
                     <div className="relative -top-5">
                         <Link
-                            href={user ? "/?tab=customer_profile" : "#"}
+                            href="/?tab=chat"
                             onClick={(event) => {
                                 if (handleProtectedNavigation(event)) return;
                                 setLeftSidebarOpen(false);
                             }}
                             className="w-14 h-14 bg-green-600 rounded-full flex items-center justify-center text-white shadow-lg border-4 border-gray-50"
                         >
-                            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
                         </Link>
                     </div>
 

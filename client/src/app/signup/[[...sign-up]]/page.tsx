@@ -41,11 +41,11 @@ function SignupScreen() {
 
     if (!hasClerkPublishableKey && mode !== 'kyc') {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
+            <div className="flex min-h-screen items-center justify-center bg-white px-4 py-10">
                 <div className="max-w-md rounded-[28px] border border-amber-200 bg-white p-8 text-center shadow-sm">
                     <h1 className="text-2xl font-semibold text-[#1f2b18]">Sign up unavailable</h1>
-                    <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
-                        Clerk is not ready yet in this client session. Restart the client dev server so it picks up <code className="rounded bg-[#f5f3ed] px-1 py-0.5">NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code>, then try again.
+                        <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
+                            Clerk is not ready yet in this client session. Restart the client dev server so it picks up <code className="rounded bg-[#f4f4f4] px-1 py-0.5">NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code>, then try again.
                     </p>
                     <Link className="mt-6 inline-flex font-semibold text-[#234f2e] hover:underline" href="/">
                         Back to home
@@ -132,7 +132,7 @@ function SignupScreen() {
     }
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
+        <div className="flex min-h-[100dvh] items-center justify-center bg-white px-4 py-6 sm:min-h-screen sm:py-10">
             <ClerkProvider localization={clerkLocalization}>
                 <SignUp
                     appearance={clerkAppearance}
@@ -149,7 +149,7 @@ function SignupScreen() {
 
 export default function SignupPage() {
     return (
-        <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] text-sm text-[#6b6d61]">Loading sign up...</div>}>
+        <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-white text-sm text-[#6b6d61]">Loading sign up...</div>}>
             <SignupScreen />
         </Suspense>
     );

@@ -7,95 +7,17 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { formatJournalDate, JournalEntry, loadJournalEntries } from '../../lib/journal';
+import { formatJournalDate, JournalEntry, loadJournalEntries, saveJournalEntries } from '../../lib/journal';
+import AboutYouListPanel from './about-you/AboutYouListPanel';
+import HerbsModalSection from './about-you/HerbsModalSection';
+import SupplementsModalSection from './about-you/SupplementsModalSection';
+import { normalizeSupplements, truncateText } from './about-you/helpers';
+import { AboutListSection, MealPlanDay, ProduceEntry, RecipeEntry, SupplementEntry, VideoEntry } from './about-you/types';
 
 interface ProfileProps {
     user: any;
     isOwner?: boolean; // Optional prop to determine if the viewer is the profile owner
 }
-
-type VideoEntry = {
-    id: number;
-    title: string;
-    image: string;
-    channel: string;
-    type: string;
-    link: string;
-    tags?: string[];
-};
-
-type RecipeEntry = {
-    id: number;
-    title: string;
-    image: string;
-    likes: number;
-    description: string;
-    tags?: string[];
-};
-
-type ProduceEntry = {
-    id: number;
-    title: string;
-    image: string;
-    nutrients: string[];
-    benefits: string[];
-};
-
-type SupplementEntry = {
-    id: number;
-    title: string;
-    image: string;
-    nutrients: string[];
-    benefits: string[];
-    notes?: string;
-};
-
-function normalizeSupplementEntry(raw: any, fallbackId: number): SupplementEntry | null {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-        return null;
-    }
-
-    const title = String(raw.title || '').trim();
-    if (!title) {
-        return null;
-    }
-
-    const nutrients = Array.isArray(raw.nutrients)
-        ? raw.nutrients.map((value: unknown) => String(value).trim()).filter(Boolean)
-        : [];
-
-    const benefits = Array.isArray(raw.benefits)
-        ? raw.benefits.map((value: unknown) => String(value).trim()).filter(Boolean)
-        : [];
-
-    return {
-        id: Number(raw.id) || fallbackId,
-        title,
-        image: String(raw.image || '/assets/images/gallery/user_avatar.png').trim() || '/assets/images/gallery/user_avatar.png',
-        nutrients,
-        benefits,
-        notes: String(raw.notes || '').trim() || undefined
-    };
-}
-
-function normalizeSupplements(raw: any): SupplementEntry[] {
-    if (!Array.isArray(raw)) {
-        return [];
-    }
-
-    return raw
-        .map((item, index) => normalizeSupplementEntry(item, Date.now() + index))
-        .filter((item): item is SupplementEntry => Boolean(item));
-}
-
-type MealPlanDay = {
-    id: string;
-    dayLabel: string;
-    breakfast: string;
-    lunch: string;
-    dinner: string;
-    notes: string;
-};
 
 const PRODUCE_LIBRARY: ProduceEntry[] = [
     { id: 1, title: 'Spinach', image: '/assets/images/gallery/spinach.png', nutrients: ['Iron', 'Folate', 'Vitamin K'], benefits: ['Supports energy and oxygen transport', 'Helps maintain healthy bones', 'Easy base for salads and sautés'] },
@@ -137,6 +59,33 @@ const INITIAL_SUPPLEMENTS: SupplementEntry[] = [
     }
 ];
 
+const INITIAL_HERBS: SupplementEntry[] = [
+    {
+        id: 1,
+        title: 'Tulsi',
+        image: '/assets/images/gallery/fresh_herbs.png',
+        nutrients: ['Eugenol', 'Antioxidants'],
+        benefits: ['Often kept around for calming tea blends', 'Easy herbal staple for daily routines'],
+        notes: 'Useful as a simple tea or infusion.'
+    },
+    {
+        id: 2,
+        title: 'Peppermint',
+        image: '/assets/images/gallery/fresh_herbs.png',
+        nutrients: ['Menthol', 'Volatile oils'],
+        benefits: ['Often used for cooling herbal drinks', 'Helpful to keep on hand for simple digestive support habits'],
+        notes: 'Works well fresh or dried.'
+    },
+    {
+        id: 3,
+        title: 'Rosemary',
+        image: '/assets/images/gallery/fresh_herbs.png',
+        nutrients: ['Rosmarinic acid', 'Antioxidants'],
+        benefits: ['Good savory herb for cooking', 'Adds aroma and depth to simple meals and infusions'],
+        notes: 'Nice for roasted vegetables and broths.'
+    }
+];
+
 const INITIAL_VIDEO_GALLERY: VideoEntry[] = [
     {
         id: 1,
@@ -162,13 +111,26 @@ const USEFUL_LINKS = [
 ];
 
 const INITIAL_RECIPES: RecipeEntry[] = [
-    { id: 1, title: 'Fresh Kale Salad', image: '/assets/images/gallery/organic_kale.png', likes: 124, description: 'A crisp, herb-forward salad that works as a light lunch or an easy side.', tags: ['fresh', 'greens', 'quick'] },
-    { id: 2, title: 'Tomato Basil Pasta', image: '/assets/images/gallery/cherry_tomatoes.png', likes: 85, description: 'Comforting pasta with bright basil and tomatoes for an easy weeknight dinner.', tags: ['comfort', 'pasta', 'dinner'] },
-];
-
-const DIET_JOURNEYS = [
-    { id: 1, title: 'My 30 Day Plant-Based Challenge', date: 'Oct 2024' },
-    { id: 2, title: 'Reducing Sugar with Homegrown Stevia', date: 'Sep 2024' },
+    {
+        id: 1,
+        title: 'Fresh Kale Salad',
+        image: '/assets/images/gallery/organic_kale.png',
+        likes: 124,
+        description: 'A crisp, herb-forward salad that works as a light lunch or an easy side.',
+        ingredients: ['2 cups chopped kale', '1/2 avocado, sliced', '1/4 cup pumpkin seeds', '1/2 cup cherry tomatoes', 'Lemon olive oil dressing'],
+        instructions: ['Massage the kale with a little dressing until tender.', 'Layer in tomatoes, avocado, and pumpkin seeds.', 'Toss again and finish with extra dressing before serving.'],
+        tags: ['fresh', 'greens', 'quick']
+    },
+    {
+        id: 2,
+        title: 'Tomato Basil Pasta',
+        image: '/assets/images/gallery/cherry_tomatoes.png',
+        likes: 85,
+        description: 'Comforting pasta with bright basil and tomatoes for an easy weeknight dinner.',
+        ingredients: ['8 oz pasta', '2 cups cherry tomatoes', '2 cloves garlic', '1/4 cup fresh basil', 'Olive oil', 'Salt and pepper'],
+        instructions: ['Cook the pasta until al dente and save a little pasta water.', 'Saute garlic and tomatoes in olive oil until the tomatoes soften.', 'Stir in pasta, basil, and a splash of pasta water, then season to taste.'],
+        tags: ['comfort', 'pasta', 'dinner']
+    },
 ];
 
 const PINNED_ARTICLES = [
@@ -217,6 +179,14 @@ const JOURNAL_WALL_MOCK_ENTRIES: JournalEntry[] = [
         createdAt: '2026-03-24T18:30:00.000Z'
     }
 ];
+
+function getHiddenJournalExamplesKey(userId: string | number | undefined) {
+    return `plyt-journal-hidden-examples:${userId ?? 'guest'}`;
+}
+
+function getJournalExampleOverridesKey(userId: string | number | undefined) {
+    return `plyt-journal-example-overrides:${userId ?? 'guest'}`;
+}
 
 const FAVORITE_MODAL_TITLES: Record<string, string> = {
     favorites_places: 'Favorite Places',
@@ -296,6 +266,8 @@ function buildInitialMealPlan(profile: any): MealPlanDay[] {
 export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) {
     const { token, loading: authLoading } = useAuth();
     const [activeModal, setActiveModal] = useState<string | null>(null);
+    const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards');
+    const [selectedListSection, setSelectedListSection] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [usefulLinks, setUsefulLinks] = useState(USEFUL_LINKS);
     const [videos, setVideos] = useState(INITIAL_VIDEO_GALLERY);
@@ -312,13 +284,21 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     const [newRecipeTitle, setNewRecipeTitle] = useState('');
     const [newRecipeImage, setNewRecipeImage] = useState('');
     const [newRecipeDescription, setNewRecipeDescription] = useState('');
+    const [newRecipeIngredients, setNewRecipeIngredients] = useState('');
+    const [newRecipeInstructions, setNewRecipeInstructions] = useState('');
     const [newRecipeTags, setNewRecipeTags] = useState('');
+    const [selectedRecipe, setSelectedRecipe] = useState<RecipeEntry | null>(INITIAL_RECIPES[0] ?? null);
     const [isEditingUsefulLinks, setIsEditingUsefulLinks] = useState(false);
     const [newUsefulLink, setNewUsefulLink] = useState('');
     const [profileData, setProfileData] = useState<any>(() => extractProfileData(user));
     const [savedChats, setSavedChats] = useState<Array<{ id: string; title: string; updated_at?: string }>>([]);
     const [healthyDays, setHealthyDays] = useState(1);
     const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+    const [hiddenJournalExampleIds, setHiddenJournalExampleIds] = useState<number[]>([]);
+    const [journalExampleOverrides, setJournalExampleOverrides] = useState<Record<number, string>>({});
+    const [activeWallMenuId, setActiveWallMenuId] = useState<number | null>(null);
+    const [editingWallEntryId, setEditingWallEntryId] = useState<number | null>(null);
+    const [editingWallContent, setEditingWallContent] = useState('');
     const [selectedProduce, setSelectedProduce] = useState<ProduceEntry | null>(null);
     const [produceSearch, setProduceSearch] = useState('');
     const [visibleProduceCount, setVisibleProduceCount] = useState(6);
@@ -333,14 +313,44 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     const [newSupplementNutrients, setNewSupplementNutrients] = useState('');
     const [newSupplementBenefits, setNewSupplementBenefits] = useState('');
     const [newSupplementNotes, setNewSupplementNotes] = useState('');
+    const [herbs, setHerbs] = useState(INITIAL_HERBS);
+    const [selectedHerb, setSelectedHerb] = useState<SupplementEntry | null>(INITIAL_HERBS[0] ?? null);
+    const [herbSearch, setHerbSearch] = useState('');
+    const [visibleHerbCount, setVisibleHerbCount] = useState(6);
+    const [isEditingHerbs, setIsEditingHerbs] = useState(false);
+    const [editingHerbId, setEditingHerbId] = useState<number | null>(null);
+    const [newHerbTitle, setNewHerbTitle] = useState('');
+    const [newHerbImage, setNewHerbImage] = useState('');
+    const [newHerbNutrients, setNewHerbNutrients] = useState('');
+    const [newHerbBenefits, setNewHerbBenefits] = useState('');
+    const [newHerbNotes, setNewHerbNotes] = useState('');
     const [mealPlan, setMealPlan] = useState<MealPlanDay[]>([]);
     const [isEditingMealPlan, setIsEditingMealPlan] = useState(false);
     const featuredVideo = videos[videos.length - 1] || null;
     const featuredRecipe = recipes[0] || null;
-    const journalPreviewEntries = journalEntries.slice(0, 3);
-    const journalWallEntries = journalPreviewEntries.length > 0 ? journalPreviewEntries : JOURNAL_WALL_MOCK_ENTRIES;
     const featuredProduce = PRODUCE_LIBRARY[0];
     const featuredSupplement = supplements[0] || null;
+    const featuredHerb = herbs[0] || null;
+    const profileDisplayName = user?.full_name || user?.email?.split('@')[0] || 'Urban Gardener';
+    const profileBio = user?.bio || 'Passionate about sustainable living. Join me on my journey!';
+    const profileLocation = [user?.location_city, user?.location_address].filter(Boolean).join(', ');
+    const quoteText = 'To plant a garden is to believe in tomorrow.';
+    const favoritesEnabled = false;
+    const visibleJournalExampleEntries = useMemo(
+        () => JOURNAL_WALL_MOCK_ENTRIES
+            .filter((entry) => !hiddenJournalExampleIds.includes(entry.id))
+            .map((entry) => ({
+                ...entry,
+                content: journalExampleOverrides[entry.id] ?? entry.content
+            })),
+        [hiddenJournalExampleIds, journalExampleOverrides]
+    );
+    const journalWallEntries = useMemo(() => (
+        [...journalEntries, ...visibleJournalExampleEntries].sort(
+            (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+        )
+    ), [journalEntries, visibleJournalExampleEntries]);
+    const hasVisibleJournalExamples = visibleJournalExampleEntries.length > 0;
     const filteredProduce = useMemo(() => {
         const normalizedQuery = produceSearch.trim().toLowerCase();
 
@@ -367,6 +377,19 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         });
     }, [supplementSearch, supplements]);
     const visibleSupplements = filteredSupplements.slice(0, visibleSupplementCount);
+    const filteredHerbs = useMemo(() => {
+        const normalizedQuery = herbSearch.trim().toLowerCase();
+
+        if (!normalizedQuery) {
+            return herbs;
+        }
+
+        return herbs.filter((item) => {
+            const haystacks = [item.title, item.notes || '', ...item.nutrients, ...item.benefits];
+            return haystacks.some((value) => value.toLowerCase().includes(normalizedQuery));
+        });
+    }, [herbSearch, herbs]);
+    const visibleHerbs = filteredHerbs.slice(0, visibleHerbCount);
 
     // Edit Profile Form State
     const [editForm, setEditForm] = useState({
@@ -378,7 +401,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
     const router = useRouter();
     const searchParams = useSearchParams();
-    const favoritesSectionRef = useRef<HTMLDivElement | null>(null);
+    const favoritesSectionRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         setProfileData(extractProfileData(user));
@@ -395,6 +418,18 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             return nextSupplements[0] || null;
         });
     }, [profileData?.supplements]);
+
+    useEffect(() => {
+        const savedHerbs = normalizeSupplements(profileData?.herbs);
+        const nextHerbs = savedHerbs.length > 0 ? savedHerbs : INITIAL_HERBS;
+        setHerbs(nextHerbs);
+        setSelectedHerb((current) => {
+            if (current && nextHerbs.some((item) => item.id === current.id)) {
+                return nextHerbs.find((item) => item.id === current.id) || nextHerbs[0] || null;
+            }
+            return nextHerbs[0] || null;
+        });
+    }, [profileData?.herbs]);
 
     useEffect(() => {
         setEditForm({
@@ -444,6 +479,69 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
         setJournalEntries(loadJournalEntries(user.id));
     }, [user?.id]);
+
+    useEffect(() => {
+        if (!user?.id) {
+            setHiddenJournalExampleIds([]);
+            return;
+        }
+
+        try {
+            const raw = localStorage.getItem(getHiddenJournalExamplesKey(user.id));
+            if (!raw) {
+                setHiddenJournalExampleIds([]);
+                return;
+            }
+
+            const parsed = JSON.parse(raw);
+            setHiddenJournalExampleIds(Array.isArray(parsed) ? parsed.filter((value) => typeof value === 'number') : []);
+        } catch {
+            setHiddenJournalExampleIds([]);
+        }
+    }, [user?.id]);
+
+    useEffect(() => {
+        if (!user?.id) return;
+        localStorage.setItem(getHiddenJournalExamplesKey(user.id), JSON.stringify(hiddenJournalExampleIds));
+    }, [hiddenJournalExampleIds, user?.id]);
+
+    useEffect(() => {
+        if (!user?.id) {
+            setJournalExampleOverrides({});
+            return;
+        }
+
+        try {
+            const raw = localStorage.getItem(getJournalExampleOverridesKey(user.id));
+            if (!raw) {
+                setJournalExampleOverrides({});
+                return;
+            }
+
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                setJournalExampleOverrides({});
+                return;
+            }
+
+            const nextOverrides = Object.entries(parsed).reduce<Record<number, string>>((acc, [key, value]) => {
+                const numericKey = Number(key);
+                if (!Number.isNaN(numericKey) && typeof value === 'string') {
+                    acc[numericKey] = value;
+                }
+                return acc;
+            }, {});
+
+            setJournalExampleOverrides(nextOverrides);
+        } catch {
+            setJournalExampleOverrides({});
+        }
+    }, [user?.id]);
+
+    useEffect(() => {
+        if (!user?.id) return;
+        localStorage.setItem(getJournalExampleOverridesKey(user.id), JSON.stringify(journalExampleOverrides));
+    }, [journalExampleOverrides, user?.id]);
 
     useEffect(() => {
         const mealPlanKey = `plyt-meal-plan:${user?.id ?? 'guest'}`;
@@ -504,12 +602,53 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     }, [activeModal, filteredSupplements, selectedSupplement]);
 
     useEffect(() => {
+        setVisibleHerbCount(6);
+    }, [herbSearch]);
+
+    useEffect(() => {
+        if (activeModal !== 'herbs') return;
+
+        if (filteredHerbs.length === 0) {
+            setSelectedHerb(null);
+            return;
+        }
+
+        if (!selectedHerb || !filteredHerbs.some((item) => item.id === selectedHerb.id)) {
+            setSelectedHerb(filteredHerbs[0]);
+        }
+    }, [activeModal, filteredHerbs, selectedHerb]);
+
+    useEffect(() => {
+        if (recipes.length === 0) {
+            setSelectedRecipe(null);
+            return;
+        }
+
+        if (!selectedRecipe || !recipes.some((item) => item.id === selectedRecipe.id)) {
+            setSelectedRecipe(recipes[0]);
+            return;
+        }
+
+        const matchingRecipe = recipes.find((item) => item.id === selectedRecipe.id);
+        if (matchingRecipe && matchingRecipe !== selectedRecipe) {
+            setSelectedRecipe(matchingRecipe);
+        }
+    }, [recipes, selectedRecipe]);
+
+    useEffect(() => {
+        if (!favoritesEnabled) {
+            return;
+        }
+
         if (searchParams.get('focus') !== 'favorites') {
             return;
         }
 
         favoritesSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, [searchParams]);
+        if (viewMode === 'list') {
+            setSelectedListSection('favorites');
+        }
+    }, [favoritesEnabled, searchParams, viewMode]);
 
     useEffect(() => {
         if (authLoading || !token || !isOwner) {
@@ -631,6 +770,318 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         }
     ];
 
+    const openExternalLink = (url: string) => {
+        if (typeof window !== 'undefined') {
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
+    };
+
+    const aboutYouListSections: AboutListSection[] = [
+        {
+            id: 'overview',
+            title: 'Profile Overview',
+            description: 'Identity, health profile access, and personal details.',
+            items: [
+                {
+                    id: 'overview-profile',
+                    title: profileDisplayName,
+                    subtitle: profileBio,
+                    meta: isOwner ? 'Edit profile' : 'Profile',
+                    kind: 'Profile',
+                    onClick: isOwner ? () => setActiveModal('edit') : undefined
+                },
+                {
+                    id: 'overview-health-record',
+                    title: 'Health Record',
+                    subtitle: 'Open your health profile and consumer health details.',
+                    meta: 'Open',
+                    kind: 'Health',
+                    onClick: () => router.push('/?tab=health_profiles&profile=consumer')
+                },
+                ...(profileLocation
+                    ? [{
+                        id: 'overview-location',
+                        title: profileLocation,
+                        subtitle: 'Saved location details from About You.',
+                        meta: 'Location',
+                        kind: 'Info',
+                        onClick: isOwner ? () => setActiveModal('edit') : undefined
+                    }]
+                    : [])
+            ]
+        },
+        {
+            id: 'streak',
+            title: 'Health Streak',
+            description: 'Your consistency tracker from the About You grid.',
+            items: [
+                {
+                    id: 'streak-summary',
+                    title: `${healthyDays} day${healthyDays === 1 ? '' : 's'} in a row`,
+                    subtitle: 'Showing up for your health.',
+                    meta: 'Open',
+                    kind: 'Streak',
+                    onClick: () => router.push('/health-challenges')
+                }
+            ]
+        },
+        {
+            id: 'food',
+            title: 'Food I Eat',
+            description: 'Produce titles from your food gallery.',
+            items: [
+                {
+                    id: 'food-summary',
+                    title: 'Open produce gallery',
+                    subtitle: 'Fresh produce gallery with nutrition facts and benefits.',
+                    meta: `${PRODUCE_LIBRARY.length} items`,
+                    kind: 'Section',
+                    onClick: () => setActiveModal('food')
+                },
+                ...PRODUCE_LIBRARY.map((item) => ({
+                    id: `food-${item.id}`,
+                    title: item.title,
+                    subtitle: item.nutrients.slice(0, 3).join(' | ') || item.benefits[0],
+                    meta: 'Food',
+                    kind: 'Produce',
+                    onClick: () => {
+                        setSelectedProduce(item);
+                        setActiveModal('food');
+                    }
+                }))
+            ]
+        },
+        {
+            id: 'videos',
+            title: 'Videos I Love',
+            description: 'Saved video titles from the video card.',
+            items: [
+                {
+                    id: 'videos-summary',
+                    title: 'Manage saved videos',
+                    subtitle: 'Open the videos panel to add, edit, or review saved creators and talks.',
+                    meta: `${videos.length} saved`,
+                    kind: 'Section',
+                    onClick: () => setActiveModal('grow')
+                },
+                ...videos.map((item) => ({
+                    id: `video-${item.id}`,
+                    title: item.title,
+                    subtitle: item.channel,
+                    meta: item.type,
+                    kind: 'Video',
+                    onClick: () => openExternalLink(item.link)
+                }))
+            ],
+            emptyState: 'No saved videos yet.'
+        },
+        {
+            id: 'quote',
+            title: 'Quote & Status',
+            description: 'The quote tile from the card layout.',
+            items: [
+                {
+                    id: 'quote-summary',
+                    title: quoteText,
+                    subtitle: 'Audrey Hepburn',
+                    meta: 'Quote',
+                    kind: 'Status'
+                }
+            ]
+        },
+        {
+            id: 'supplements',
+            title: 'Supplements',
+            description: 'Your supplement shelf in a title-first view.',
+            items: [
+                {
+                    id: 'supplements-summary',
+                    title: 'Open supplement shelf',
+                    subtitle: 'Manage current supplements, notes, nutrients, and benefits.',
+                    meta: `${supplements.length} saved`,
+                    kind: 'Section',
+                    onClick: () => setActiveModal('supplements')
+                },
+                ...supplements.map((item) => ({
+                    id: `supplement-${item.id}`,
+                    title: item.title,
+                    subtitle: item.notes || item.benefits[0] || 'Open to view supplement details.',
+                    meta: item.nutrients[0] || 'Supplement',
+                    kind: 'Supplement',
+                    onClick: () => {
+                        setSelectedSupplement(item);
+                        setActiveModal('supplements');
+                    }
+                }))
+            ],
+            emptyState: 'No supplements saved yet.'
+        },
+        {
+            id: 'recipes',
+            title: 'Recipes',
+            description: 'Recipe titles from your saved recipe card.',
+            items: [
+                {
+                    id: 'recipes-summary',
+                    title: 'Open recipes',
+                    subtitle: 'Review or edit the recipes you want to keep close.',
+                    meta: `${recipes.length} saved`,
+                    kind: 'Section',
+                    onClick: () => {
+                        setSelectedRecipe(null);
+                        setActiveModal('recipes');
+                    }
+                },
+                ...recipes.map((item) => ({
+                    id: `recipe-${item.id}`,
+                    title: item.title,
+                    subtitle: truncateText(item.description, 80),
+                    meta: item.tags?.[0] || 'Recipe',
+                    kind: 'Recipe',
+                    onClick: () => {
+                        setSelectedRecipe(item);
+                        setActiveModal('recipes');
+                    }
+                }))
+            ],
+            emptyState: 'No recipes saved yet.'
+        },
+        {
+            id: 'herbs',
+            title: 'Herbs',
+            description: 'Your herb shelf in a title-first view.',
+            items: [
+                {
+                    id: 'herbs-summary',
+                    title: 'Open herb shelf',
+                    subtitle: 'Review the herbs you use, save notes, and keep simple reminders together.',
+                    meta: `${herbs.length} saved`,
+                    kind: 'Section',
+                    onClick: () => setActiveModal('herbs')
+                },
+                ...herbs.map((item) => ({
+                    id: `herb-${item.id}`,
+                    title: item.title,
+                    subtitle: item.notes || item.benefits[0] || 'Open to view herb details.',
+                    meta: item.nutrients[0] || 'Herb',
+                    kind: 'Herb',
+                    onClick: () => {
+                        setSelectedHerb(item);
+                        setActiveModal('herbs');
+                    }
+                }))
+            ],
+            emptyState: 'No herbs saved yet.'
+        },
+        {
+            id: 'meal-plan',
+            title: 'Meal Plan',
+            description: 'The meal plan card and each day in the current plan.',
+            items: [
+                {
+                    id: 'meal-plan-summary',
+                    title: 'Open full meal plan',
+                    subtitle: todayMeal
+                        ? `Today: ${todayMeal.breakfast} | ${todayMeal.lunch} | ${todayMeal.dinner}`
+                        : 'No generated meal plan is available yet.',
+                    meta: `${mealPlan.length} days`,
+                    kind: 'Section',
+                    onClick: () => setActiveModal('meal_plan')
+                },
+                ...mealPlan.map((day) => ({
+                    id: `meal-plan-${day.id}`,
+                    title: day.dayLabel,
+                    subtitle: truncateText(`Breakfast: ${day.breakfast} | Lunch: ${day.lunch} | Dinner: ${day.dinner}`, 110),
+                    meta: day.notes || 'Meals',
+                    kind: 'Day',
+                    onClick: () => setActiveModal('meal_plan')
+                }))
+            ]
+        },
+        ...(favoritesEnabled ? [{
+            id: 'favorites',
+            title: 'Favorites',
+            description: 'Favorite categories plus saved places, chats, and experts.',
+            items: [
+                ...favoriteSections.map((section) => ({
+                    id: `favorite-group-${section.key}`,
+                    title: section.label,
+                    subtitle: section.count > 0 ? `${section.count} saved` : section.emptyState,
+                    meta: `${section.count}`,
+                    kind: 'Group',
+                    onClick: () => setActiveModal(section.key)
+                })),
+                ...favoritedPlaces.map((place: any, index: number) => {
+                    const label = place?.name || place?.title || place?.label || `Saved place ${index + 1}`;
+                    const detail = place?.location || place?.address || place?.city || place?.notes || 'Saved place';
+                    const mapsUrl = place?.mapsUrl || place?.map_url || place?.url;
+
+                    return {
+                        id: `favorite-place-${index}`,
+                        title: label,
+                        subtitle: detail,
+                        meta: place?.rating ? `${Number(place.rating).toFixed(1)}` : 'Place',
+                        kind: 'Place',
+                        onClick: mapsUrl ? () => openExternalLink(mapsUrl) : () => setActiveModal('favorites_places')
+                    };
+                }),
+                ...favoritedChats.map((chat: any, index: number) => {
+                    const chatId = String(chat?.id || chat?.conversationId || index);
+                    const title = chat?.title || chat?.label || `Saved chat ${index + 1}`;
+                    const updatedAt = chat?.updated_at
+                        ? `Updated ${new Date(chat.updated_at).toLocaleDateString()}`
+                        : 'Saved chat';
+
+                    return {
+                        id: `favorite-chat-${chatId}`,
+                        title,
+                        subtitle: updatedAt,
+                        meta: 'Chat',
+                        kind: 'Chat',
+                        onClick: () => router.push(`/?tab=chat&conversationId=${chatId}`)
+                    };
+                }),
+                ...favoritedExperts.map((expert: any, index: number) => {
+                    const name = expert?.name || expert?.title || expert?.full_name || expert?.label || `Saved expert ${index + 1}`;
+                    const specialty = expert?.specialty || expert?.focus || expert?.headline || expert?.notes || 'Saved expert';
+                    const href = expert?.href || expert?.url || expert?.profileUrl;
+
+                    return {
+                        id: `favorite-expert-${index}`,
+                        title: name,
+                        subtitle: specialty,
+                        meta: 'Expert',
+                        kind: 'Expert',
+                        onClick: href ? () => openExternalLink(href) : () => setActiveModal('favorites_experts')
+                    };
+                })
+            ]
+        }] : []),
+        {
+            id: 'journal-wall',
+            title: 'Journal Wall',
+            description: 'Journal entries previewed on the About You page.',
+            items: [
+                {
+                    id: 'journal-summary',
+                    title: 'Open journal',
+                    subtitle: 'Share your journey, reflect on your progress, and track what changes over time.',
+                    meta: `${journalWallEntries.length} entries`,
+                    kind: 'Section',
+                    onClick: () => router.push('/journal')
+                },
+                ...journalWallEntries.map((entry) => ({
+                    id: `journal-${entry.id}`,
+                    title: `Entry for ${formatJournalDate(entry.entryDate)}`,
+                    subtitle: truncateText(entry.content, 110),
+                    meta: entry.tags && entry.tags.length > 0 ? entry.tags.slice(0, 2).join(', ') : 'Journal',
+                    kind: 'Entry',
+                    onClick: () => router.push('/journal')
+                }))
+            ]
+        }
+    ];
+
     const persistSupplements = async (nextSupplements: SupplementEntry[]) => {
         if (!isOwner || authLoading || !token) {
             return;
@@ -653,6 +1104,31 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             }));
         } catch (error) {
             console.error('Failed to persist supplements:', error);
+        }
+    };
+
+    const persistHerbs = async (nextHerbs: SupplementEntry[]) => {
+        if (!isOwner || authLoading || !token) {
+            return;
+        }
+
+        try {
+            const response = await api.put('/user/profile', {
+                profile_data: {
+                    herbs: nextHerbs
+                }
+            });
+
+            const refreshedProfile = extractProfileData(response.data);
+            setProfileData((current: any) => ({
+                ...current,
+                ...refreshedProfile,
+                herbs: normalizeSupplements(refreshedProfile?.herbs).length > 0
+                    ? normalizeSupplements(refreshedProfile?.herbs)
+                    : nextHerbs
+            }));
+        } catch (error) {
+            console.error('Failed to persist herbs:', error);
         }
     };
 
@@ -792,6 +1268,14 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     const handleAddRecipe = () => {
         const rawTitle = newRecipeTitle.trim();
         const rawDescription = newRecipeDescription.trim();
+        const ingredients = newRecipeIngredients
+            .split('\n')
+            .map((value) => value.trim())
+            .filter(Boolean);
+        const instructions = newRecipeInstructions
+            .split('\n')
+            .map((value) => value.trim())
+            .filter(Boolean);
         if (!rawTitle || !rawDescription) return;
 
         const tags = newRecipeTags
@@ -800,38 +1284,38 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             .filter(Boolean);
 
         const image = newRecipeImage.trim() || '/assets/images/gallery/organic_kale.png';
+        const nextRecipe: RecipeEntry = {
+            id: editingRecipeId || Date.now(),
+            title: rawTitle,
+            description: rawDescription,
+            image,
+            likes: editingRecipeId
+                ? recipes.find((item) => item.id === editingRecipeId)?.likes || 0
+                : 0,
+            ingredients,
+            instructions,
+            tags
+        };
 
         if (editingRecipeId) {
             setRecipes((current) =>
                 current.map((item) =>
-                    item.id === editingRecipeId
-                        ? {
-                            ...item,
-                            title: rawTitle,
-                            description: rawDescription,
-                            image,
-                            tags
-                        }
-                        : item
+                    item.id === editingRecipeId ? nextRecipe : item
                 )
             );
         } else {
             setRecipes((current) => [
-                {
-                    id: Date.now(),
-                    title: rawTitle,
-                    description: rawDescription,
-                    image,
-                    likes: 0,
-                    tags
-                },
+                nextRecipe,
                 ...current
             ]);
         }
 
+        setSelectedRecipe(nextRecipe);
         setNewRecipeTitle('');
         setNewRecipeImage('');
         setNewRecipeDescription('');
+        setNewRecipeIngredients('');
+        setNewRecipeInstructions('');
         setNewRecipeTags('');
         setEditingRecipeId(null);
         setIsEditingRecipes(false);
@@ -842,18 +1326,27 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         setNewRecipeTitle(item.title);
         setNewRecipeImage(item.image);
         setNewRecipeDescription(item.description);
+        setNewRecipeIngredients(item.ingredients.join('\n'));
+        setNewRecipeInstructions(item.instructions.join('\n'));
         setNewRecipeTags((item.tags || []).join(', '));
+        setSelectedRecipe(item);
         setIsEditingRecipes(true);
     };
 
     const handleRemoveRecipe = (id: number) => {
-        setRecipes((current) => current.filter((item) => item.id !== id));
+        const nextRecipes = recipes.filter((item) => item.id !== id);
+        setRecipes(nextRecipes);
         if (editingRecipeId === id) {
             setEditingRecipeId(null);
             setNewRecipeTitle('');
             setNewRecipeImage('');
             setNewRecipeDescription('');
+            setNewRecipeIngredients('');
+            setNewRecipeInstructions('');
             setNewRecipeTags('');
+        }
+        if (selectedRecipe?.id === id) {
+            setSelectedRecipe(nextRecipes[0] || null);
         }
     };
 
@@ -931,6 +1424,80 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         void persistSupplements(nextSupplements);
     };
 
+    const handleAddHerb = () => {
+        const rawTitle = newHerbTitle.trim();
+        if (!rawTitle) return;
+
+        const nutrients = newHerbNutrients
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+        const benefits = newHerbBenefits
+            .split('\n')
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+        const image = newHerbImage.trim() || '/assets/images/gallery/fresh_herbs.png';
+        const nextHerb: SupplementEntry = {
+            id: editingHerbId || Date.now(),
+            title: rawTitle,
+            image,
+            nutrients,
+            benefits,
+            notes: newHerbNotes.trim()
+        };
+
+        let nextHerbs: SupplementEntry[] = [];
+        if (editingHerbId) {
+            nextHerbs = herbs.map((item) => (item.id === editingHerbId ? nextHerb : item));
+            setHerbs(nextHerbs);
+            setSelectedHerb(nextHerb);
+        } else {
+            nextHerbs = [nextHerb, ...herbs];
+            setHerbs(nextHerbs);
+            setSelectedHerb(nextHerb);
+        }
+
+        setNewHerbTitle('');
+        setNewHerbImage('');
+        setNewHerbNutrients('');
+        setNewHerbBenefits('');
+        setNewHerbNotes('');
+        setEditingHerbId(null);
+        setIsEditingHerbs(false);
+        void persistHerbs(nextHerbs);
+    };
+
+    const handleEditHerb = (item: SupplementEntry) => {
+        setEditingHerbId(item.id);
+        setNewHerbTitle(item.title);
+        setNewHerbImage(item.image);
+        setNewHerbNutrients(item.nutrients.join(', '));
+        setNewHerbBenefits(item.benefits.join('\n'));
+        setNewHerbNotes(item.notes || '');
+        setSelectedHerb(item);
+        setIsEditingHerbs(true);
+    };
+
+    const handleRemoveHerb = (id: number) => {
+        const nextHerbs = herbs.filter((item) => item.id !== id);
+        setHerbs(nextHerbs);
+        if (editingHerbId === id) {
+            setEditingHerbId(null);
+            setNewHerbTitle('');
+            setNewHerbImage('');
+            setNewHerbNutrients('');
+            setNewHerbBenefits('');
+            setNewHerbNotes('');
+            setIsEditingHerbs(false);
+        }
+        if (selectedHerb?.id === id) {
+            setSelectedHerb(nextHerbs[0] || null);
+        }
+        void persistHerbs(nextHerbs);
+    };
+
     const resetVideoEditor = () => {
         setEditingVideoId(null);
         setNewVideoTitle('');
@@ -946,6 +1513,8 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         setNewRecipeTitle('');
         setNewRecipeImage('');
         setNewRecipeDescription('');
+        setNewRecipeIngredients('');
+        setNewRecipeInstructions('');
         setNewRecipeTags('');
         setIsEditingRecipes(false);
     };
@@ -958,6 +1527,41 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         setNewSupplementBenefits('');
         setNewSupplementNotes('');
         setIsEditingSupplements(false);
+    };
+
+    const resetHerbEditor = () => {
+        setEditingHerbId(null);
+        setNewHerbTitle('');
+        setNewHerbImage('');
+        setNewHerbNutrients('');
+        setNewHerbBenefits('');
+        setNewHerbNotes('');
+        setIsEditingHerbs(false);
+    };
+
+    const toggleViewMode = (mode: 'cards' | 'list') => {
+        setViewMode(mode);
+        setSelectedListSection(null);
+    };
+
+    const toggleSupplementEditor = () => {
+        setEditingSupplementId(null);
+        setNewSupplementTitle('');
+        setNewSupplementImage('');
+        setNewSupplementNutrients('');
+        setNewSupplementBenefits('');
+        setNewSupplementNotes('');
+        setIsEditingSupplements((value) => !value);
+    };
+
+    const toggleHerbEditor = () => {
+        setEditingHerbId(null);
+        setNewHerbTitle('');
+        setNewHerbImage('');
+        setNewHerbNutrients('');
+        setNewHerbBenefits('');
+        setNewHerbNotes('');
+        setIsEditingHerbs((value) => !value);
     };
 
     const handleClearEditForm = () => {
@@ -987,8 +1591,73 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         setIsEditingMealPlan(false);
     };
 
+    const handleDeleteWallEntry = (entry: JournalEntry) => {
+        setActiveWallMenuId(null);
+
+        if (JOURNAL_WALL_MOCK_ENTRIES.some((mockEntry) => mockEntry.id === entry.id)) {
+            setHiddenJournalExampleIds((current) => current.includes(entry.id) ? current : [...current, entry.id]);
+            if (editingWallEntryId === entry.id) {
+                setEditingWallEntryId(null);
+                setEditingWallContent('');
+            }
+            return;
+        }
+
+        const nextEntries = journalEntries.filter((journalEntry) => journalEntry.id !== entry.id);
+        setJournalEntries(nextEntries);
+        saveJournalEntries(user?.id, nextEntries);
+        if (editingWallEntryId === entry.id) {
+            setEditingWallEntryId(null);
+            setEditingWallContent('');
+        }
+    };
+
+    const handleStartWallEdit = (entry: JournalEntry) => {
+        setActiveWallMenuId(null);
+        setEditingWallEntryId(entry.id);
+        setEditingWallContent(entry.content);
+    };
+
+    const handleCancelWallEdit = () => {
+        setEditingWallEntryId(null);
+        setEditingWallContent('');
+    };
+
+    const handleSaveWallEdit = (entry: JournalEntry) => {
+        const trimmed = editingWallContent.trim();
+        if (!trimmed) return;
+
+        if (JOURNAL_WALL_MOCK_ENTRIES.some((mockEntry) => mockEntry.id === entry.id)) {
+            setJournalExampleOverrides((current) => ({
+                ...current,
+                [entry.id]: trimmed
+            }));
+        } else {
+            const nextEntries = journalEntries.map((journalEntry) => (
+                journalEntry.id === entry.id
+                    ? { ...journalEntry, content: trimmed }
+                    : journalEntry
+            ));
+            setJournalEntries(nextEntries);
+            saveJournalEntries(user?.id, nextEntries);
+        }
+
+        setEditingWallEntryId(null);
+        setEditingWallContent('');
+    };
+
     return (
         <div className="w-full h-full overflow-y-auto bg-gray-50 p-4 md:p-8 no-scrollbar relative">
+            <AboutYouListPanel
+                viewMode={viewMode}
+                onViewModeChange={toggleViewMode}
+                selectedListSection={selectedListSection}
+                onSelectListSection={setSelectedListSection}
+                aboutYouListSections={aboutYouListSections}
+                favoritesSectionRef={favoritesSectionRef}
+            />
+
+            {viewMode !== 'list' && (
             <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 auto-rows-min">
 
                 {/* -- Box 1: Identity (Row 1, Col 1-2) -- */}
@@ -1008,9 +1677,9 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                         />
                     </div>
                     <div className="relative z-10">
-                        <h1 className="text-2xl font-bold text-gray-900">{user?.full_name || user?.email?.split('@')[0] || 'Urban Gardener'}</h1>
+                        <h1 className="text-2xl font-bold text-gray-900">{profileDisplayName}</h1>
                         <p className="text-gray-500 text-sm mt-1 line-clamp-2">
-                            {user?.bio || 'Passionate about sustainable living. Join me on my journey! 🌱'}
+                            {profileBio}
                         </p>
                         <div className="flex flex-wrap gap-2 mt-3">
                             <Link href="/?tab=health_profiles&profile=consumer" className="inline-flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-full hover:bg-green-100 transition-colors">
@@ -1082,22 +1751,22 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
                             </div>
 
-                            <div className="relative z-10 h-full flex flex-col justify-between" style={{ minHeight: '160px' }}>
-                                <h3 className="font-extrabold text-white flex items-center gap-2 text-3xl tracking-tight leading-none">
+                            <div className="relative z-10 flex h-full min-h-[220px] flex-col justify-end p-6">
+                                <h3 className="mb-2 flex items-center gap-2 whitespace-nowrap text-[1.9rem] font-extrabold tracking-tight text-white">
                                     <span className="w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.8)] shrink-0"></span>
-                                    Videos <br /> I Love
+                                    Videos
                                 </h3>
                                 <div>
-                                    <p className="text-white text-xl font-bold border-l-4 border-blue-500 pl-3">{featuredVideo.title}</p>
-                                    <p className="text-white/80 text-sm pl-4">{featuredVideo.channel}</p>
+                                    <p className="mb-1 border-l-4 border-blue-500 pl-3 text-lg font-bold leading-tight text-white">{featuredVideo.title}</p>
+                                    <p className="pl-4 text-sm text-white/80">{featuredVideo.channel}</p>
                                 </div>
                             </div>
                         </>
                     ) : (
-                        <div className="relative z-10 flex h-full min-h-[160px] flex-col justify-between">
-                            <h3 className="font-extrabold text-gray-900 flex items-center gap-2 text-3xl tracking-tight leading-none">
+                        <div className="relative z-10 flex h-full min-h-[220px] flex-col justify-end p-6">
+                            <h3 className="mb-2 flex items-center gap-2 whitespace-nowrap text-[1.9rem] font-extrabold tracking-tight text-gray-900">
                                 <span className="w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.35)] shrink-0"></span>
-                                Videos <br /> I Love
+                                Videos that help
                             </h3>
                             <div>
                                 <p className="text-lg font-bold text-gray-900">No videos saved yet</p>
@@ -1117,7 +1786,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     )}
                     <div className="absolute top-0 right-0 text-9xl text-gray-100 -mr-4 -mt-8 font-serif">"</div>
                     <p className="text-gray-800 font-serif italic text-sm md:text-base relative z-10">
-                        "To plant a garden is to believe in tomorrow."
+                        "{quoteText}"
                     </p>
                     <p className="text-gray-400 text-xs mt-3 uppercase tracking-wider font-bold">- Audrey Hepburn</p>
                 </div>
@@ -1125,18 +1794,31 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 {/* -- Box 6: Supplements (Row 3, Col 3-4) -- */}
                 <div
                     onClick={() => setActiveModal('supplements')}
-                    className="col-span-2 md:col-span-2 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group"
+                    className="order-3 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden"
                 >
-                    <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-4">
-                            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
-                                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="relative h-36 bg-emerald-50">
+                        {featuredSupplement ? (
+                            <>
+                                <Image
+                                    src={featuredSupplement.image}
+                                    alt={featuredSupplement.title}
+                                    fill
+                                    className="object-cover group-hover:scale-105 transition duration-700"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent"></div>
+                            </>
+                        ) : (
+                            <div className="flex h-full items-center justify-center text-emerald-700">
+                                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m7-7H5" />
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 9h10v6H7z" />
                                 </svg>
-                            </span>
-                            <div>
-                                <h3 className="text-lg font-bold text-gray-900">Supplements</h3>
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex items-start justify-between gap-4 p-5">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-900">Supplements</h3>
                                 <p className="hidden">
                                     ❤️ {USEFUL_LINKS.length + PINNED_ARTICLES.length + 218} total likes
                                 </p>
@@ -1144,7 +1826,6 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                     {featuredSupplement ? featuredSupplement.title : 'Build your supplement list'}
                                 </p>
                             </div>
-                        </div>
                         <span className="text-4xl font-extrabold leading-none text-gray-900">
                             {supplements.length}
                         </span>
@@ -1153,8 +1834,11 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                 {/* -- Box 7: Recipes (Row 4, Col 1) -- */}
                 <div
-                    onClick={() => setActiveModal('recipes')}
-                    className="bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 overflow-hidden group relative cursor-pointer"
+                    onClick={() => {
+                        setSelectedRecipe(featuredRecipe || null);
+                        setActiveModal('recipes');
+                    }}
+                    className="order-4 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 overflow-hidden group relative cursor-pointer"
                 >
                     {featuredRecipe ? (
                         <>
@@ -1188,55 +1872,81 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     )}
                 </div>
 
-                {/* -- Box 8: Diet Journeys (Row 4, Col 2) -- */}
                 <div
-                    onClick={() => router.push('/journal')}
-                    className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer"
+                    onClick={() => setActiveModal('herbs')}
+                    className="order-2 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden"
                 >
-                    <h3 className="font-bold text-gray-900 text-sm mb-4 uppercase tracking-wide">Journeys</h3>
-                    <div className="space-y-4">
-                        {DIET_JOURNEYS.map(item => (
-                            <div key={item.id} className="border-l-2 border-purple-100 pl-3 py-1">
-                                <p className="text-[10px] text-purple-600 font-bold mb-0.5">{item.date}</p>
-                                <p className="text-xs font-semibold text-gray-800 line-clamp-2 leading-snug hover:text-purple-700 cursor-pointer">{item.title}</p>
+                    <div className="relative h-36 bg-lime-50">
+                        {featuredHerb ? (
+                            <>
+                                <Image
+                                    src={featuredHerb.image}
+                                    alt={featuredHerb.title}
+                                    fill
+                                    className="object-cover group-hover:scale-105 transition duration-700"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent"></div>
+                            </>
+                        ) : (
+                            <div className="flex h-full items-center justify-center text-lime-700">
+                                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21c4.97-4.17 8-7.39 8-11a4 4 0 00-7.2-2.4L12 8.4l-.8-.8A4 4 0 004 10c0 3.61 3.03 6.83 8 11z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.5 1.5-2.5 3.4-2.5 5.5" />
+                                </svg>
                             </div>
-                        ))}
+                        )}
                     </div>
-                    <div className="mt-4">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-3 py-1 text-[11px] font-bold text-purple-700">
-                            Open timeline
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
+                    <div className="flex items-start justify-between gap-4 p-5">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-900">Herbs</h3>
+                            <p className="mt-1 text-sm font-medium text-gray-500">
+                                {featuredHerb ? featuredHerb.title : 'Build your herb shelf'}
+                            </p>
+                        </div>
+                        <span className="text-4xl font-extrabold leading-none text-gray-900">
+                            {herbs.length}
                         </span>
                     </div>
                 </div>
 
                 <div
                     onClick={() => setActiveModal('meal_plan')}
-                    className="col-span-2 md:col-span-1 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer"
+                    className="order-1 col-span-2 md:col-span-2 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group"
                 >
-                    <div className="flex flex-col items-start gap-3">
-                        <div>
-                            <h3 className="font-bold text-gray-900 text-sm uppercase tracking-wide">Meals of the Day</h3>
+                    <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+                        <div className="max-w-xl">
+                            <p className="text-xs font-bold uppercase tracking-[0.22em] text-green-600">Meal Plan</p>
+                            <h3 className="mt-2 text-2xl font-bold text-gray-900">
+                                {todayMeal ? 'Meals of the day' : 'Build your meal plan'}
+                            </h3>
+                            <p className="mt-2 text-sm text-gray-500">
+                                {todayMeal
+                                    ? 'A wider snapshot of today’s breakfast, lunch, and dinner.'
+                                    : 'Open your meal plan to add a daily rhythm for breakfast, lunch, and dinner.'}
+                            </p>
                         </div>
-                        <button
-                            type="button"
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                setActiveModal('meal_plan');
-                            }}
-                            className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-[11px] font-bold text-green-700 transition hover:bg-green-100"
-                        >
-                            View Full Meal Plan
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                        </button>
+                        <div className="flex items-center gap-3 md:flex-col md:items-end">
+                            <button
+                                type="button"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    setActiveModal('meal_plan');
+                                }}
+                                className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-[11px] font-bold text-green-700 transition hover:bg-green-100"
+                            >
+                                View Full Meal Plan
+                                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                            </button>
+                            <span className="text-4xl font-extrabold leading-none text-gray-900">
+                                {mealPlan.length}
+                            </span>
+                        </div>
                     </div>
 
                     {todayMeal ? (
-                        <div className="mt-5 space-y-3">
+                        <div className="mt-5 grid gap-3 md:grid-cols-3">
                             <div className="rounded-2xl border border-green-100 bg-green-50/70 px-4 py-3">
                                 <p className="text-[11px] font-bold uppercase tracking-wide text-green-700">Breakfast</p>
                                 <p className="mt-1 text-sm font-semibold text-gray-900">{todayMeal.breakfast}</p>
@@ -1257,7 +1967,8 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     )}
                 </div>
 
-                <div ref={favoritesSectionRef} className="col-span-2 md:col-span-2 md:col-start-2 bg-white rounded-3xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
+                {favoritesEnabled ? (
+                <div ref={favoritesSectionRef} className="order-5 col-span-2 md:col-span-2 md:col-start-2 bg-white rounded-3xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         {favoriteSections.map((section) => (
                             <button
@@ -1277,11 +1988,12 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                         ))}
                     </div>
                 </div>
+                ) : null}
 
                 {/* -- Box 9: Wall of Posts (Feed) -- */}
                 <div
                     onClick={() => router.push('/journal')}
-                    className="col-span-2 md:col-span-4 bg-transparent rounded-3xl p-0 mt-4 flex cursor-pointer flex-col gap-6"
+                    className="order-6 col-span-2 md:col-span-4 bg-transparent rounded-3xl p-0 mt-4 flex cursor-pointer flex-col gap-6"
                 >
                     <div className="flex items-center justify-between gap-4">
                         <div>
@@ -1297,50 +2009,149 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                         </Link>
                     </div>
 
-                    {journalPreviewEntries.length === 0 ? (
+                    {hasVisibleJournalExamples ? (
                         <div className="rounded-2xl border border-dashed border-green-200 bg-green-50/60 px-4 py-3 text-sm text-green-800">
-                            Example entries are showing here for now so people can visualize the space. Once you add real journal notes, this wall will switch to your own timeline.
+                            Example posts are included below so people can visualize the wall. You can remove any example post whenever you want.
                         </div>
                     ) : null}
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {journalWallEntries.map((entry) => (
-                            <div key={entry.id} className="bg-white rounded-3xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex flex-col h-full">
-                                <div className="flex items-center gap-3 mb-3">
-                                    <div className="w-10 h-10 rounded-full bg-green-100 overflow-hidden relative border border-gray-100">
-                                        <Image src="/assets/images/gallery/user_avatar.png" alt="User" fill className="object-cover" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-bold text-gray-900">{journalPreviewEntries.length > 0 ? (user?.full_name || user?.email?.split('@')[0] || 'Your Journal') : 'Journal example'}</p>
-                                        <p className="text-[10px] text-gray-400">{formatJournalDate(entry.entryDate)}</p>
-                                    </div>
-                                </div>
+                    {journalWallEntries.length > 0 ? (
+                        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                            {journalWallEntries.map((entry) => {
+                                const isExampleEntry = JOURNAL_WALL_MOCK_ENTRIES.some((mockEntry) => mockEntry.id === entry.id);
 
-                                {entry.imageUrl ? (
-                                    <div className="aspect-video relative rounded-2xl overflow-hidden mb-3 shadow-inner">
-                                        <Image src={entry.imageUrl} alt="Journal entry" fill className="object-cover" unoptimized />
-                                    </div>
-                                ) : null}
+                                return (
+                                    <div key={entry.id} className="flex h-full flex-col rounded-3xl border border-gray-100 bg-white p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
+                                        <div className="mb-3 flex items-start justify-between gap-3">
+                                            <div className="flex items-center gap-3">
+                                                <div className="relative h-10 w-10 overflow-hidden rounded-full border border-gray-100 bg-green-100">
+                                                    <Image src="/assets/images/gallery/user_avatar.png" alt="User" fill className="object-cover" />
+                                                </div>
+                                                <div>
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <p className="text-sm font-bold text-gray-900">
+                                                            {isExampleEntry ? 'Journal example' : (user?.full_name || user?.email?.split('@')[0] || 'Your Journal')}
+                                                        </p>
+                                                        {isExampleEntry ? (
+                                                            <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-700">
+                                                                Example
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
+                                                    <p className="text-[10px] text-gray-400">{formatJournalDate(entry.entryDate)}</p>
+                                                </div>
+                                            </div>
+                                            {isOwner ? (
+                                                <div className="relative">
+                                                    <button
+                                                        type="button"
+                                                        onClick={(event) => {
+                                                            event.stopPropagation();
+                                                            setActiveWallMenuId((current) => current === entry.id ? null : entry.id);
+                                                        }}
+                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition hover:bg-gray-50"
+                                                        aria-label="Open journal post options"
+                                                    >
+                                                        <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                                                            <circle cx="12" cy="5" r="1.75" />
+                                                            <circle cx="12" cy="12" r="1.75" />
+                                                            <circle cx="12" cy="19" r="1.75" />
+                                                        </svg>
+                                                    </button>
+                                                    {activeWallMenuId === entry.id ? (
+                                                        <div
+                                                            className="absolute right-0 top-10 z-10 min-w-[140px] overflow-hidden rounded-2xl border border-gray-200 bg-white py-1 shadow-lg"
+                                                            onClick={(event) => event.stopPropagation()}
+                                                        >
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleStartWallEdit(entry)}
+                                                                className="block w-full px-4 py-2 text-left text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+                                                            >
+                                                                Edit text
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDeleteWallEntry(entry)}
+                                                                className="block w-full px-4 py-2 text-left text-sm font-medium text-red-600 transition hover:bg-red-50"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            ) : null}
+                                        </div>
 
-                                <p className="text-sm text-gray-700 leading-relaxed mb-4 flex-grow line-clamp-5">
-                                    {entry.content}
-                                </p>
+                                        {entry.imageUrl ? (
+                                            <div className="relative mb-3 aspect-video overflow-hidden rounded-2xl shadow-inner">
+                                                <Image src={entry.imageUrl} alt="Journal entry" fill className="object-cover" unoptimized />
+                                            </div>
+                                        ) : null}
 
-                                {entry.tags && entry.tags.length > 0 ? (
-                                    <div className="mt-auto flex flex-wrap gap-2 border-t border-gray-100 pt-3">
-                                        {entry.tags.map((tag) => (
-                                            <span key={`${entry.id}-${tag}`} className="rounded-full bg-green-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-green-700">
-                                                {tag}
-                                            </span>
-                                        ))}
+                                        {editingWallEntryId === entry.id ? (
+                                            <div className="mb-4 flex-grow">
+                                                <textarea
+                                                    value={editingWallContent}
+                                                    onChange={(event) => setEditingWallContent(event.target.value)}
+                                                    onClick={(event) => event.stopPropagation()}
+                                                    rows={5}
+                                                    className="w-full resize-none rounded-2xl border border-green-200 bg-green-50/30 px-4 py-3 text-sm leading-relaxed text-gray-700 outline-none transition focus:border-green-400"
+                                                />
+                                                <div className="mt-3 flex flex-wrap gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={(event) => {
+                                                            event.stopPropagation();
+                                                            handleSaveWallEdit(entry);
+                                                        }}
+                                                        className="inline-flex items-center justify-center rounded-full bg-green-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-700"
+                                                    >
+                                                        Save text
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(event) => {
+                                                            event.stopPropagation();
+                                                            handleCancelWallEdit();
+                                                        }}
+                                                        className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="mb-4 flex-grow line-clamp-5 text-sm leading-relaxed text-gray-700">
+                                                {entry.content}
+                                            </p>
+                                        )}
+
+                                        {entry.tags && entry.tags.length > 0 ? (
+                                            <div className="mt-auto flex flex-wrap gap-2 border-t border-gray-100 pt-3">
+                                                {entry.tags.map((tag) => (
+                                                    <span key={`${entry.id}-${tag}`} className="rounded-full bg-green-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-green-700">
+                                                        {tag}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        ) : null}
                                     </div>
-                                ) : null}
-                            </div>
-                        ))}
-                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="rounded-3xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center">
+                            <p className="text-lg font-semibold text-gray-900">No journal posts yet</p>
+                            <p className="mt-2 text-sm text-gray-600">
+                                Add a post in your journal whenever you want this wall to start filling up again.
+                            </p>
+                        </div>
+                    )}
                 </div>
 
             </div>
+            )}
 
             <div className="text-center mt-8 pb-4 flex flex-col items-center gap-2">
                 <p className="text-xs text-gray-300 font-medium">Bento Grid Layout v1.0</p>
@@ -1368,8 +2179,9 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                 <h2 className="text-2xl font-bold text-gray-900">
                                     {activeModal === 'food' && 'Food I Eat'}
                                     {activeModal === 'supplements' && 'Supplements'}
-                                    {activeModal === 'grow' && 'Videos I Love'}
-                                    {activeModal === 'recipes' && 'Shared Recipes'}
+                                    {activeModal === 'herbs' && 'Herbs'}
+                                    {activeModal === 'grow' && 'Videos that help'}
+                                    {activeModal === 'recipes' && (selectedRecipe ? selectedRecipe.title : 'Recipes')}
                                     {activeModal === 'meal_plan' && 'Meal Plan'}
                                     {activeModal === 'learn' && 'Useful Links'}
                                     {activeModal === 'edit' && 'Edit Profile'}
@@ -1591,244 +2403,65 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                 )}
 
                                 {activeModal === 'supplements' && (
-                                    <div className="space-y-6">
-                                        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5">
-                                            <p className="text-sm font-semibold text-gray-900">Supplement shelf</p>
-                                            <p className="mt-1 text-sm text-gray-600">Keep track of the supplements you currently use, why you keep them around, and the details you want to remember.</p>
-                                        </div>
+                                    <SupplementsModalSection
+                                        isOwner={isOwner}
+                                        selectedSupplement={selectedSupplement}
+                                        isEditingSupplements={isEditingSupplements}
+                                        editingSupplementId={editingSupplementId}
+                                        newSupplementTitle={newSupplementTitle}
+                                        setNewSupplementTitle={setNewSupplementTitle}
+                                        newSupplementImage={newSupplementImage}
+                                        setNewSupplementImage={setNewSupplementImage}
+                                        newSupplementNutrients={newSupplementNutrients}
+                                        setNewSupplementNutrients={setNewSupplementNutrients}
+                                        newSupplementBenefits={newSupplementBenefits}
+                                        setNewSupplementBenefits={setNewSupplementBenefits}
+                                        newSupplementNotes={newSupplementNotes}
+                                        setNewSupplementNotes={setNewSupplementNotes}
+                                        resetSupplementEditor={resetSupplementEditor}
+                                        toggleSupplementEditor={toggleSupplementEditor}
+                                        handleAddSupplement={handleAddSupplement}
+                                        handleRemoveSupplement={handleRemoveSupplement}
+                                        filteredSupplements={filteredSupplements}
+                                        supplementSearch={supplementSearch}
+                                        setSupplementSearch={setSupplementSearch}
+                                        visibleSupplements={visibleSupplements}
+                                        setSelectedSupplement={setSelectedSupplement}
+                                        handleEditSupplement={handleEditSupplement}
+                                        showMoreSupplements={() => setVisibleSupplementCount((count) => count + 6)}
+                                        hasMoreSupplements={filteredSupplements.length > visibleSupplements.length}
+                                    />
+                                )}
 
-                                        {selectedSupplement ? (
-                                            <div className="rounded-3xl border border-emerald-200 bg-white p-5 shadow-sm">
-                                                <div className="flex items-start gap-4">
-                                                    <div>
-                                                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-600">Supplement snapshot</p>
-                                                        <h3 className="mt-2 text-2xl font-bold text-gray-900">{selectedSupplement.title}</h3>
-                                                        <p className="mt-2 text-sm text-gray-600">{selectedSupplement.notes || 'A quick look at what this supplement offers and why it may be part of your routine.'}</p>
-                                                    </div>
-                                                </div>
-
-                                                <div className="mt-5 grid gap-5 md:grid-cols-[0.8fr_1.2fr]">
-                                                    <div className="relative aspect-square overflow-hidden rounded-2xl border border-gray-100">
-                                                        <Image src={selectedSupplement.image} alt={selectedSupplement.title} fill className="object-cover" />
-                                                    </div>
-                                                    <div className="space-y-5">
-                                                        <div>
-                                                            <p className="text-sm font-semibold text-gray-900">Key nutrients</p>
-                                                            <div className="mt-3 flex flex-wrap gap-2">
-                                                                {selectedSupplement.nutrients.map((nutrient) => (
-                                                                    <span key={`${selectedSupplement.id}-${nutrient}`} className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700">
-                                                                        {nutrient}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-sm font-semibold text-gray-900">Benefits</p>
-                                                            <ul className="mt-3 space-y-2 text-sm leading-6 text-gray-600">
-                                                                {selectedSupplement.benefits.map((benefit) => (
-                                                                    <li key={`${selectedSupplement.id}-${benefit}`} className="flex gap-2">
-                                                                        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-                                                                        <span>{benefit}</span>
-                                                                    </li>
-                                                                ))}
-                                                            </ul>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">
-                                                No supplement selected yet. Pick one from the shelf below to open its detail view.
-                                            </div>
-                                        )}
-
-                                        {isOwner ? (
-                                            <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-                                                <div className="flex items-center justify-between gap-4">
-                                                    <div>
-                                                        <p className="text-sm font-semibold text-gray-900">Manage your supplement shelf</p>
-                                                        <p className="mt-1 text-sm text-gray-500">Add something new or edit an existing item when your routine changes.</p>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        {isEditingSupplements ? (
-                                                            <button
-                                                                type="button"
-                                                                onClick={resetSupplementEditor}
-                                                                className="rounded-full border border-gray-200 px-3 py-1 text-xs font-bold text-gray-600 transition hover:bg-gray-50"
-                                                            >
-                                                                Close
-                                                            </button>
-                                                        ) : null}
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setEditingSupplementId(null);
-                                                                setNewSupplementTitle('');
-                                                                setNewSupplementImage('');
-                                                                setNewSupplementNutrients('');
-                                                                setNewSupplementBenefits('');
-                                                                setNewSupplementNotes('');
-                                                                setIsEditingSupplements((value) => !value);
-                                                            }}
-                                                            className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-600 transition hover:bg-emerald-50"
-                                                            aria-label="Add a supplement"
-                                                        >
-                                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                                            </svg>
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                {isEditingSupplements ? (
-                                                    <div className="mt-5 grid grid-cols-1 gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
-                                                        <input
-                                                            type="text"
-                                                            value={newSupplementTitle}
-                                                            onChange={(e) => setNewSupplementTitle(e.target.value)}
-                                                            placeholder="Supplement name"
-                                                            className="w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
-                                                        />
-                                                        <input
-                                                            type="text"
-                                                            value={newSupplementImage}
-                                                            onChange={(e) => setNewSupplementImage(e.target.value)}
-                                                            placeholder="Optional image URL"
-                                                            className="w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
-                                                        />
-                                                        <input
-                                                            type="text"
-                                                            value={newSupplementNutrients}
-                                                            onChange={(e) => setNewSupplementNutrients(e.target.value)}
-                                                            placeholder="Key nutrients separated by commas"
-                                                            className="w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
-                                                        />
-                                                        <textarea
-                                                            value={newSupplementBenefits}
-                                                            onChange={(e) => setNewSupplementBenefits(e.target.value)}
-                                                            rows={3}
-                                                            placeholder="Benefits, one per line"
-                                                            className="w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400 resize-none"
-                                                        />
-                                                        <textarea
-                                                            value={newSupplementNotes}
-                                                            onChange={(e) => setNewSupplementNotes(e.target.value)}
-                                                            rows={2}
-                                                            placeholder="Optional notes about timing, form, or how you use it"
-                                                            className="w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400 resize-none"
-                                                        />
-                                                        <div className="flex flex-wrap items-center gap-3">
-                                                            <button
-                                                                type="button"
-                                                                onClick={handleAddSupplement}
-                                                                className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-700"
-                                                            >
-                                                                {editingSupplementId ? 'Update Supplement' : 'Add Supplement'}
-                                                            </button>
-                                                            {editingSupplementId ? (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        handleRemoveSupplement(editingSupplementId);
-                                                                        resetSupplementEditor();
-                                                                    }}
-                                                                    className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-500 transition hover:bg-red-50"
-                                                                >
-                                                                    Delete Supplement
-                                                                </button>
-                                                            ) : null}
-                                                        </div>
-                                                    </div>
-                                                ) : null}
-                                            </div>
-                                        ) : null}
-
-                                        <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-                                            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-                                                <div>
-                                                    <p className="text-sm font-semibold text-gray-900">Browse your supplement shelf</p>
-                                                    <p className="mt-1 text-sm text-gray-500">You can keep this lightweight for now and expand it later as the platform grows.</p>
-                                                </div>
-                                                <div className="w-full md:max-w-sm">
-                                                    <label htmlFor="supplement-search" className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
-                                                        Search supplements
-                                                    </label>
-                                                    <input
-                                                        id="supplement-search"
-                                                        type="text"
-                                                        value={supplementSearch}
-                                                        onChange={(event) => setSupplementSearch(event.target.value)}
-                                                        placeholder="Search magnesium, omega, bone health..."
-                                                        className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-emerald-400"
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            <div className="mt-5 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
-                                                <span>{filteredSupplements.length} match{filteredSupplements.length === 1 ? '' : 'es'}</span>
-                                                {supplementSearch ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setSupplementSearch('')}
-                                                        className="rounded-full border border-gray-200 px-3 py-1 text-[11px] font-bold tracking-normal text-gray-600 transition hover:bg-gray-50"
-                                                    >
-                                                        Clear search
-                                                    </button>
-                                                ) : null}
-                                            </div>
-
-                                            {visibleSupplements.length > 0 ? (
-                                                <div className="mt-5 grid grid-cols-2 gap-6 md:grid-cols-4">
-                                                    {visibleSupplements.map((item) => (
-                                                        <div key={item.id} className="relative">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setSelectedSupplement(item)}
-                                                                className={`group w-full rounded-2xl border bg-white p-3 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
-                                                                    selectedSupplement?.id === item.id
-                                                                        ? 'border-emerald-300 ring-2 ring-emerald-100'
-                                                                        : 'border-gray-100 hover:border-emerald-200'
-                                                                }`}
-                                                            >
-                                                                <div className="aspect-square relative overflow-hidden rounded-xl shadow-sm">
-                                                                    <Image src={item.image} alt={item.title} fill className="object-cover transition duration-500 group-hover:scale-105" />
-                                                                </div>
-                                                                <h3 className="mt-3 font-bold text-gray-900">{item.title}</h3>
-                                                            </button>
-                                                            {isOwner ? (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleEditSupplement(item)}
-                                                                    className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-white/90 text-gray-700 transition hover:bg-white"
-                                                                    aria-label={`Edit ${item.title}`}
-                                                                >
-                                                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                                                    </svg>
-                                                                </button>
-                                                            ) : null}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <div className="mt-5 rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
-                                                    No supplements match that search yet.
-                                                </div>
-                                            )}
-
-                                            {filteredSupplements.length > visibleSupplements.length ? (
-                                                <div className="mt-5 flex justify-center">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setVisibleSupplementCount((count) => count + 6)}
-                                                        className="rounded-full border border-emerald-200 px-4 py-2 text-sm font-bold text-emerald-700 transition hover:bg-emerald-50"
-                                                    >
-                                                        Show more supplements
-                                                    </button>
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                    </div>
+                                {activeModal === 'herbs' && (
+                                    <HerbsModalSection
+                                        isOwner={isOwner}
+                                        selectedHerb={selectedHerb}
+                                        isEditingHerbs={isEditingHerbs}
+                                        editingHerbId={editingHerbId}
+                                        newHerbTitle={newHerbTitle}
+                                        setNewHerbTitle={setNewHerbTitle}
+                                        newHerbImage={newHerbImage}
+                                        setNewHerbImage={setNewHerbImage}
+                                        newHerbNutrients={newHerbNutrients}
+                                        setNewHerbNutrients={setNewHerbNutrients}
+                                        newHerbBenefits={newHerbBenefits}
+                                        setNewHerbBenefits={setNewHerbBenefits}
+                                        newHerbNotes={newHerbNotes}
+                                        setNewHerbNotes={setNewHerbNotes}
+                                        resetHerbEditor={resetHerbEditor}
+                                        toggleHerbEditor={toggleHerbEditor}
+                                        handleAddHerb={handleAddHerb}
+                                        handleRemoveHerb={handleRemoveHerb}
+                                        filteredHerbs={filteredHerbs}
+                                        herbSearch={herbSearch}
+                                        setHerbSearch={setHerbSearch}
+                                        visibleHerbs={visibleHerbs}
+                                        setSelectedHerb={setSelectedHerb}
+                                        handleEditHerb={handleEditHerb}
+                                        showMoreHerbs={() => setVisibleHerbCount((count) => count + 6)}
+                                        hasMoreHerbs={filteredHerbs.length > visibleHerbs.length}
+                                    />
                                 )}
 
                                 {activeModal === 'grow' && (
@@ -2003,7 +2636,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                             <div className="flex items-center justify-between gap-4">
                                                 <div>
                                                     <p className="text-sm font-semibold text-gray-900">Saved recipes</p>
-                                                    <p className="text-sm text-gray-500">Add recipes you want to keep, adjust, or share with your future self.</p>
+                                                    <p className="text-sm text-gray-500">Add recipes you want to keep, adjust, or follow inside your own library.</p>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     {isEditingRecipes ? (
@@ -2018,11 +2651,8 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                                     <button
                                                         type="button"
                                                         onClick={() => {
-                                                            setEditingRecipeId(null);
-                                                            setNewRecipeTitle('');
-                                                            setNewRecipeImage('');
-                                                            setNewRecipeDescription('');
-                                                            setNewRecipeTags('');
+                                                            resetRecipeEditor();
+                                                            setSelectedRecipe(null);
                                                             setIsEditingRecipes((value) => !value);
                                                         }}
                                                         className="flex h-9 w-9 items-center justify-center rounded-full border border-yellow-200 bg-white text-yellow-600 transition hover:bg-yellow-50"
@@ -2059,6 +2689,20 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                                     placeholder="Why you like it, when you make it, or what makes it useful."
                                                     className="w-full rounded-xl border border-yellow-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-yellow-400 resize-none"
                                                 />
+                                                <textarea
+                                                    value={newRecipeIngredients}
+                                                    onChange={(e) => setNewRecipeIngredients(e.target.value)}
+                                                    rows={5}
+                                                    placeholder="Ingredients, one per line"
+                                                    className="w-full rounded-xl border border-yellow-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-yellow-400 resize-none"
+                                                />
+                                                <textarea
+                                                    value={newRecipeInstructions}
+                                                    onChange={(e) => setNewRecipeInstructions(e.target.value)}
+                                                    rows={5}
+                                                    placeholder="Instructions, one step per line"
+                                                    className="w-full rounded-xl border border-yellow-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-yellow-400 resize-none"
+                                                />
                                                 <input
                                                     type="text"
                                                     value={newRecipeTags}
@@ -2090,9 +2734,85 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                             </div>
                                         ) : null}
 
+                                        {selectedRecipe && !isEditingRecipes ? (
+                                            <div className="space-y-6">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedRecipe(null)}
+                                                    className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                                                >
+                                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                                    </svg>
+                                                    Back to recipes
+                                                </button>
+
+                                                <div className="overflow-hidden rounded-3xl border border-yellow-100 bg-yellow-50/40">
+                                                    <div className="relative aspect-[16/7] w-full">
+                                                        <Image src={selectedRecipe.image} alt={selectedRecipe.title} fill className="object-cover" />
+                                                    </div>
+                                                    <div className="space-y-6 p-6">
+                                                        <div>
+                                                            <h3 className="text-3xl font-bold text-gray-900">{selectedRecipe.title}</h3>
+                                                            <p className="mt-3 text-sm leading-7 text-gray-600">{selectedRecipe.description}</p>
+                                                            {selectedRecipe.tags && selectedRecipe.tags.length > 0 ? (
+                                                                <div className="mt-4 flex flex-wrap gap-2">
+                                                                    {selectedRecipe.tags.map((tag) => (
+                                                                        <span key={`${selectedRecipe.id}-${tag}`} className="rounded-full bg-yellow-100 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-yellow-800">
+                                                                            {tag}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+
+                                                        <div className="grid gap-6 md:grid-cols-2">
+                                                            <div className="rounded-2xl border border-gray-100 bg-white p-5">
+                                                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-yellow-600">Ingredients</p>
+                                                                {selectedRecipe.ingredients.length > 0 ? (
+                                                                    <ul className="mt-4 space-y-3">
+                                                                        {selectedRecipe.ingredients.map((ingredient, index) => (
+                                                                            <li key={`${selectedRecipe.id}-ingredient-${index}`} className="flex items-start gap-3 text-sm text-gray-700">
+                                                                                <span className="mt-1 h-2 w-2 rounded-full bg-yellow-400" />
+                                                                                <span>{ingredient}</span>
+                                                                            </li>
+                                                                        ))}
+                                                                    </ul>
+                                                                ) : (
+                                                                    <p className="mt-4 text-sm text-gray-500">No ingredients added yet.</p>
+                                                                )}
+                                                            </div>
+
+                                                            <div className="rounded-2xl border border-gray-100 bg-white p-5">
+                                                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-yellow-600">Instructions</p>
+                                                                {selectedRecipe.instructions.length > 0 ? (
+                                                                    <ol className="mt-4 space-y-4">
+                                                                        {selectedRecipe.instructions.map((instruction, index) => (
+                                                                            <li key={`${selectedRecipe.id}-instruction-${index}`} className="flex items-start gap-3 text-sm text-gray-700">
+                                                                                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-[11px] font-bold text-yellow-800">
+                                                                                    {index + 1}
+                                                                                </span>
+                                                                                <span className="pt-0.5">{instruction}</span>
+                                                                            </li>
+                                                                        ))}
+                                                                    </ol>
+                                                                ) : (
+                                                                    <p className="mt-4 text-sm text-gray-500">No instructions added yet.</p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {recipes.map(item => (
-                                                <div key={item.id} className="relative flex gap-4 p-4 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-white hover:shadow-lg transition group">
+                                                <button
+                                                    key={item.id}
+                                                    type="button"
+                                                    onClick={() => setSelectedRecipe(item)}
+                                                    className="relative flex gap-4 p-4 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-white hover:shadow-lg transition group text-left"
+                                                >
                                                     <div className="w-24 h-24 rounded-xl overflow-hidden relative shrink-0">
                                                         <Image src={item.image} alt={item.title} fill className="object-cover" />
                                                     </div>
@@ -2114,7 +2834,10 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                                         <div className="absolute right-4 top-4">
                                                             <button
                                                                 type="button"
-                                                                onClick={() => handleEditRecipe(item)}
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation();
+                                                                    handleEditRecipe(item);
+                                                                }}
                                                                 className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50"
                                                                 aria-label={`Edit ${item.title}`}
                                                             >
@@ -2124,9 +2847,10 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                                             </button>
                                                         </div>
                                                     ) : null}
-                                                </div>
+                                                </button>
                                             ))}
                                         </div>
+                                        )}
 
                                         {recipes.length === 0 ? (
                                             <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">

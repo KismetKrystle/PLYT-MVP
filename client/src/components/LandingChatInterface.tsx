@@ -18,6 +18,34 @@ const PRESET_TAGS = [
 const GUEST_CHAT_LIMIT = 3;
 const GUEST_CHAT_STORAGE_KEY = 'plyt_guest_chat_count';
 
+function describeGeolocationError(error: unknown) {
+    if (typeof window !== 'undefined' && 'GeolocationPositionError' in window && error instanceof GeolocationPositionError) {
+        switch (error.code) {
+            case error.PERMISSION_DENIED:
+                return 'permission denied';
+            case error.POSITION_UNAVAILABLE:
+                return 'position unavailable';
+            case error.TIMEOUT:
+                return 'request timed out';
+            default:
+                return error.message || 'unknown geolocation error';
+        }
+    }
+
+    if (error && typeof error === 'object' && 'code' in error) {
+        const maybeCode = Number((error as { code?: unknown }).code);
+        if (maybeCode === 1) return 'permission denied';
+        if (maybeCode === 2) return 'position unavailable';
+        if (maybeCode === 3) return 'request timed out';
+    }
+
+    if (error && typeof error === 'object' && 'message' in error) {
+        return String((error as { message?: unknown }).message || 'unknown geolocation error');
+    }
+
+    return 'unknown geolocation error';
+}
+
 export default function LandingChatInterface() {
     const router = useRouter();
     const [prompt, setPrompt] = useState('');
@@ -54,6 +82,10 @@ export default function LandingChatInterface() {
     const homeLocation = (user?.location_address || user?.location_city || '').trim();
 
     const resolveSearchLocation = async () => {
+        if (typeof navigator === 'undefined' || !navigator.geolocation) {
+            return homeLocation;
+        }
+
         try {
             const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(
@@ -64,7 +96,7 @@ export default function LandingChatInterface() {
             });
             return `Lat: ${pos.coords.latitude}, Lng: ${pos.coords.longitude}`;
         } catch (e) {
-            console.error('Geolocation failed:', e);
+            console.warn(`Geolocation unavailable on landing search, falling back to saved home area: ${describeGeolocationError(e)}.`);
             return homeLocation;
         }
     };

@@ -117,7 +117,7 @@ router.post('/signup', async (req: Request, res: Response) => {
 
         const user = sanitizeUser(result.rows[0]);
         const token = signToken(user);
-        res.status(201).json({ token, user });
+        res.status(201).json({ token, user, isNewUser: true, requiresOnboarding: shouldRequireOnboarding(user.role, profileDataPatch) });
     } catch (error) {
         console.error('Signup error:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -310,7 +310,7 @@ router.post('/login', async (req: Request, res: Response) => {
     try {
         const normalizedEmail = String(email).toLowerCase().trim();
         const result = await pool.query(
-            'SELECT id, name, email, role, password_hash, created_at, updated_at FROM users WHERE email = $1',
+            'SELECT id, name, email, role, password_hash, profile_data, created_at, updated_at FROM users WHERE email = $1',
             [normalizedEmail]
         );
 
@@ -326,7 +326,12 @@ router.post('/login', async (req: Request, res: Response) => {
 
             const user = sanitizeUser(created.rows[0]);
             const token = signToken(user);
-            res.status(201).json({ token, user, isNewUser: true });
+            res.status(201).json({
+                token,
+                user,
+                isNewUser: true,
+                requiresOnboarding: shouldRequireOnboarding(user.role, {})
+            });
             return;
         }
 
@@ -339,7 +344,11 @@ router.post('/login', async (req: Request, res: Response) => {
 
         const user = sanitizeUser(row);
         const token = signToken(user);
-        res.json({ token, user });
+        res.json({
+            token,
+            user,
+            requiresOnboarding: shouldRequireOnboarding(user.role, row.profile_data || {})
+        });
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ error: 'Internal server error' });

@@ -38,6 +38,124 @@ interface FavoritePlaceRecord {
     [key: string]: unknown;
 }
 
+interface GroceryListItem {
+    id: string;
+    name: string;
+    quantity?: string;
+    unit?: string;
+    display: string;
+    checked: boolean;
+}
+
+interface GroceryBundle {
+    title: string;
+    items: GroceryListItem[];
+    premiumFindings: PlaceSuggestion[];
+    googleFindings: PlaceSuggestion[];
+    premiumQueries: string[];
+    googleQueries: string[];
+    location: string;
+    areaLabel: string;
+    sourceLabel: string;
+    googleRequested: boolean;
+}
+
+type ChatMessage = {
+    role: 'user' | 'assistant';
+    content: string;
+    tags?: string[];
+    steps?: string[];
+    image?: string;
+    followUpOptions?: QuickReplyOption[] | null;
+    usedFallback?: boolean;
+    incompleteProfile?: boolean;
+    intent?: IntentName;
+    intentConfidence?: IntentConfidence;
+    mixedIntent?: IntentName | null;
+};
+
+type SuggestionPanelMode = 'suggestions' | 'grocery_options' | 'ready_to_eat' | 'advice_guidance';
+
+const SUGGESTION_PANEL_MODE_META: Record<SuggestionPanelMode, { title: string; description: string }> = {
+    suggestions: {
+        title: 'Suggestions',
+        description: 'Nearby matches related to your current search.'
+    },
+    grocery_options: {
+        title: 'Grocery Options',
+        description: 'Ingredient sourcing starts with Premium Findings from the app network. Search by Google only when you want broader external results.'
+    },
+    ready_to_eat: {
+        title: 'Ready to Eat',
+        description: 'Nearby places that look like a fit for something you can order or eat now.'
+    },
+    advice_guidance: {
+        title: 'Advice & Guidance',
+        description: 'Expert profiles and guidance resources related to the help you are looking for.'
+    }
+};
+
+function inferSuggestionPanelModeFromContext(
+    message: string,
+    intent?: IntentName | null,
+    queries: string[] = []
+): SuggestionPanelMode {
+    if (intent === 'health_advice' || intent === 'research' || intent === 'library_action') {
+        return 'advice_guidance';
+    }
+
+    const combinedText = `${String(message || '')} ${queries.join(' ')}`.toLowerCase();
+
+    if (/(ingredient|ingredients|grocery|grocer|market|produce|farm stand|farmers market|buy|shop|pantry|herb|spice)/.test(combinedText)) {
+        return 'grocery_options';
+    }
+
+    if (
+        intent === 'meal_suggestion' ||
+        intent === 'food_search' ||
+        /(restaurant|restaurants|cafe|cafes|takeout|delivery|order|pickup|eat now|eat out|meal near me|ready to eat|what.?s nearby)/.test(combinedText)
+    ) {
+        return 'ready_to_eat';
+    }
+
+    return 'suggestions';
+}
+
+function supportsHoverInteractions() {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+        return false;
+    }
+    return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+}
+
+function describeGeolocationError(error: unknown) {
+    if (typeof window !== 'undefined' && 'GeolocationPositionError' in window && error instanceof GeolocationPositionError) {
+        switch (error.code) {
+            case error.PERMISSION_DENIED:
+                return 'permission denied';
+            case error.POSITION_UNAVAILABLE:
+                return 'position unavailable';
+            case error.TIMEOUT:
+                return 'request timed out';
+            default:
+                return error.message || 'unknown geolocation error';
+        }
+    }
+
+    if (error && typeof error === 'object' && 'code' in error) {
+        const maybeCode = Number((error as { code?: unknown }).code);
+        if (maybeCode === 1) return 'permission denied';
+        if (maybeCode === 2) return 'position unavailable';
+        if (maybeCode === 3) return 'request timed out';
+    }
+
+    if (error && typeof error === 'object' && 'message' in error) {
+        return String((error as { message?: unknown }).message || 'unknown geolocation error');
+    }
+
+    return 'unknown geolocation error';
+}
+
 function getPlaceIdentity(place: {
     place_profile_id?: string | null;
     external_place_id?: string | null;
@@ -66,6 +184,13 @@ function mentionsSuggestionsPanel(text: string) {
         normalized.includes('check your panel') ||
         normalized.includes('see your suggestions') ||
         normalized.includes('places listed');
+}
+
+function isRecipeAssistantMessage(message: Pick<ChatMessage, 'role' | 'content' | 'intent'>) {
+    if (message.role !== 'assistant') return false;
+    if (message.intent === 'recipe_search') return true;
+    const normalized = String(message.content || '').toLowerCase();
+    return normalized.includes('ingredients') && (normalized.includes('instructions') || normalized.includes('directions') || normalized.includes('method'));
 }
 
 function escapeRegExp(value: string) {
@@ -272,15 +397,6 @@ import DistributorDashboard from './dashboards/DistributorDashboard';
 import ServicerDashboard from './dashboards/ServicerDashboard';
 import ProfileWorkspace from './consumer-health-profile/ProfileWorkspace';
 
-const MOCK_PRODUCE_DB: Omit<ProduceItem, 'quantity'>[] = [
-    { id: '1', name: 'Organic Red Tomatoes', price: 25000, unit: 'kg', plyt: '25', image: '/assets/images/store/cherry_tomatoes.png', description: 'Sweet, vine-ripened tomatoes grown in pesticide-free soil.', specs: ['Vitamin C Rich', 'Vine Ripened'], farm: 'Sunrise Farm', growMethod: 'Soil' },
-    { id: '2', name: 'Fresh Thai Basil', price: 15000, unit: 'bundle', plyt: '15', image: '/assets/images/store/thai_basil_seeds.png', description: 'Aromatic basil perfect for cooking.', specs: ['Rich Aroma', 'Hydroponic'], farm: 'GreenTech', growMethod: 'Hydroponics' },
-    { id: '3', name: 'Curly Kale', price: 35000, unit: 'kg', plyt: '35', image: '/assets/images/store/organic_kale.png', description: 'Crunchy, nutrient-dense kale leaves.', specs: ['Superfood', 'Organic'], farm: 'Ubud Organics', growMethod: 'Organic' },
-    { id: '4', name: 'Sweet Potatoes', price: 18000, unit: 'kg', plyt: '18', image: '/assets/images/systems/gallery_harvest.png', description: 'Purple sweet potatoes, high in antioxidants.', specs: ['High Fiber', 'Local'], farm: 'Bali Root', growMethod: 'Traditional' },
-    { id: '5', name: 'Bok Choy', price: 12000, unit: 'bundle', plyt: '12', image: '/assets/images/store/bok_choy.png', description: 'Crisp and tender, ideal for stir-fries.', specs: ['Hydroponic', 'Pesticide-Free'], farm: 'CityGreens', growMethod: 'Hydroponics' },
-    { id: '6', name: 'Red Spinach', price: 14000, unit: 'bundle', plyt: '14', image: '/assets/images/store/red_spinach.png', description: 'Nutrient-rich red spinach leaves.', specs: ['Iron Rich', 'Local'], farm: 'Sunrise Farm', growMethod: 'Soil' },
-];
-
 const MOCK_SYSTEMS_DB: Omit<ProduceItem, 'quantity'>[] = [
     { id: 's1', name: 'Hydro-Starter Kit', price: 1200000, unit: 'unit', plyt: '1200', image: '/assets/images/store/hydro_starter_kit.png', description: 'Perfect for beginners. Includes 10 net pots.', specs: ['10 Pots', 'Air Pump'], farm: 'HydroBasics', growMethod: 'NFT' },
     { id: 's2', name: 'Vertical Tower V2', price: 3500000, unit: 'unit', plyt: '3500', image: '/assets/images/store/vertical_tower_v2.png', description: 'Space-saving vertical tower for leafy greens.', specs: ['36 Pots', 'Vertical'], farm: 'VertiGrow', growMethod: 'Aeroponics' },
@@ -486,16 +602,31 @@ export default function AgriDashboard() {
     // Chat Tab Suggested Products
     const [suggestedProducts, setSuggestedProducts] = useState<ProduceItem[]>([]);
     const [suggestedPlaces, setSuggestedPlaces] = useState<PlaceSuggestion[]>([]);
+    const [googleInquiryPlaces, setGoogleInquiryPlaces] = useState<PlaceSuggestion[]>([]);
     const [favoritePlaces, setFavoritePlaces] = useState<FavoritePlaceRecord[]>([]);
     const [isLoadingFavoritePlaces, setIsLoadingFavoritePlaces] = useState(false);
     const [pendingFavoriteKeys, setPendingFavoriteKeys] = useState<string[]>([]);
     const visibleSuggestedPlaces = suggestedPlaces.slice(0, visiblePlaceCount);
+    const visibleGoogleInquiryPlaces = googleInquiryPlaces.slice(0, visiblePlaceCount);
     const hasMoreSuggestedPlaces = suggestedPlaces.length > visiblePlaceCount;
+    const hasMoreGoogleInquiryPlaces = googleInquiryPlaces.length > visiblePlaceCount;
     const collapsedSuggestionPreview = suggestedPlaces.length > 0
         ? `${suggestedPlaces[0].name}${suggestedPlaces.length > 1 ? ` +${suggestedPlaces.length - 1} more` : ''}`
         : suggestedProducts.length > 0
             ? `${suggestedProducts[0].name}${suggestedProducts.length > 1 ? ` +${suggestedProducts.length - 1} more` : ''}`
             : '';
+    const showSearchDebug =
+        process.env.NODE_ENV !== 'production' ||
+        process.env.NEXT_PUBLIC_SHOW_SEARCH_DEBUG === 'true';
+    const [groceryBundlesByKey, setGroceryBundlesByKey] = useState<Record<string, GroceryBundle>>({});
+    const [activeGroceryBundleKey, setActiveGroceryBundleKey] = useState<string | null>(null);
+    const [pendingGroceryBundleKey, setPendingGroceryBundleKey] = useState<string | null>(null);
+    const [isGroceryListModalOpen, setIsGroceryListModalOpen] = useState(false);
+    const [isSuggestionModeInfoOpen, setIsSuggestionModeInfoOpen] = useState(false);
+    const [suggestionPanelMode, setSuggestionPanelMode] = useState<SuggestionPanelMode>('suggestions');
+    const [suggestionPanelSubject, setSuggestionPanelSubject] = useState('');
+    const [canHoverInfoPopover, setCanHoverInfoPopover] = useState(false);
+    const [isStandaloneGoogleRequested, setIsStandaloneGoogleRequested] = useState(false);
     const [lastPlaceSearch, setLastPlaceSearch] = useState<LastPlaceSearch | null>(null);
     const [isRefreshingSuggestions, setIsRefreshingSuggestions] = useState(false);
     const [isSuggestionSettingsOpen, setIsSuggestionSettingsOpen] = useState(false);
@@ -512,6 +643,24 @@ export default function AgriDashboard() {
         const timeoutId = window.setTimeout(() => setFocusedSuggestionIdentity(null), 2200);
         return () => window.clearTimeout(timeoutId);
     }, [focusedSuggestionIdentity]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+            return;
+        }
+
+        const mediaQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
+        const applyHoverSupport = () => setCanHoverInfoPopover(mediaQuery.matches);
+        applyHoverSupport();
+
+        if (typeof mediaQuery.addEventListener === 'function') {
+            mediaQuery.addEventListener('change', applyHoverSupport);
+            return () => mediaQuery.removeEventListener('change', applyHoverSupport);
+        }
+
+        mediaQuery.addListener(applyHoverSupport);
+        return () => mediaQuery.removeListener(applyHoverSupport);
+    }, []);
 
     useEffect(() => {
         if (lastPlaceSearch) return;
@@ -548,6 +697,13 @@ export default function AgriDashboard() {
 
         return nextMap;
     }, [favoritePlaces]);
+    const activeGroceryBundle = activeGroceryBundleKey ? groceryBundlesByKey[activeGroceryBundleKey] || null : null;
+    const activeSuggestionPanelMode: SuggestionPanelMode = activeGroceryBundle ? 'grocery_options' : suggestionPanelMode;
+    const activeSuggestionPanelMeta = SUGGESTION_PANEL_MODE_META[activeSuggestionPanelMode];
+
+    useEffect(() => {
+        setIsSuggestionModeInfoOpen(false);
+    }, [activeSuggestionPanelMode, isPanelOpen]);
 
     useEffect(() => {
         setVisiblePlaceCount(INITIAL_VISIBLE_PLACE_COUNT);
@@ -645,6 +801,215 @@ export default function AgriDashboard() {
         setSuggestedPlaces(normalizeSuggestedPlaces(incoming));
     };
 
+    const buildGroceryBundleKey = (messageIndex: number) => `${currentConversationId || 'draft'}:${messageIndex}`;
+
+    const updateGroceryBundle = (
+        key: string,
+        updater: (bundle: GroceryBundle | null) => GroceryBundle | null
+    ) => {
+        setGroceryBundlesByKey((current) => {
+            const nextBundle = updater(current[key] || null);
+            if (!nextBundle) {
+                const nextState = { ...current };
+                delete nextState[key];
+                return nextState;
+            }
+            return {
+                ...current,
+                [key]: nextBundle
+            };
+        });
+    };
+
+    const fetchPremiumFindingsForBundle = async (
+        key: string,
+        items: GroceryListItem[],
+        resolvedSearch: { location: string; areaLabel: string; source: 'manual' | 'device' | 'home' | 'unknown' },
+        bundleTitle = 'Recipe'
+    ) => {
+        const response = await api.post('/chat/source-ingredients/premium', {
+            items
+        });
+        const places = Array.isArray(response.data?.places) ? response.data.places as PlaceSuggestion[] : [];
+        const queries = Array.isArray(response.data?.queries) ? response.data.queries.map((query: unknown) => String(query || '')).filter(Boolean) : [];
+
+        updateGroceryBundle(key, (bundle) => {
+            if (!bundle) return bundle;
+            return {
+                ...bundle,
+                premiumFindings: normalizeSuggestedPlaces(places),
+                premiumQueries: queries,
+                location: resolvedSearch.location,
+                areaLabel: resolvedSearch.areaLabel,
+                sourceLabel: resolvedSearch.source
+            };
+        });
+        setSearchAreaLabel(resolvedSearch.areaLabel);
+        setLocationSourceLabel(resolvedSearch.source);
+        setLastPlaceSearch({
+            message: `${bundleTitle} ingredients`,
+            queries,
+            location: resolvedSearch.location
+        });
+        setShowPreview(true);
+    };
+
+    const handleSearchGoogleForBundle = async (key: string, radiusOverride?: number) => {
+        const bundle = groceryBundlesByKey[key];
+        if (!bundle) return;
+
+        updateGroceryBundle(key, (current) => current ? { ...current, googleRequested: true } : current);
+        setActiveGroceryBundleKey(key);
+        setIsPanelOpen(true);
+
+        try {
+            const resolvedSearch = bundle.location
+                ? {
+                    location: bundle.location,
+                    areaLabel: bundle.areaLabel || searchAreaLabel,
+                    source: (bundle.sourceLabel as 'manual' | 'device' | 'home' | 'unknown') || 'device'
+                }
+                : await resolveSearchLocation();
+
+            const response = await api.post('/chat/source-ingredients/google', {
+                items: bundle.items,
+                location: resolvedSearch.location,
+                radiusKm: radiusOverride ?? searchRadiusKm
+            });
+            const places = Array.isArray(response.data?.places) ? response.data.places as PlaceSuggestion[] : [];
+            const queries = Array.isArray(response.data?.queries) ? response.data.queries.map((query: unknown) => String(query || '')).filter(Boolean) : [];
+
+            updateGroceryBundle(key, (current) => {
+                if (!current) return current;
+                const nextBundle: GroceryBundle = {
+                    ...current,
+                    googleFindings: normalizeSuggestedPlaces(places),
+                    googleQueries: queries,
+                    googleRequested: true,
+                    location: resolvedSearch.location,
+                    areaLabel: resolvedSearch.areaLabel,
+                    sourceLabel: resolvedSearch.source
+                };
+                return nextBundle;
+            });
+
+            setSearchAreaLabel(resolvedSearch.areaLabel);
+            setLocationSourceLabel(resolvedSearch.source);
+            setLastPlaceSearch({
+                message: `${bundle.title} ingredients`,
+                queries,
+                location: resolvedSearch.location
+            });
+            setShowPreview(true);
+        } catch (error) {
+            console.warn('Unable to search Google ingredient sources.', error);
+        }
+    };
+
+    const handleSearchGoogleForCurrentInquiry = async () => {
+        setIsStandaloneGoogleRequested(true);
+        setGoogleInquiryPlaces([]);
+
+        if (!lastPlaceSearch) {
+            return;
+        }
+
+        setIsRefreshingSuggestions(true);
+        try {
+            const places = await api.post('/chat/places', {
+                queries: lastPlaceSearch.queries,
+                location: lastPlaceSearch.location,
+                radiusKm: searchRadiusKm,
+                limit: Math.max(16, suggestedPlaces.length || 16)
+            });
+
+            const freshPlaces = Array.isArray(places.data?.places) ? places.data.places as PlaceSuggestion[] : [];
+            setGoogleInquiryPlaces(normalizeSuggestedPlaces(freshPlaces));
+            setShowPreview(true);
+            setIsPanelOpen(true);
+        } catch (error) {
+            console.warn('Unable to search Google for the current inquiry.', error);
+        } finally {
+            setIsRefreshingSuggestions(false);
+        }
+    };
+
+    const handleBuildGroceryList = async (message: ChatMessage, messageIndex: number) => {
+        const bundleKey = buildGroceryBundleKey(messageIndex);
+        const existingBundle = groceryBundlesByKey[bundleKey];
+
+        if (existingBundle) {
+            setActiveGroceryBundleKey(bundleKey);
+            setIsGroceryListModalOpen(true);
+            setSuggestionPanelSubject(existingBundle.title);
+            setSearchAreaLabel(existingBundle.areaLabel || searchAreaLabel);
+            setLocationSourceLabel(existingBundle.sourceLabel || locationSourceLabel);
+            setLastPlaceSearch({
+                message: `${existingBundle.title} ingredients`,
+                queries: existingBundle.googleRequested && existingBundle.googleQueries.length > 0 ? existingBundle.googleQueries : existingBundle.premiumQueries,
+                location: existingBundle.location
+            });
+            setShowPreview(true);
+            setIsPanelOpen(true);
+            return;
+        }
+
+        setPendingGroceryBundleKey(bundleKey);
+        setActiveGroceryBundleKey(bundleKey);
+        setIsGroceryListModalOpen(true);
+        setIsPanelOpen(true);
+
+        try {
+            const groceryResponse = await api.post('/chat/extract-grocery-list', {
+                recipeText: message.content
+            });
+            const title = String(groceryResponse.data?.title || 'Recipe grocery list').trim() || 'Recipe grocery list';
+            const items = Array.isArray(groceryResponse.data?.items)
+                ? groceryResponse.data.items.map((item: any, index: number) => ({
+                    id: String(item?.id || `ingredient-${index + 1}`),
+                    name: String(item?.name || '').trim(),
+                    quantity: String(item?.quantity || '').trim(),
+                    unit: String(item?.unit || '').trim(),
+                    display: String(item?.display || [item?.quantity, item?.unit, item?.name].filter(Boolean).join(' ')).trim(),
+                    checked: false
+                })).filter((item: GroceryListItem) => item.name)
+                : [];
+
+            const resolvedSearch = await resolveSearchLocation();
+            const nextBundle: GroceryBundle = {
+                title,
+                items,
+                premiumFindings: [],
+                googleFindings: [],
+                premiumQueries: [],
+                googleQueries: [],
+                location: resolvedSearch.location,
+                areaLabel: resolvedSearch.areaLabel,
+                sourceLabel: resolvedSearch.source,
+                googleRequested: false
+            };
+
+            updateGroceryBundle(bundleKey, () => nextBundle);
+            setSuggestionPanelSubject(title);
+            setSearchAreaLabel(resolvedSearch.areaLabel);
+            setLocationSourceLabel(resolvedSearch.source);
+            setLastPlaceSearch({
+                message: `${title} ingredients`,
+                queries: [],
+                location: resolvedSearch.location
+            });
+            setShowPreview(true);
+
+            if (items.length > 0) {
+                await fetchPremiumFindingsForBundle(bundleKey, items, resolvedSearch, title);
+            }
+        } catch (error) {
+            console.warn('Unable to build grocery list from recipe.', error);
+        } finally {
+            setPendingGroceryBundleKey((current) => current === bundleKey ? null : current);
+        }
+    };
+
     const focusSuggestedPlaceCard = (matchedPlace: PlaceSuggestion) => {
         const matchedIndex = suggestedPlaces.findIndex((place) => getPlaceIdentity(place) === getPlaceIdentity(matchedPlace));
         if (matchedIndex >= 0) {
@@ -738,6 +1103,8 @@ export default function AgriDashboard() {
             : 25;
 
         setSuggestedPlaces(nextPlaces);
+        setGoogleInquiryPlaces([]);
+        setIsStandaloneGoogleRequested(false);
         setSuggestedProducts(nextProducts);
         setLastPlaceSearch(nextLastPlaceSearch);
         setSearchRadiusKm(nextRadiusKm);
@@ -771,6 +1138,23 @@ export default function AgriDashboard() {
         return places as PlaceSuggestion[];
     };
 
+    const fetchPremiumInquiryPlaces = async (queries: string[], limit = 16) => {
+        if (queries.length === 0) {
+            replaceSuggestedPlaces([]);
+            return [];
+        }
+
+        const placeRes = await api.post('/chat/source-inquiry/premium', {
+            queries,
+            limit
+        });
+        const places = Array.isArray(placeRes.data?.places) ? placeRes.data.places : [];
+        replaceSuggestedPlaces(places);
+        setSuggestedProducts([]);
+        setShowPreview(true);
+        return places as PlaceSuggestion[];
+    };
+
     // Auto-switch to Learn tab when a lesson is selected
     useEffect(() => {
         if (activeLesson) {
@@ -781,19 +1165,7 @@ export default function AgriDashboard() {
     // -- Copied Logic from MainChat (History Simulation) --
     // -- Chat History per Tab --
     const [chatHistory, setChatHistory] = useState<{
-        [key in 'chat' | 'find_produce' | 'pick_system' | 'learn']: {
-            role: 'user' | 'assistant';
-            content: string;
-            tags?: string[];
-            steps?: string[];
-            image?: string;
-            followUpOptions?: QuickReplyOption[] | null;
-            usedFallback?: boolean;
-            incompleteProfile?: boolean;
-            intent?: IntentName;
-            intentConfidence?: IntentConfidence;
-            mixedIntent?: IntentName | null;
-        }[]
+        [key in 'chat' | 'find_produce' | 'pick_system' | 'learn']: ChatMessage[]
     }>({
         chat: [{ role: 'assistant', content: DEFAULT_CHAT_GREETING }],
         find_produce: [{ role: 'assistant', content: 'Welcome back! Looking for fresh produce?' }],
@@ -836,6 +1208,15 @@ export default function AgriDashboard() {
             return { location: normalizedLocation, areaLabel: requestedLocation, source: 'manual' as const };
         }
 
+        if (typeof navigator === 'undefined' || !navigator.geolocation) {
+            const normalizedHomeLocation = normalizeSearchLocationText(homeLocation);
+            return {
+                location: normalizedHomeLocation,
+                areaLabel: homeLocation || 'Saved home area unavailable',
+                source: homeLocation ? 'home' as const : 'unknown' as const
+            };
+        }
+
         try {
             const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(
@@ -850,7 +1231,7 @@ export default function AgriDashboard() {
                 source: 'device' as const
             };
         } catch (e) {
-            console.warn('Geolocation unavailable, falling back to saved home area.');
+            console.warn(`Geolocation unavailable, falling back to saved home area: ${describeGeolocationError(e)}.`);
             const normalizedHomeLocation = normalizeSearchLocationText(homeLocation);
             return {
                 location: normalizedHomeLocation,
@@ -865,8 +1246,13 @@ export default function AgriDashboard() {
         const normalizedTags = tags || [];
         if (!messageText.trim() && normalizedTags.length === 0) return;
 
+        setActiveGroceryBundleKey(null);
+        setSuggestionPanelSubject(messageText.trim());
+        setIsStandaloneGoogleRequested(false);
+        setGoogleInquiryPlaces([]);
         const targetTab: 'chat' | 'find_produce' | 'pick_system' | 'learn' = activeTab === 'home' || activeTab === 'impact' || activeTab === 'guide' || activeTab === 'health_profiles' || activeTab === 'customer_profile' ? 'chat' : activeTab as any;
         const predictedIntent = classifyIntent(messageText, normalizedTags);
+        setSuggestionPanelMode(inferSuggestionPanelModeFromContext(messageText, predictedIntent.intent, []));
 
         if (!user && guestQuestionCount >= GUEST_CHAT_LIMIT) {
             setActiveTab('chat');
@@ -908,7 +1294,7 @@ export default function AgriDashboard() {
             });
 
             let parallelPlaceQueries: string[] = [];
-            let parallelPlaces: any[] = [];
+            let parallelPremiumPlaces: any[] = [];
             let placeFetchFailed = false;
 
             const placeSearchPromise = (async () => {
@@ -929,7 +1315,7 @@ export default function AgriDashboard() {
                         location: finalLocation
                     });
 
-                    parallelPlaces = await fetchAndMergePlaces(queries, finalLocation, searchRadiusKm, 16);
+                    parallelPremiumPlaces = await fetchPremiumInquiryPlaces(queries, 16);
                 } catch {
                     placeFetchFailed = true;
                 }
@@ -990,6 +1376,7 @@ export default function AgriDashboard() {
                     ? res.data.searchQueries
                     : extractGoogleMapsQueries(aiResponse);
             const placeQueries = searchQueries;
+            setSuggestionPanelMode(inferSuggestionPanelModeFromContext(messageText, responseIntent, placeQueries));
             if (placeQueries.length > 0) {
                 const usesCompanionPlaces = parallelPlaceQueries.length === 0;
 
@@ -1008,8 +1395,8 @@ export default function AgriDashboard() {
 
                     const places =
                         sameAsParallelQueries && !placeFetchFailed
-                            ? parallelPlaces
-                            : await fetchAndMergePlaces(placeQueries, finalLocation, searchRadiusKm, 16);
+                            ? parallelPremiumPlaces
+                            : await fetchPremiumInquiryPlaces(placeQueries, 16);
 
                     if (places.length > 0) {
                         try {
@@ -1101,8 +1488,6 @@ export default function AgriDashboard() {
             let suggestions: any[] = [];
             if (isSystem) {
                 suggestions = [...MOCK_SYSTEMS_DB].sort(() => 0.5 - Math.random()).slice(0, 2).map(p => ({ ...p, quantity: 1 }));
-            } else if (aiLower.includes('tomato') || aiLower.includes('kale') || aiLower.includes('produce')) {
-                suggestions = [...MOCK_PRODUCE_DB].sort(() => 0.5 - Math.random()).slice(0, 2).map(p => ({ ...p, quantity: 1 }));
             }
 
             if (suggestions.length > 0) {
@@ -1460,18 +1845,49 @@ export default function AgriDashboard() {
     const handleRadiusChange = async (nextRadiusKm: number) => {
         setSearchRadiusKm(nextRadiusKm);
 
+        if (activeGroceryBundleKey && groceryBundlesByKey[activeGroceryBundleKey] && nextRadiusKm > searchRadiusKm) {
+            const bundle = groceryBundlesByKey[activeGroceryBundleKey];
+            const resolvedSearch = bundle.location
+                ? {
+                    location: bundle.location,
+                    areaLabel: bundle.areaLabel || searchAreaLabel,
+                    source: (bundle.sourceLabel as 'manual' | 'device' | 'home' | 'unknown') || 'device'
+                }
+                : await resolveSearchLocation();
+
+            setIsLoading(true);
+            try {
+                await fetchPremiumFindingsForBundle(activeGroceryBundleKey, bundle.items, resolvedSearch, bundle.title);
+                if (bundle.googleRequested) {
+                    await handleSearchGoogleForBundle(activeGroceryBundleKey, nextRadiusKm);
+                }
+            } catch (error) {
+                console.warn('Unable to refresh grocery sourcing radius.', error);
+            } finally {
+                setIsLoading(false);
+            }
+            return;
+        }
+
         if (!lastPlaceSearch || nextRadiusKm <= searchRadiusKm) {
+            return;
+        }
+
+        if (!isStandaloneGoogleRequested) {
             return;
         }
 
         setIsLoading(true);
         try {
-            await fetchAndMergePlaces(
-                lastPlaceSearch.queries,
-                lastPlaceSearch.location,
-                nextRadiusKm,
-                Math.max(24, suggestedPlaces.length + 12)
-            );
+            const places = await api.post('/chat/places', {
+                queries: lastPlaceSearch.queries,
+                location: lastPlaceSearch.location,
+                radiusKm: nextRadiusKm,
+                limit: Math.max(24, googleInquiryPlaces.length + 12)
+            });
+            const freshPlaces = Array.isArray(places.data?.places) ? places.data.places as PlaceSuggestion[] : [];
+            setGoogleInquiryPlaces(normalizeSuggestedPlaces(freshPlaces));
+            setShowPreview(true);
             setChatHistory((prev) => {
                 const chatMessages = prev.chat;
                 if (chatMessages.length === 0) return prev;
@@ -1507,17 +1923,38 @@ export default function AgriDashboard() {
 
         setIsRefreshingSuggestions(true);
         try {
-            const places = await api.post('/chat/places', {
-                queries: lastPlaceSearch.queries,
-                location: lastPlaceSearch.location,
-                radiusKm: searchRadiusKm,
-                limit: Math.max(16, suggestedPlaces.length || 16)
-            });
+            if (activeGroceryBundleKey && groceryBundlesByKey[activeGroceryBundleKey]) {
+                const bundle = groceryBundlesByKey[activeGroceryBundleKey];
+                const resolvedSearch = bundle.location
+                    ? {
+                        location: bundle.location,
+                        areaLabel: bundle.areaLabel || searchAreaLabel,
+                        source: (bundle.sourceLabel as 'manual' | 'device' | 'home' | 'unknown') || 'device'
+                    }
+                    : await resolveSearchLocation();
 
-            const freshPlaces = Array.isArray(places.data?.places) ? places.data.places as PlaceSuggestion[] : [];
-            replaceSuggestedPlaces(freshPlaces);
-            setSuggestedProducts([]);
-            setShowPreview(true);
+                await fetchPremiumFindingsForBundle(activeGroceryBundleKey, bundle.items, resolvedSearch, bundle.title);
+                if (bundle.googleRequested) {
+                    await handleSearchGoogleForBundle(activeGroceryBundleKey, searchRadiusKm);
+                }
+                return;
+            }
+
+            if (isStandaloneGoogleRequested) {
+                const places = await api.post('/chat/places', {
+                    queries: lastPlaceSearch.queries,
+                    location: lastPlaceSearch.location,
+                    radiusKm: searchRadiusKm,
+                    limit: Math.max(16, googleInquiryPlaces.length || 16)
+                });
+
+                const freshPlaces = Array.isArray(places.data?.places) ? places.data.places as PlaceSuggestion[] : [];
+                setGoogleInquiryPlaces(normalizeSuggestedPlaces(freshPlaces));
+                setShowPreview(true);
+                return;
+            }
+
+            await fetchPremiumInquiryPlaces(lastPlaceSearch.queries, Math.max(16, suggestedPlaces.length || 16));
         } catch (error) {
             console.warn('Unable to refresh suggested places.', error);
         } finally {
@@ -1578,9 +2015,130 @@ export default function AgriDashboard() {
         }
     };
 
+    const renderPlaceSuggestionCard = (place: PlaceSuggestion, idx: number, sectionKey = 'default') => {
+        const placeIdentity = getPlaceIdentity(place);
+        const favoritePlace =
+            favoritePlacesByIdentity.get(placeIdentity) ||
+            favoritePlacesByIdentity.get(String(place.place_profile_id || '').trim()) ||
+            favoritePlacesByIdentity.get(String(place.id || '').trim()) ||
+            favoritePlacesByIdentity.get(String(place.mapsUrl || '').trim());
+        const isFavorited = Boolean(favoritePlace);
+        const isFavoritePending = pendingFavoriteKeys.includes(placeIdentity);
+
+        return (
+            <motion.div
+                key={`${sectionKey}-${placeIdentity || `${place.name}-${idx}`}`}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{
+                    opacity: 1,
+                    x: 0,
+                    scale: focusedSuggestionIdentity === placeIdentity ? 1.01 : 1
+                }}
+                ref={(node) => {
+                    placeCardRefs.current[placeIdentity] = node;
+                    if (place.mapsUrl) {
+                        placeCardRefs.current[String(place.mapsUrl).trim()] = node;
+                    }
+                }}
+                className={`p-3 rounded-xl border shadow-sm transition ${
+                    focusedSuggestionIdentity === placeIdentity
+                        ? 'border-green-300 bg-green-50/70 ring-2 ring-green-100'
+                        : isFavorited
+                            ? 'border-emerald-200 bg-emerald-50/40'
+                            : 'border-gray-100 bg-white'
+                }`}
+            >
+                <div className="flex gap-3">
+                    <div className="w-14 h-14 rounded-lg bg-gray-100 shrink-0 overflow-hidden">
+                        <PlaceThumbnail image={place.image} name={place.name} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-3">
+                            <h4 className="text-sm font-bold text-gray-800 leading-snug">{place.name}</h4>
+                            {isFavorited ? (
+                                <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">
+                                    Saved
+                                </span>
+                            ) : null}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">{place.address || 'Address unavailable'}</p>
+                        {typeof place.distance_km === 'number' ? (
+                            <p className="mt-1 text-[11px] font-semibold text-green-700">
+                                {place.distance_km < 1
+                                    ? `${Math.round(place.distance_km * 1000)} m away`
+                                    : `${place.distance_km.toFixed(1)} km away`}
+                            </p>
+                        ) : null}
+                        <div className="mt-2 space-y-1">
+                            {typeof place.rating === 'number' && (
+                                <p className="text-xs text-amber-700 font-semibold">
+                                    ★ {place.rating.toFixed(1)} ({place.reviewsCount || 0} reviews)
+                                </p>
+                            )}
+                            {place.phone && (
+                                <p className="text-xs text-gray-600">{place.phone}</p>
+                            )}
+                            {place.network_status ? (
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-green-700">
+                                    {String(place.network_status).replace(/_/g, ' ')}
+                                </p>
+                            ) : null}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-3">
+                            <button
+                                type="button"
+                                onClick={() => requireAuth(() => { void handleToggleFavoritePlace(place); })}
+                                disabled={isFavoritePending || isLoadingFavoritePlaces}
+                                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                                    isFavorited
+                                        ? 'border-emerald-300 bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                        : 'border-gray-200 bg-white text-gray-700 hover:border-emerald-200 hover:text-emerald-700'
+                                } disabled:cursor-not-allowed disabled:opacity-60`}
+                            >
+                                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill={isFavorited ? 'currentColor' : 'none'} stroke="currentColor">
+                                    <path
+                                        d="M10 17l-1.45-1.32C4.4 11.9 2 9.72 2 7.05 2 4.88 3.79 3 6 3c1.25 0 2.45.58 3.22 1.5C9.99 3.58 11.19 3 12.44 3 14.65 3 16.44 4.88 16.44 7.05c0 2.67-2.4 4.85-6.55 8.64L10 17z"
+                                        strokeWidth="1.5"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    />
+                                </svg>
+                                {isFavoritePending ? 'Saving...' : (isFavorited ? 'Saved' : 'Favorite')}
+                            </button>
+                            <a
+                                href={place.mapsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs font-semibold text-blue-600 hover:underline"
+                            >
+                                Open Map
+                            </a>
+                            {place.website && (
+                                <a
+                                    href={place.website}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs font-semibold text-green-700 hover:underline"
+                                >
+                                    Website
+                                </a>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </motion.div>
+        );
+    };
+
     const handleStartNewChat = () => {
         setSkipAutoRestore(true);
         setCurrentConversationId(null);
+        setActiveGroceryBundleKey(null);
+        setPendingGroceryBundleKey(null);
+        setIsGroceryListModalOpen(false);
+        setIsStandaloneGoogleRequested(false);
+        setSuggestionPanelMode('suggestions');
+        setSuggestionPanelSubject('');
         setLastPlaceSearch(null);
         setSuggestedPlaces([]);
         setSuggestedProducts([]);
@@ -1598,6 +2156,20 @@ export default function AgriDashboard() {
 
     const handleQuickReply = (option: QuickReplyOption) => {
         handleSend(option.prompt);
+    };
+
+    const toggleGroceryItemChecked = (bundleKey: string, itemId: string) => {
+        updateGroceryBundle(bundleKey, (bundle) => {
+            if (!bundle) return bundle;
+            return {
+                ...bundle,
+                items: bundle.items.map((item) => (
+                    item.id === itemId
+                        ? { ...item, checked: !item.checked }
+                        : item
+                ))
+            };
+        });
     };
 
     if (delegatedDashboard) {
@@ -1770,22 +2342,34 @@ export default function AgriDashboard() {
                                             >
                                                 {msg.role === 'assistant' && !msg.incompleteProfile ? (
                                                     <div className="mb-2 flex items-center justify-between gap-3">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setSelectedAssistantMessageIndex((current) => current === idx ? null : idx)}
-                                                            className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
-                                                                selectedAssistantMessageIndex === idx
-                                                                    ? 'border-green-300 bg-green-50 text-green-700'
-                                                                    : 'border-gray-200 bg-white text-gray-500 hover:border-green-200 hover:text-green-700'
-                                                            }`}
-                                                        >
-                                                            <span className={`h-3 w-3 rounded-full border ${
-                                                                selectedAssistantMessageIndex === idx
-                                                                    ? 'border-green-600 bg-green-600'
-                                                                    : 'border-gray-300 bg-white'
-                                                            }`} />
-                                                            Save target
-                                                        </button>
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSelectedAssistantMessageIndex((current) => current === idx ? null : idx)}
+                                                                className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                                                                    selectedAssistantMessageIndex === idx
+                                                                        ? 'border-green-300 bg-green-50 text-green-700'
+                                                                        : 'border-gray-200 bg-white text-gray-500 hover:border-green-200 hover:text-green-700'
+                                                                }`}
+                                                            >
+                                                                <span className={`h-3 w-3 rounded-full border ${
+                                                                    selectedAssistantMessageIndex === idx
+                                                                        ? 'border-green-600 bg-green-600'
+                                                                        : 'border-gray-300 bg-white'
+                                                                }`} />
+                                                                Save target
+                                                            </button>
+                                                            {isRecipeAssistantMessage(msg) ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => { void handleBuildGroceryList(msg, idx); }}
+                                                                    disabled={pendingGroceryBundleKey === buildGroceryBundleKey(idx)}
+                                                                    className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-800 transition hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                                                >
+                                                                    {pendingGroceryBundleKey === buildGroceryBundleKey(idx) ? 'Building grocery list...' : 'Build grocery list'}
+                                                                </button>
+                                                            ) : null}
+                                                        </div>
                                                         {selectedAssistantMessageIndex === idx ? (
                                                             <button
                                                                 type="button"
@@ -1852,21 +2436,61 @@ export default function AgriDashboard() {
                                 </div>
 
                                 {/* Suggested Products Panel */}
-                                 <div className={`w-full md:w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col shadow-[0_0_15px_rgba(0,0,0,0.03)] z-10 md:static transition-all duration-300 overflow-hidden ${isPanelOpen ? 'h-80' : 'h-14'} md:h-auto`}>
-                                     <div
-                                         className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 cursor-pointer md:cursor-default"
-                                         onClick={() => setIsPanelOpen(!isPanelOpen)}
-                                     >
+                                 <div className={`w-full md:w-80 shrink-0 bg-white border-l border-gray-100 flex flex-col shadow-[0_0_15px_rgba(0,0,0,0.03)] z-30 md:static transition-all duration-300 overflow-hidden md:overflow-visible ${isPanelOpen ? 'h-80' : 'h-14'} md:h-auto`}>
+                                      <div
+                                          className="relative z-40 p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 cursor-pointer md:cursor-default"
+                                          onClick={() => setIsPanelOpen(!isPanelOpen)}
+                                      >
                                          <div className="min-w-0">
                                               <div className="flex items-center gap-2">
-                                                  <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Suggestions</h3>
+                                                  <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wide">{activeSuggestionPanelMeta.title}</h3>
+                                                  <div
+                                                      className="relative"
+                                                      onMouseEnter={() => {
+                                                          if (canHoverInfoPopover) {
+                                                              setIsSuggestionModeInfoOpen(true);
+                                                          }
+                                                      }}
+                                                      onMouseLeave={() => {
+                                                          if (canHoverInfoPopover) {
+                                                              setIsSuggestionModeInfoOpen(false);
+                                                          }
+                                                      }}
+                                                  >
+                                                      <button
+                                                          type="button"
+                                                          onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              if (!canHoverInfoPopover) {
+                                                                  setIsSuggestionModeInfoOpen((current) => !current);
+                                                              }
+                                                          }}
+                                                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-gray-200 bg-white text-[10px] font-bold text-gray-500 transition hover:border-green-300 hover:text-green-700"
+                                                          aria-label={`About ${activeSuggestionPanelMeta.title}`}
+                                                      >
+                                                          ?
+                                                      </button>
+                                                      {isSuggestionModeInfoOpen ? (
+                                                          <div className="absolute right-0 top-7 z-[70] w-64 max-w-[calc(100vw-2rem)] rounded-2xl border border-gray-200 bg-white p-3 text-[11px] font-medium leading-relaxed text-gray-600 shadow-2xl">
+                                                              {activeSuggestionPanelMeta.description}
+                                                          </div>
+                                                      ) : null}
+                                                  </div>
                                                   {!isPanelOpen && collapsedSuggestionPreview ? (
                                                       <span className="md:hidden rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-green-700">
                                                           New
                                                       </span>
                                                   ) : null}
                                               </div>
-                                              {!isPanelOpen && collapsedSuggestionPreview ? (
+                                              {activeGroceryBundle ? (
+                                                  <p className="mt-1 max-w-[12rem] truncate text-[11px] font-semibold text-gray-600">
+                                                      {activeGroceryBundle.title}
+                                                  </p>
+                                              ) : suggestionPanelSubject ? (
+                                                  <p className="mt-1 max-w-[12rem] truncate text-[11px] font-semibold text-gray-600">
+                                                      {suggestionPanelSubject}
+                                                  </p>
+                                              ) : !isPanelOpen && collapsedSuggestionPreview ? (
                                                   <p className="mt-1 max-w-[11rem] truncate text-[11px] font-medium text-gray-500 md:hidden">
                                                       First match: <span className="text-gray-700">{collapsedSuggestionPreview}</span>
                                                   </p>
@@ -1931,10 +2555,10 @@ export default function AgriDashboard() {
                                                      Source: {locationSourceLabel}
                                                  </span>
                                              </div>
-                                             <div className="flex items-center gap-2">
-                                                 <label htmlFor="search-radius" className="text-[11px] font-medium text-gray-500">
-                                                     Search distance
-                                                 </label>
+                                          <div className="flex items-center gap-2">
+                                              <label htmlFor="search-radius" className="text-[11px] font-medium text-gray-500">
+                                                  Search distance
+                                              </label>
                                                  <select
                                                      id="search-radius"
                                                      value={searchRadiusKm}
@@ -1946,14 +2570,239 @@ export default function AgriDashboard() {
                                                              {radius} km
                                                          </option>
                                                      ))}
-                                                 </select>
-                                             </div>
-                                         </div>
-                                     </div>
-                                     <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3">
-                                         {suggestedPlaces.length > 0 ? (
+                                                  </select>
+                                              </div>
+                                          </div>
+                                          {showSearchDebug && lastPlaceSearch ? (
+                                              <div className="mt-3 rounded-2xl border border-dashed border-amber-300 bg-amber-50/80 p-3 text-[11px] text-amber-900">
+                                                  <div className="flex flex-wrap items-center gap-2">
+                                                      <span className="rounded-full bg-white/80 px-2 py-0.5 font-semibold">
+                                                          Searching near: {searchAreaLabel || lastPlaceSearch.location || 'Unknown area'}
+                                                      </span>
+                                                      <span className="rounded-full bg-white/80 px-2 py-0.5 font-semibold capitalize">
+                                                          Source: {locationSourceLabel || 'unknown'}
+                                                      </span>
+                                                  </div>
+                                                  <p className="mt-2 font-semibold text-amber-950">Queries used</p>
+                                                  <div className="mt-2 flex flex-wrap gap-2">
+                                                      {lastPlaceSearch.queries.map((query) => (
+                                                          <span
+                                                              key={query}
+                                                              className="rounded-full border border-amber-200 bg-white/90 px-2 py-1 font-medium text-amber-800"
+                                                          >
+                                                              {query}
+                                                          </span>
+                                                      ))}
+                                                  </div>
+                                              </div>
+                                          ) : null}
+                                      </div>
+                                      <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-3">
+                                         {activeGroceryBundle ? (
                                              <>
-                                              {visibleSuggestedPlaces.map((place, idx) => {
+                                                 <div className="space-y-2">
+                                                     <div className="flex items-center justify-between gap-3">
+                                                         <h4 className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Premium Findings</h4>
+                                                         <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-green-700">
+                                                             {activeGroceryBundle.premiumFindings.length} results
+                                                         </span>
+                                                     </div>
+                                                     {activeGroceryBundle.premiumFindings.length > 0 ? (
+                                                         activeGroceryBundle.premiumFindings.map((place, idx) => renderPlaceSuggestionCard(place, idx, 'premium'))
+                                                     ) : (
+                                                         <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-500">
+                                                             No network inventories in your area yet.
+                                                         </div>
+                                                     )}
+                                                 </div>
+                                                 <button
+                                                     type="button"
+                                                     onClick={() => { if (activeGroceryBundleKey) { void handleSearchGoogleForBundle(activeGroceryBundleKey); } }}
+                                                     disabled={!activeGroceryBundleKey || pendingGroceryBundleKey === activeGroceryBundleKey}
+                                                     className="w-full rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                                 >
+                                                     Search by Google
+                                                 </button>
+                                                 {activeGroceryBundle.googleRequested ? (
+                                                     activeGroceryBundle.googleFindings.length > 0 ? (
+                                                         <>
+                                                             <div className="flex items-center justify-between gap-3">
+                                                                 <h4 className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-700">Found via Google</h4>
+                                                                 <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-700">
+                                                                     {activeGroceryBundle.googleFindings.length} results
+                                                                 </span>
+                                                             </div>
+                                                             {activeGroceryBundle.googleFindings.map((place, idx) => renderPlaceSuggestionCard(place, idx, 'google'))}
+                                                         </>
+                                                     ) : (
+                                                         <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 px-4 py-4 text-sm text-blue-800">
+                                                             No results found via Google for this grocery list yet.
+                                                         </div>
+                                                     )
+                                                 ) : null}
+                                             </>
+                                         ) : activeSuggestionPanelMode === 'grocery_options' ? (
+                                             <>
+                                                 <div className="space-y-2">
+                                                     <div className="flex items-center justify-between gap-3">
+                                                         <h4 className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Premium Findings</h4>
+                                                         <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-green-700">
+                                                             {suggestedPlaces.length} results
+                                                         </span>
+                                                     </div>
+                                                     {suggestedPlaces.length > 0 ? (
+                                                         <>
+                                                             {visibleSuggestedPlaces.map((place, idx) => renderPlaceSuggestionCard(place, idx, 'grocery-standard'))}
+                                                             {suggestedPlaces.length > INITIAL_VISIBLE_PLACE_COUNT ? (
+                                                                 <div className="pt-1">
+                                                                     {hasMoreSuggestedPlaces ? (
+                                                                         <button
+                                                                             type="button"
+                                                                             onClick={() => setVisiblePlaceCount((current) => Math.min(suggestedPlaces.length, current + PLACE_PANEL_INCREMENT))}
+                                                                             className="w-full rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 transition hover:border-green-300 hover:bg-green-100"
+                                                                         >
+                                                                             Show {Math.min(PLACE_PANEL_INCREMENT, suggestedPlaces.length - visiblePlaceCount)} more matches
+                                                                         </button>
+                                                                     ) : (
+                                                                         <button
+                                                                             type="button"
+                                                                             onClick={() => setVisiblePlaceCount(INITIAL_VISIBLE_PLACE_COUNT)}
+                                                                             className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition hover:border-gray-300 hover:bg-gray-50"
+                                                                         >
+                                                                             Show fewer
+                                                                         </button>
+                                                                     )}
+                                                                 </div>
+                                                             ) : null}
+                                                         </>
+                                                     ) : (
+                                                         <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-500">
+                                                             No network inventories in your area yet.
+                                                         </div>
+                                                     )}
+                                                 </div>
+                                                 <button
+                                                     type="button"
+                                                     onClick={() => { void handleSearchGoogleForCurrentInquiry(); }}
+                                                     disabled={!lastPlaceSearch || isRefreshingSuggestions}
+                                                     className="w-full rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                                 >
+                                                     {isRefreshingSuggestions && isStandaloneGoogleRequested ? 'Searching Google...' : 'Search by Google'}
+                                                 </button>
+                                                 {isStandaloneGoogleRequested ? (
+                                                     googleInquiryPlaces.length > 0 ? (
+                                                         <>
+                                                             <div className="flex items-center justify-between gap-3">
+                                                                 <h4 className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-700">Found via Google</h4>
+                                                                 <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-700">
+                                                                     {googleInquiryPlaces.length} results
+                                                                 </span>
+                                                             </div>
+                                                             <div className="space-y-3">
+                                                                 {visibleGoogleInquiryPlaces.map((place, idx) => renderPlaceSuggestionCard(place, idx, 'grocery-google'))}
+                                                             </div>
+                                                             {googleInquiryPlaces.length > INITIAL_VISIBLE_PLACE_COUNT ? (
+                                                                 <div className="pt-1">
+                                                                     {hasMoreGoogleInquiryPlaces ? (
+                                                                         <button
+                                                                             type="button"
+                                                                             onClick={() => setVisiblePlaceCount((current) => Math.min(googleInquiryPlaces.length, current + PLACE_PANEL_INCREMENT))}
+                                                                             className="w-full rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
+                                                                         >
+                                                                             Show {Math.min(PLACE_PANEL_INCREMENT, googleInquiryPlaces.length - visiblePlaceCount)} more matches
+                                                                         </button>
+                                                                     ) : (
+                                                                         <button
+                                                                             type="button"
+                                                                             onClick={() => setVisiblePlaceCount(INITIAL_VISIBLE_PLACE_COUNT)}
+                                                                             className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition hover:border-gray-300 hover:bg-gray-50"
+                                                                         >
+                                                                             Show fewer
+                                                                         </button>
+                                                                     )}
+                                                                 </div>
+                                                             ) : null}
+                                                         </>
+                                                     ) : (
+                                                         <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 px-4 py-4 text-sm text-blue-800">
+                                                             No results found via Google for this inquiry yet.
+                                                         </div>
+                                                     )
+                                                 ) : null}
+                                               </>
+                                         ) : activeSuggestionPanelMode === 'ready_to_eat' ? (
+                                                 <>
+                                                     <div className="space-y-2">
+                                                         <div className="flex items-center justify-between gap-3">
+                                                             <h4 className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Premium Findings</h4>
+                                                             <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-orange-700">
+                                                                 {suggestedPlaces.length} results
+                                                             </span>
+                                                         </div>
+                                                         {suggestedPlaces.length > 0 ? (
+                                                             <>
+                                                                 <div className="space-y-3">
+                                                                     {visibleSuggestedPlaces.map((place, idx) => renderPlaceSuggestionCard(place, idx, 'ready-to-eat'))}
+                                                                 </div>
+                                                                 {suggestedPlaces.length > INITIAL_VISIBLE_PLACE_COUNT ? (
+                                                                     <div className="pt-1">
+                                                                         {hasMoreSuggestedPlaces ? (
+                                                                             <button
+                                                                                 type="button"
+                                                                                 onClick={() => setVisiblePlaceCount((current) => Math.min(suggestedPlaces.length, current + PLACE_PANEL_INCREMENT))}
+                                                                                 className="w-full rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-700 transition hover:border-orange-300 hover:bg-orange-100"
+                                                                             >
+                                                                                 Show {Math.min(PLACE_PANEL_INCREMENT, suggestedPlaces.length - visiblePlaceCount)} more matches
+                                                                             </button>
+                                                                         ) : (
+                                                                             <button
+                                                                                 type="button"
+                                                                                 onClick={() => setVisiblePlaceCount(INITIAL_VISIBLE_PLACE_COUNT)}
+                                                                                 className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition hover:border-gray-300 hover:bg-gray-50"
+                                                                             >
+                                                                                 Show fewer
+                                                                             </button>
+                                                                         )}
+                                                                     </div>
+                                                                 ) : null}
+                                                             </>
+                                                         ) : (
+                                                             <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-500">
+                                                                 No ready-to-eat premium findings matched this request yet.
+                                                             </div>
+                                                         )}
+                                                     </div>
+                                                     <button
+                                                         type="button"
+                                                         onClick={() => { void handleSearchGoogleForCurrentInquiry(); }}
+                                                         disabled={!lastPlaceSearch || isRefreshingSuggestions}
+                                                         className="w-full rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                                     >
+                                                         {isRefreshingSuggestions && isStandaloneGoogleRequested ? 'Searching Google...' : 'Search by Google'}
+                                                     </button>
+                                                     {isStandaloneGoogleRequested ? (
+                                                         googleInquiryPlaces.length > 0 ? (
+                                                             <>
+                                                                 <div className="flex items-center justify-between gap-3">
+                                                                     <h4 className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-700">Found via Google</h4>
+                                                                     <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-700">
+                                                                         {googleInquiryPlaces.length} results
+                                                                     </span>
+                                                                 </div>
+                                                                 <div className="space-y-3">
+                                                                     {visibleGoogleInquiryPlaces.map((place, idx) => renderPlaceSuggestionCard(place, idx, 'ready-to-eat-google'))}
+                                                                 </div>
+                                                             </>
+                                                         ) : (
+                                                             <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 px-4 py-4 text-sm text-blue-800">
+                                                                 No results found via Google for this inquiry yet.
+                                                             </div>
+                                                         )
+                                                     ) : null}
+                                                 </>
+                                         ) : suggestedPlaces.length > 0 ? (
+                                             <>
+                                                {visibleSuggestedPlaces.map((place, idx) => {
                                                   const placeIdentity = getPlaceIdentity(place);
                                                   const favoritePlace =
                                                       favoritePlacesByIdentity.get(placeIdentity) ||
@@ -2083,6 +2932,67 @@ export default function AgriDashboard() {
                                                      )}
                                                  </div>
                                              ) : null}
+                                             </>
+                                         ) : activeSuggestionPanelMode === 'advice_guidance' ? (
+                                             <>
+                                                 <div className="space-y-2">
+                                                     <div className="flex items-center justify-between gap-3">
+                                                         <h4 className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-500">Premium Findings</h4>
+                                                         <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700">
+                                                             0 results
+                                                         </span>
+                                                     </div>
+                                                     <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-500">
+                                                         No advice profiles or guidance resources are connected for this inquiry yet.
+                                                     </div>
+                                                 </div>
+                                                 <button
+                                                     type="button"
+                                                     onClick={() => { void handleSearchGoogleForCurrentInquiry(); }}
+                                                     disabled={!lastPlaceSearch || isRefreshingSuggestions}
+                                                     className="w-full rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                                 >
+                                                     {isRefreshingSuggestions && isStandaloneGoogleRequested ? 'Searching Google...' : 'Search by Google'}
+                                                 </button>
+                                                 {isStandaloneGoogleRequested && googleInquiryPlaces.length > 0 ? (
+                                                     <>
+                                                         <div className="flex items-center justify-between gap-3">
+                                                             <h4 className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-700">Found via Google</h4>
+                                                             <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-700">
+                                                                 {googleInquiryPlaces.length} results
+                                                             </span>
+                                                         </div>
+                                                         <div className="space-y-3">
+                                                             {visibleGoogleInquiryPlaces.map((place, idx) => renderPlaceSuggestionCard(place, idx, 'advice-google'))}
+                                                         </div>
+                                                         {googleInquiryPlaces.length > INITIAL_VISIBLE_PLACE_COUNT ? (
+                                                             <div className="pt-1">
+                                                                 {hasMoreGoogleInquiryPlaces ? (
+                                                                     <button
+                                                                         type="button"
+                                                                         onClick={() => setVisiblePlaceCount((current) => Math.min(googleInquiryPlaces.length, current + PLACE_PANEL_INCREMENT))}
+                                                                         className="w-full rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
+                                                                     >
+                                                                         Show {Math.min(PLACE_PANEL_INCREMENT, googleInquiryPlaces.length - visiblePlaceCount)} more matches
+                                                                     </button>
+                                                                 ) : (
+                                                                     <button
+                                                                         type="button"
+                                                                         onClick={() => setVisiblePlaceCount(INITIAL_VISIBLE_PLACE_COUNT)}
+                                                                         className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition hover:border-gray-300 hover:bg-gray-50"
+                                                                     >
+                                                                         Show fewer
+                                                                     </button>
+                                                                 )}
+                                                             </div>
+                                                         ) : null}
+                                                     </>
+                                                 ) : null}
+                                                 {isStandaloneGoogleRequested && googleInquiryPlaces.length === 0 ? (
+                                                     <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 px-4 py-4 text-sm text-blue-800">
+                                                         No results found via Google for this inquiry yet.
+                                                     </div>
+                                                 ) : null}
                                              </>
                                          ) : suggestedProducts.length === 0 ? (
                                             <div className="text-center py-10 opacity-40">
@@ -2910,6 +3820,88 @@ export default function AgriDashboard() {
                             </div>
                         )
                     }
+
+                    {isGroceryListModalOpen && activeGroceryBundle ? (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6 backdrop-blur-sm">
+                            <div className="w-full max-w-2xl rounded-[2rem] border border-gray-200 bg-white p-6 shadow-2xl">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-600">Recipe Companion</p>
+                                        <h3 className="mt-2 text-2xl font-bold text-gray-900">{activeGroceryBundle.title}</h3>
+                                        <p className="mt-2 text-sm text-gray-500">
+                                            Build your grocery checklist from the recipe, then use the suggestions panel to review `Premium Findings` or choose `Search by Google`.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsGroceryListModalOpen(false)}
+                                        className="rounded-full border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-500 transition hover:bg-gray-50"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+
+                                <div className="mt-5 rounded-3xl border border-amber-100 bg-amber-50/60 p-4">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-700">Grocery list</p>
+                                        <span className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+                                            {activeGroceryBundle.items.filter((item) => item.checked).length}/{activeGroceryBundle.items.length} selected
+                                        </span>
+                                    </div>
+                                    <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto pr-1">
+                                        {activeGroceryBundle.items.length > 0 ? (
+                                            activeGroceryBundle.items.map((item) => (
+                                                <label
+                                                    key={item.id}
+                                                    className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${
+                                                        item.checked
+                                                            ? 'border-green-200 bg-green-50'
+                                                            : 'border-white bg-white/90 hover:border-amber-200'
+                                                    }`}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={item.checked}
+                                                        onChange={() => { if (activeGroceryBundleKey) { toggleGroceryItemChecked(activeGroceryBundleKey, item.id); } }}
+                                                        className="mt-1 h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <p className={`text-sm font-semibold ${item.checked ? 'text-green-800 line-through' : 'text-gray-900'}`}>
+                                                            {item.display || item.name}
+                                                        </p>
+                                                        {!item.display || item.display === item.name ? null : (
+                                                            <p className="mt-1 text-xs text-gray-500">{item.name}</p>
+                                                        )}
+                                                    </div>
+                                                </label>
+                                            ))
+                                        ) : (
+                                            <div className="rounded-2xl border border-dashed border-amber-200 bg-white/80 px-4 py-4 text-sm text-gray-500">
+                                                No structured ingredients were extracted from this recipe yet.
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsGroceryListModalOpen(false)}
+                                        className="rounded-2xl border border-gray-200 bg-white px-5 py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50"
+                                    >
+                                        Close
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsPanelOpen(true)}
+                                        className="rounded-2xl bg-amber-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-amber-600"
+                                    >
+                                        View sourcing panel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ) : null}
 
                     {isSaveChatModalOpen ? (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6 backdrop-blur-sm">

@@ -413,6 +413,271 @@ function extractFoodTerms(message: string) {
     return found.length > 0 ? found.slice(0, 3) : [];
 }
 
+function slugifyValue(value: string) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .trim();
+}
+
+function normalizeSearchPhraseCandidate(value: string) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9/&+\-\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function hasMeaningfulSearchSignal(phrase: string) {
+    return /(burger|sushi|pizza|salad|smoothie|juice|coffee|matcha|tea|bowl|wrap|sandwich|soup|bakery|brunch|dessert|vegan|vegetarian|gluten free|dairy free|halal|kosher|organic|farmers market|market|grocery|produce|ingredient|meal prep|prepared meal|fruit|vegetable|greens|fries|cafe|raw food|protein)/.test(phrase);
+}
+
+function cleanMessageIntoSearchPhrase(message: string) {
+    return normalizeSearchPhraseCandidate(message)
+        .replace(/\b(?:can you|could you|would you|please|help me|show me|tell me|i am|i m|i'm|im|i want|i need|i would like|looking for|look for|trying to find|where can i|where do i|what are|what is|give me|find me|get me|find|get|order|eat|buy|have|grab|pick up)\b/g, ' ')
+        .replace(/\b(?:near me|nearby|around here|local|close by|close to me|in my area|around my area|for delivery|delivery|takeout|pickup|pick up|right now|today|tonight|now|please)\b/g, ' ')
+        .replace(/\b(?:restaurant|restaurants|cafe|cafes|place|places|spot|spots|option|options)\b/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function extractSpecificSearchPhrases(message: string, mode: string) {
+    const candidates = new Set<string>();
+    const cleanedMessage = cleanMessageIntoSearchPhrase(message);
+    const foodTerms = extractFoodTerms(message);
+
+    if (cleanedMessage && cleanedMessage.split(' ').length <= 8 && hasMeaningfulSearchSignal(cleanedMessage)) {
+        candidates.add(cleanedMessage);
+    }
+
+    foodTerms.forEach((food) => {
+        const normalizedFood = normalizeSearchPhraseCandidate(food);
+        if (normalizedFood) candidates.add(normalizedFood);
+    });
+
+    if (mode === 'prepared_for_later' && cleanedMessage && !cleanedMessage.includes('meal prep')) {
+        candidates.add(`${cleanedMessage} meal prep`);
+    }
+
+    if (mode === 'raw_produce' && cleanedMessage && !/(market|grocery|produce|ingredient)/.test(cleanedMessage)) {
+        candidates.add(`${cleanedMessage} produce`);
+    }
+
+    return Array.from(candidates)
+        .map((candidate) => normalizeSearchPhraseCandidate(candidate))
+        .filter((candidate) => candidate && hasMeaningfulSearchSignal(candidate))
+        .slice(0, 3);
+}
+
+function stripMarkdownFormatting(value: string) {
+    return String(value || '')
+        .replace(/[`*_>#]/g, ' ')
+        .replace(/\[(.*?)\]\((.*?)\)/g, '$1')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function deriveRecipeTitle(recipeText: string) {
+    const lines = String(recipeText || '')
+        .split(/\r?\n/)
+        .map((line) => stripMarkdownFormatting(line))
+        .filter(Boolean);
+
+    const headingLine = lines.find((line) => line.length > 4 && line.length <= 80);
+    if (!headingLine) return 'Recipe grocery list';
+    return headingLine.replace(/^recipe\s*[:\-]\s*/i, '').trim() || 'Recipe grocery list';
+}
+
+function parseIngredientLine(line: string, index: number) {
+    const cleaned = stripMarkdownFormatting(line)
+        .replace(/^[-*•\d.)\s]+/, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!cleaned || cleaned.length < 2) return null;
+    if (/^(ingredients?|instructions?|directions?|method|steps?)$/i.test(cleaned)) return null;
+
+    const match = cleaned.match(/^((?:\d+\s+\d+\/\d+)|(?:\d+\/\d+)|(?:\d+(?:\.\d+)?)|(?:a|an|few|pinch|dash))?\s*(cups?|cup|tbsp|tablespoons?|tsp|teaspoons?|kg|g|grams?|oz|ounces?|lb|lbs|ml|l|liters?|cloves?|slices?|pieces?|cans?|bunch(?:es)?|bundle(?:s)?|sprigs?|stalks?)?\s*(?:of\s+)?(.+)$/i);
+
+    const quantity = String(match?.[1] || '').trim();
+    const unit = String(match?.[2] || '').trim();
+    const name = String(match?.[3] || cleaned).trim().replace(/\s*,\s*$/, '');
+
+    if (!name || name.length < 2) return null;
+
+    return {
+        id: `${slugifyValue(name) || `ingredient-${index + 1}`}-${index + 1}`,
+        name,
+        quantity,
+        unit,
+        display: [quantity, unit, name].filter(Boolean).join(' ').trim()
+    };
+}
+
+function extractIngredientsFallback(recipeText: string) {
+    const text = String(recipeText || '');
+    const lines = text.split(/\r?\n/);
+    const items: Array<{ id: string; name: string; quantity: string; unit: string; display: string }> = [];
+
+    const ingredientsHeadingIndex = lines.findIndex((line) => /^\s{0,3}(?:#{1,6}\s*)?ingredients?\s*:?\s*$/i.test(line.trim()));
+    const candidateLines = (() => {
+        if (ingredientsHeadingIndex < 0) {
+            return lines.filter((line) => /^\s*[-*•]|\d+\./.test(line.trim()));
+        }
+
+        const collected: string[] = [];
+        for (const line of lines.slice(ingredientsHeadingIndex + 1)) {
+            const trimmed = line.trim();
+            if (!trimmed) {
+                if (collected.length > 0) break;
+                continue;
+            }
+            if (/^\s{0,3}(?:#{1,6}\s*)?(instructions?|directions?|method|steps?)\s*:?\s*$/i.test(trimmed)) {
+                break;
+            }
+            collected.push(line);
+        }
+        return collected;
+    })();
+
+    candidateLines.forEach((line, index) => {
+        const parsed = parseIngredientLine(line, index);
+        if (parsed) items.push(parsed);
+    });
+
+    if (items.length > 0) {
+        return items.slice(0, 24);
+    }
+
+    const commaSectionMatch = text.match(/ingredients?\s*:?\s*([\s\S]{0,700})/i);
+    if (commaSectionMatch?.[1]) {
+        commaSectionMatch[1]
+            .split(/[,\n]/)
+            .map((part) => part.trim())
+            .filter(Boolean)
+            .forEach((part, index) => {
+                const parsed = parseIngredientLine(part, index);
+                if (parsed) items.push(parsed);
+            });
+    }
+
+    return items.slice(0, 24);
+}
+
+function extractJsonObjectFromText(text: string) {
+    const normalized = String(text || '').trim();
+    if (!normalized) return null;
+
+    const fencedMatch = normalized.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidate = fencedMatch?.[1] || normalized;
+    const startIndex = candidate.indexOf('{');
+    const endIndex = candidate.lastIndexOf('}');
+    if (startIndex < 0 || endIndex <= startIndex) return null;
+
+    try {
+        return JSON.parse(candidate.slice(startIndex, endIndex + 1));
+    } catch {
+        return null;
+    }
+}
+
+async function extractGroceryList(recipeText: string) {
+    const fallbackItems = extractIngredientsFallback(recipeText);
+    const fallbackTitle = deriveRecipeTitle(recipeText);
+
+    if (!process.env.GEMINI_API_KEY) {
+        return {
+            title: fallbackTitle,
+            items: fallbackItems
+        };
+    }
+
+    const prompt = `Extract a grocery list from this recipe.
+
+Recipe:
+${recipeText}
+
+Return strict JSON only using this shape:
+{
+  "title": "short recipe title",
+  "items": [
+    {
+      "name": "ingredient name",
+      "quantity": "optional quantity text",
+      "unit": "optional unit text",
+      "display": "human-readable ingredient line"
+    }
+  ]
+}
+
+Rules:
+- Include only ingredients required for the recipe.
+- Do not include instructions, garnish notes, or cookware.
+- Keep quantity and unit empty strings if unknown.
+- Return no prose, only JSON.`;
+
+    try {
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const completion = await generateWithFallbackModels(genAI, prompt, 'You extract clean grocery-list JSON from recipe text.', []);
+        const parsed = extractJsonObjectFromText(completion.text);
+        const rawItems = Array.isArray(parsed?.items) ? parsed.items : [];
+        const normalizedItems = rawItems
+            .map((item: any, index: number) => ({
+                id: `${slugifyValue(String(item?.name || '')) || `ingredient-${index + 1}`}-${index + 1}`,
+                name: String(item?.name || '').trim(),
+                quantity: String(item?.quantity || '').trim(),
+                unit: String(item?.unit || '').trim(),
+                display: String(item?.display || [item?.quantity, item?.unit, item?.name].filter(Boolean).join(' ')).trim()
+            }))
+            .filter((item: any) => item.name);
+
+        if (normalizedItems.length > 0) {
+            return {
+                title: String(parsed?.title || fallbackTitle).trim() || fallbackTitle,
+                items: normalizedItems.slice(0, 24)
+            };
+        }
+    } catch {
+        // fallback below
+    }
+
+    return {
+        title: fallbackTitle,
+        items: fallbackItems
+    };
+}
+
+function buildIngredientSourceQueries(
+    items: Array<{ name?: string; display?: string }>,
+    mode: 'premium' | 'google'
+) {
+    const ingredientNames = Array.from(
+        new Set(
+            items
+                .map((item) => String(item?.name || item?.display || '').trim().toLowerCase())
+                .filter(Boolean)
+        )
+    ).slice(0, 6);
+
+    if (ingredientNames.length === 0) {
+        return mode === 'google' ? ['grocery store', 'farmers market'] : [];
+    }
+
+    if (mode === 'premium') {
+        return ingredientNames;
+    }
+
+    const queries = new Set<string>();
+    ingredientNames.slice(0, 4).forEach((name) => {
+        queries.add(`${name} grocery`);
+        queries.add(`${name} market`);
+    });
+    queries.add('grocery store');
+    queries.add('farmers market');
+    return Array.from(queries).slice(0, 8);
+}
+
 function buildDietModifiers(profileData: any) {
     const preferences = new Set<string>((profileData?.dietary_preferences || []).map((value: string) => value.toLowerCase()));
     const modifiers: string[] = [];
@@ -478,10 +743,12 @@ function appendQueriesWithModifiers(queries: Set<string>, phrases: string[], mod
         });
 }
 
-function buildReadyToEatQueries(baseFood: string, profileData: any) {
+function buildReadyToEatQueries(baseFood: string, profileData: any, requestedPhrases: string[] = []) {
     const modifiers = buildDietModifiers(profileData);
     const queries = new Set<string>();
     const phrases: string[] = [
+        ...requestedPhrases,
+        ...requestedPhrases.map((phrase) => /(restaurant|cafe|coffee shop|bakery)/.test(phrase) ? phrase : `${phrase} restaurant`),
         `${baseFood} restaurant`,
         `${baseFood} cafe`,
         'healthy restaurant'
@@ -504,6 +771,7 @@ function buildCompanionPlaceQueriesFromReply(message: string, reply: string, pro
     const replyFoods = extractFoodTerms(reply);
     const messageFoods = extractFoodTerms(message);
     const candidateFoods = Array.from(new Set([...replyFoods, ...messageFoods])).filter(Boolean);
+    const requestedPhrases = extractSpecificSearchPhrases(`${message} ${reply}`, 'ready_to_eat');
 
     if (candidateFoods.length === 0) {
         return [];
@@ -511,7 +779,7 @@ function buildCompanionPlaceQueriesFromReply(message: string, reply: string, pro
 
     const queries = new Set<string>();
     candidateFoods.slice(0, 2).forEach((food) => {
-        buildReadyToEatQueries(food, profileData).forEach((query) => queries.add(query));
+        buildReadyToEatQueries(food, profileData, requestedPhrases).forEach((query) => queries.add(query));
     });
 
     const normalizedText = `${message} ${reply}`.toLowerCase();
@@ -538,16 +806,19 @@ function buildSearchQueries(message: string, profileData: any, tags: string[] = 
     const baseFood = foods[0] || 'healthy food';
     const queries = new Set<string>();
     const modifiers = buildDietModifiers(profileData);
+    const requestedPhrases = extractSpecificSearchPhrases(augmentedMessage, mode);
     const withModifiers = (...phrases: string[]) => appendQueriesWithModifiers(queries, phrases, modifiers);
 
     if (mode === 'ready_to_eat') {
-        return buildReadyToEatQueries(baseFood, profileData);
+        return buildReadyToEatQueries(baseFood, profileData, requestedPhrases);
     } else if (mode === 'raw_produce') {
+        withModifiers(...requestedPhrases);
         withModifiers(`${baseFood} market`);
         withModifiers(`${baseFood} grocery`);
         queries.add('farmers market');
         queries.add('produce market');
     } else if (mode === 'prepared_for_later') {
+        withModifiers(...requestedPhrases);
         withModifiers(`${baseFood} meal prep`);
         withModifiers('healthy meal prep');
         withModifiers('prepared meals');
@@ -677,9 +948,19 @@ function parseCoordinates(location?: string) {
     return { lat, lng };
 }
 
+function getGoogleMapsRegion() {
+    const region = String(process.env.GOOGLE_MAPS_REGION || process.env.GOOGLE_PLACES_REGION || '').trim().toLowerCase();
+    return region || undefined;
+}
+
 async function geocodeLocation(location: string, key: string) {
+    const region = getGoogleMapsRegion();
     const response = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
-        params: { address: location, key, region: 'id' }
+        params: {
+            address: location,
+            key,
+            ...(region ? { region } : {})
+        }
     });
 
     const first = Array.isArray(response.data?.results) ? response.data.results[0] : null;
@@ -711,6 +992,7 @@ async function searchGooglePlaces(query: string, location?: string, maxRadiusKm?
     const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
     if (!key) return [];
 
+    const region = getGoogleMapsRegion();
     const origin = parseCoordinates(location) || (location?.trim() ? await geocodeLocation(location, key) : null);
     const desiredMaxRadiusKm = Number.isFinite(maxRadiusKm) ? Math.max(1, Number(maxRadiusKm)) : 80;
     const desiredMaxRadiusMeters = Math.round(desiredMaxRadiusKm * 1000);
@@ -723,7 +1005,7 @@ async function searchGooglePlaces(query: string, location?: string, maxRadiusKm?
             params: {
                 query,
                 ...(origin ? { location: `${origin.lat},${origin.lng}`, radius } : {}),
-                region: 'id',
+                ...(region ? { region } : {}),
                 key
             }
         });
@@ -1215,8 +1497,149 @@ router.post('/search-context', authenticateTokenOptional, async (req: Request, r
     }
 });
 
+router.post('/extract-grocery-list', authenticateTokenOptional, async (req: Request, res: Response) => {
+    const recipeText = String(req.body?.recipeText || '').trim();
+
+    if (!recipeText) {
+        res.status(400).json({ error: 'recipeText is required' });
+        return;
+    }
+
+    try {
+        const result = await extractGroceryList(recipeText);
+        res.json(result);
+    } catch (error: any) {
+        res.status(500).json({ error: 'Failed to extract grocery list', details: error.message });
+    }
+});
+
+router.post('/source-ingredients/premium', authenticateTokenOptional, async (req: Request, res: Response) => {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    const queries = buildIngredientSourceQueries(items, 'premium');
+
+    try {
+        const places = await searchManagedPlaceProfiles(queries, 8);
+        res.json({ places, queries });
+    } catch (error: any) {
+        res.status(500).json({ error: 'Failed to source premium findings', details: error.message });
+    }
+});
+
+router.post('/source-inquiry/premium', authenticateTokenOptional, async (req: Request, res: Response) => {
+    const queries = Array.isArray(req.body?.queries)
+        ? req.body.queries.map((query: unknown) => String(query || '').trim()).filter(Boolean)
+        : [];
+    const limit = Number.isFinite(Number(req.body?.limit)) ? Number(req.body.limit) : 8;
+
+    if (queries.length === 0) {
+        res.json({ places: [], queries: [] });
+        return;
+    }
+
+    try {
+        const places = await searchManagedPlaceProfiles(queries, Math.max(1, Math.min(limit, 24)));
+        res.json({ places, queries });
+    } catch (error: any) {
+        res.status(500).json({ error: 'Failed to source premium inquiry findings', details: error.message });
+    }
+});
+
+router.post('/source-ingredients/google', authenticateTokenOptional, async (req: Request, res: Response) => {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    const location = String(req.body?.location || '').trim();
+    const radiusKm = Number.isFinite(Number(req.body?.radiusKm)) ? Number(req.body.radiusKm) : 25;
+    const queries = buildIngredientSourceQueries(items, 'google');
+
+    if (queries.length === 0) {
+        res.json({ places: [], queries: [] });
+        return;
+    }
+
+    try {
+        const grouped = await Promise.all(queries.map(async (query) => {
+            try {
+                const places = await searchGooglePlaces(query, location, radiusKm);
+                if (places.length > 0) return places;
+            } catch {
+                // continue collecting from remaining queries
+            }
+            return [];
+        }));
+
+        const deduped = new Map<string, any>();
+        for (const places of grouped) {
+            for (const place of places) {
+                const key = String(place.id || `${place.name}-${place.address}`);
+                if (!deduped.has(key)) deduped.set(key, place);
+            }
+        }
+
+        const hydratedPlaces = await hydratePlacesWithProfileData(Array.from(deduped.values()));
+        const places = hydratedPlaces
+            .sort((a, b) => {
+                const priorityDiff = placeInventoryPriority(b, queries) - placeInventoryPriority(a, queries);
+                if (priorityDiff !== 0) return priorityDiff;
+                if (a.distance_km == null && b.distance_km == null) return 0;
+                if (a.distance_km == null) return 1;
+                if (b.distance_km == null) return -1;
+                return a.distance_km - b.distance_km;
+            })
+            .slice(0, 8);
+
+        res.json({ places, queries });
+    } catch (error: any) {
+        res.status(500).json({ error: 'Failed to source Google places', details: error.message });
+    }
+});
+
 function queryHasInventoryIntent(queries: string[]) {
     return queries.some((query) => /(ingredient|ingredients|produce|vegetable|vegetables|fruit|fruits|grocery|grocer|market|recipe|cook|cooking|meal prep|farm|farm stand|herb|spice)/.test(String(query).toLowerCase()));
+}
+
+function tokenizeSearchQueryTerms(queries: string[]) {
+    const stopWords = new Set([
+        'near', 'me', 'nearby', 'local', 'restaurant', 'restaurants', 'cafe', 'cafes', 'place', 'places',
+        'spot', 'spots', 'healthy', 'food', 'foods', 'option', 'options', 'delivery', 'takeout', 'pickup',
+        'meal', 'meals', 'shop', 'store', 'for', 'the', 'and', 'with'
+    ]);
+
+    return Array.from(new Set(
+        queries
+            .flatMap((query) => String(query || '').toLowerCase().split(/[^a-z0-9]+/))
+            .map((term) => term.trim())
+            .filter((term) => term.length >= 3 && !stopWords.has(term))
+    ));
+}
+
+function placeRequestMatchPriority(place: any, queries: string[]) {
+    const normalizedQueries = queries
+        .map((query) => String(query || '').trim().toLowerCase())
+        .filter(Boolean);
+    const queryTerms = tokenizeSearchQueryTerms(normalizedQueries);
+    const haystack = [
+        place?.name,
+        place?.address,
+        place?.website,
+        place?.menu_context,
+        place?.raw_inventory_context,
+        Array.isArray(place?.types) ? place.types.join(' ') : ''
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+    let score = 0;
+    normalizedQueries.forEach((query) => {
+        if (query.length >= 4 && haystack.includes(query)) {
+            score += 18;
+        }
+    });
+    queryTerms.forEach((term) => {
+        if (haystack.includes(term)) {
+            score += 4;
+        }
+    });
+    return score;
 }
 
 function placeInventoryPriority(place: any, queries: string[]) {
@@ -1230,6 +1653,7 @@ function placeInventoryPriority(place: any, queries: string[]) {
 
     let score = Number(place?.search_priority || 0);
     score += placeKindIntentBias(place, normalizedQueries);
+    score += placeRequestMatchPriority(place, normalizedQueries);
 
     if (inventoryContext && queryHasInventoryIntent(normalizedQueries)) {
         score += 20;
@@ -1286,6 +1710,8 @@ router.post('/places', authenticateTokenOptional, async (req: Request, res: Resp
 
         const places = Array.from(deduped.values())
             .sort((a, b) => {
+                const requestMatchDiff = placeRequestMatchPriority(b, uniqueQueries) - placeRequestMatchPriority(a, uniqueQueries);
+                if (requestMatchDiff !== 0) return requestMatchDiff;
                 const priorityDiff = placeKindIntentBias(b, uniqueQueries) - placeKindIntentBias(a, uniqueQueries);
                 if (priorityDiff !== 0) return priorityDiff;
                 if (a.distance_km == null && b.distance_km == null) return 0;

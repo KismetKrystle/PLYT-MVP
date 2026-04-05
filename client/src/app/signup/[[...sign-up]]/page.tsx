@@ -43,6 +43,8 @@ function SignupScreen() {
     if (!hasClerkPublishableKey && mode !== 'kyc') {
         return (
             <AuthBrandShell
+                backgroundVariant="banner"
+                eyebrowLabel="Personal Food Search Companion"
                 subtitle="Create your Plyant account so your search, preferences, and future memory can stay connected."
                 title="Start your Plyant profile"
             >
@@ -80,18 +82,26 @@ function SignupScreen() {
     if (mode === 'kyc') {
         if (loading) {
             return (
-                <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
+                <AuthBrandShell
+                    backgroundVariant="banner"
+                    subtitle="We are securing your session and preparing your Plyant onboarding."
+                    title="Finishing your secure sign-up"
+                >
                     <div className="rounded-[28px] border border-[#dfd7c9] bg-white px-6 py-8 text-center shadow-sm">
                         <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-[#234f2e]/20 border-t-[#234f2e]" />
                         <p className="text-sm text-[#6b6d61]">Finishing your secure sign-in...</p>
                     </div>
-                </div>
+                </AuthBrandShell>
             );
         }
 
         if (!user) {
             return (
-                <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
+                <AuthBrandShell
+                    backgroundVariant="banner"
+                    subtitle="Your account session needs to be active before we can finish setting up your Plyant profile."
+                    title="Sign in to continue onboarding"
+                >
                     <motion.div
                         animate={{ opacity: 1, y: 0 }}
                         className="w-full max-w-md rounded-[28px] border border-[#dfd7c9] bg-white p-8 text-center shadow-sm"
@@ -108,20 +118,28 @@ function SignupScreen() {
                             Go to login
                         </Link>
                     </motion.div>
-                </div>
+                </AuthBrandShell>
             );
         }
 
         return (
-            <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
+            <AuthBrandShell
+                backgroundVariant="banner"
+                subtitle="Tell Plyant a bit about your health goals and preferences so the guidance starts tailored from day one."
+                title="Set up your Plyant profile"
+            >
                 <KYCForm onComplete={() => router.push(redirectPath)} />
-            </div>
+            </AuthBrandShell>
         );
     }
 
     if (isAccessWallEnabled) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] px-4 py-10">
+            <AuthBrandShell
+                backgroundVariant="banner"
+                subtitle="We are still in a controlled rollout, but the full Plyant sign-up flow is ready once registration opens."
+                title="Registration Unavailable"
+            >
                 <div className="max-w-md rounded-[28px] border border-[#dfd7c9] bg-white p-8 text-center shadow-sm">
                     <h1 className="text-2xl font-semibold text-[#1f2b18]">Registration Unavailable</h1>
                     <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
@@ -131,12 +149,14 @@ function SignupScreen() {
                         Back to login
                     </Link>
                 </div>
-            </div>
+            </AuthBrandShell>
         );
     }
 
     return (
         <AuthBrandShell
+            backgroundVariant="banner"
+            eyebrowLabel="Personal Food Search Companion"
             subtitle="Set up your account so Plyant can start learning your health profile, preferences, and sourcing habits."
             title="Join Plyant"
         >

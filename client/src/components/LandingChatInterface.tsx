@@ -333,7 +333,7 @@ export default function LandingChatInterface() {
 
             {/* Simple Footer */}
             <footer className="w-full py-4 text-center text-xs text-gray-300 relative z-10">
-                © 2026 PLYT Network. All rights reserved.
+                © 2026 Plyant. All rights reserved.
             </footer>
         </div>
     );

@@ -1290,7 +1290,8 @@ export default function AgriDashboard() {
             });
             const searchContextPromise = api.post('/chat/search-context', {
                 message: messageText,
-                tags: normalizedTags
+                tags: normalizedTags,
+                location: finalLocation
             });
 
             let parallelPlaceQueries: string[] = [];

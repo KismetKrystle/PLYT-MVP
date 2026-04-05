@@ -8,6 +8,14 @@ import { buildIntentSystemSection, classifyIntent } from '../lib/intentClassifie
 import { fetchRoleProfileData, isProfileComplete } from '../services/profileContext';
 import { hydratePlacesWithProfileData, searchManagedPlaceProfiles } from '../services/placeProfiles';
 import {
+    resolveCategoryTerms,
+    resolveLocaleFromProfileAndLocation,
+    type IntentType,
+    type LocaleCode,
+    type UserProfile
+} from '../services/categoryResolver';
+import { searchPlacesForTerms } from '../services/placesSearch';
+import {
     ACTIVE_CONVERSATION_WHERE_SQL,
     cleanupExpiredConversations,
     ensureConversationRetentionColumns,
@@ -310,6 +318,60 @@ function appendFulfillmentQuestion(responseText: string, shouldAskQuestion: bool
     }
 
     return `${normalizedResponse}\n\nAre you looking for something to order, a recipe to cook, meal prep, or ingredients to buy?`;
+}
+
+const FIND_TRIGGER_WORDS = [
+    'where', 'find', 'buy', 'get', 'near me', 'source', 'shop',
+    'market', 'store', 'supplier', 'available'
+];
+
+const KNOWLEDGE_TRIGGER_WORDS = [
+    'what', 'why', 'how', 'tell me', 'explain', 'is it', 'should i',
+    'recommend', 'good for', 'benefits'
+];
+
+function normalizeIntentText(value: string) {
+    return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function includesTriggerWord(message: string, triggers: string[]) {
+    const normalized = normalizeIntentText(message);
+    return triggers.some((trigger) => normalized.includes(trigger));
+}
+
+async function classifyFindOrKnowledge(message: string): Promise<IntentType> {
+    if (includesTriggerWord(message, FIND_TRIGGER_WORDS)) {
+        return 'find';
+    }
+
+    if (includesTriggerWord(message, KNOWLEDGE_TRIGGER_WORDS)) {
+        return 'knowledge';
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+        return 'knowledge';
+    }
+
+    const prompt = `Classify this user query as either "find" or "knowledge".
+
+Return ONLY one word:
+- find
+- knowledge
+
+Use "find" for location, sourcing, buying, shopping, nearby availability, or where-to-get intent.
+Use "knowledge" for advice, explanation, health reasoning, food knowledge, ingredient knowledge, or general guidance.
+
+Query:
+${message}`;
+
+    try {
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const completion = await generateWithFallbackModels(genAI, prompt, 'Return only "find" or "knowledge".', []);
+        const normalized = normalizeIntentText(completion.text);
+        return normalized.includes('find') ? 'find' : 'knowledge';
+    } catch {
+        return 'knowledge';
+    }
 }
 
 const TAG_INTENT_HINTS: Record<string, { mode: 'raw_produce' | 'ready_to_eat' | 'prepared_for_later' | 'recipe_ideas' | 'advice'; hints: string[] }> = {
@@ -837,6 +899,50 @@ function queryHasProduceIntent(queries: string[]) {
     return queries.some((query) => /(ingredient|ingredients|produce|vegetable|vegetables|fruit|fruits|grocery|grocer|market|farmer|farm stand|recipe|cook|cooking|meal prep|herb|spice)/.test(String(query).toLowerCase()));
 }
 
+async function buildFindSearchPlan(params: {
+    message: string;
+    tags: string[];
+    profileData: UserProfile;
+    location?: string;
+}) {
+    const normalizedTags = normalizeChatTags(params.tags);
+    const locale = resolveLocaleFromProfileAndLocation(params.profileData, params.location);
+    const categoryResolution = await resolveCategoryTerms({
+        userProfile: params.profileData,
+        query: params.message,
+        locale
+    });
+    const directQueries = buildSearchQueries(params.message, params.profileData, normalizedTags);
+    const fulfillmentMode = inferFulfillmentMode(
+        [String(params.message || '').trim(), ...getTagSearchHints(normalizedTags)].filter(Boolean).join(' '),
+        normalizedTags
+    );
+    const sourcingMode =
+        fulfillmentMode === 'raw_produce' ||
+        fulfillmentMode === 'recipe_ideas' ||
+        queryHasProduceIntent(directQueries) ||
+        /(ingredient|ingredients|produce|grocery|market|supplier|supplement|vitamin|herb|herbs|spice|spices|farm|available|source)/i.test(params.message);
+
+    const searchQueries = Array.from(new Set(
+        (sourcingMode
+            ? [...categoryResolution.searchTerms, ...directQueries.slice(0, 2)]
+            : directQueries.length > 0
+                ? directQueries
+                : categoryResolution.searchTerms
+        )
+            .map((query) => String(query || '').trim())
+            .filter(Boolean)
+    )).slice(0, 8);
+
+    return {
+        locale,
+        fulfillmentMode,
+        searchQueries,
+        resolvedCategories: categoryResolution.categories,
+        categorySource: categoryResolution.source
+    };
+}
+
 function inferSearchPlaceKind(place: any) {
     const explicitKind = String(place?.place_kind || '').trim().toLowerCase();
     if (explicitKind) return explicitKind;
@@ -948,13 +1054,31 @@ function parseCoordinates(location?: string) {
     return { lat, lng };
 }
 
-function getGoogleMapsRegion() {
-    const region = String(process.env.GOOGLE_MAPS_REGION || process.env.GOOGLE_PLACES_REGION || '').trim().toLowerCase();
-    return region || undefined;
+async function resolveLocationCoordinates(location?: string, locale?: LocaleCode) {
+    const parsed = parseCoordinates(location);
+    if (parsed) return parsed;
+
+    const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    if (!key || !String(location || '').trim()) {
+        return null;
+    }
+
+    try {
+        return await geocodeLocation(String(location).trim(), key, locale);
+    } catch {
+        return null;
+    }
 }
 
-async function geocodeLocation(location: string, key: string) {
-    const region = getGoogleMapsRegion();
+function getGoogleMapsRegion(locale?: LocaleCode) {
+    const configuredRegion = String(process.env.GOOGLE_MAPS_REGION || process.env.GOOGLE_PLACES_REGION || '').trim().toLowerCase();
+    if (configuredRegion) return configuredRegion;
+    if (locale) return locale.toLowerCase();
+    return undefined;
+}
+
+async function geocodeLocation(location: string, key: string, locale?: LocaleCode) {
+    const region = getGoogleMapsRegion(locale);
     const response = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
         params: {
             address: location,
@@ -988,12 +1112,12 @@ function distanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: numb
     return 2 * earthRadiusKm * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
 
-async function searchGooglePlaces(query: string, location?: string, maxRadiusKm?: number) {
+async function searchGooglePlaces(query: string, location?: string, maxRadiusKm?: number, locale?: LocaleCode) {
     const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
     if (!key) return [];
 
-    const region = getGoogleMapsRegion();
-    const origin = parseCoordinates(location) || (location?.trim() ? await geocodeLocation(location, key) : null);
+    const region = getGoogleMapsRegion(locale);
+    const origin = parseCoordinates(location) || (location?.trim() ? await geocodeLocation(location, key, locale) : null);
     const desiredMaxRadiusKm = Number.isFinite(maxRadiusKm) ? Math.max(1, Number(maxRadiusKm)) : 80;
     const desiredMaxRadiusMeters = Math.round(desiredMaxRadiusKm * 1000);
     const radiusSteps = [5000, 12000, 25000, 50000, 80000].filter((radius) => radius <= desiredMaxRadiusMeters);
@@ -1267,7 +1391,8 @@ router.post('/', authenticateTokenOptional, async (req: Request, res: Response) 
     }
 
     try {
-        let profileData: any = {};
+        const topLevelIntent = await classifyFindOrKnowledge(effectiveMessage);
+        let profileData: UserProfile = {};
         if (userId) {
             try {
                 profileData = await fetchRoleProfileData(userId, userRole);
@@ -1372,7 +1497,15 @@ Use this profile directly for personalization. Do not ask for details already pr
 
         const currentVisiblePlaces = Array.isArray(visiblePlaces) ? visiblePlaces.slice(0, 12) : [];
         const isSuggestionFollowUp = currentVisiblePlaces.length > 0 && messageReferencesCurrentPlaces(message);
-        const searchQueries = isSuggestionFollowUp ? [] : buildSearchQueries(effectiveMessage, profileData, normalizedTags);
+        const findSearchPlan = !isSuggestionFollowUp && topLevelIntent === 'find'
+            ? await buildFindSearchPlan({
+                message: effectiveMessage,
+                tags: normalizedTags,
+                profileData,
+                location
+            })
+            : null;
+        const searchQueries = isSuggestionFollowUp ? [] : (findSearchPlan?.searchQueries || []);
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         let aiResponse = '';
         let modelName = 'fallback-local';
@@ -1404,6 +1537,7 @@ Use this profile directly for personalization. Do not ask for details already pr
             }
 
             if (
+                topLevelIntent === 'find' &&
                 responseSearchQueries.length === 0 &&
                 (intentClassification.intent === 'meal_suggestion' ||
                     intentClassification.intent === 'food_search' ||
@@ -1460,6 +1594,9 @@ Use this profile directly for personalization. Do not ask for details already pr
             intent: intentClassification.intent,
             intentConfidence: intentClassification.confidence,
             mixedIntent: intentClassification.mixed,
+            queryIntent: topLevelIntent,
+            locale: findSearchPlan?.locale || resolveLocaleFromProfileAndLocation(profileData, location),
+            resolvedCategories: findSearchPlan?.resolvedCategories || [],
             model: modelName,
             followUpOptions,
             searchQueries: responseSearchQueries,
@@ -1476,7 +1613,7 @@ Use this profile directly for personalization. Do not ask for details already pr
 });
 
 router.post('/search-context', authenticateTokenOptional, async (req: Request, res: Response) => {
-    const { message, tags } = req.body || {};
+    const { message, tags, location } = req.body || {};
     const user = (req as any).user;
     const userId = user?.id;
     const userRole = user?.role || 'consumer';
@@ -1489,9 +1626,31 @@ router.post('/search-context', authenticateTokenOptional, async (req: Request, r
     }
 
     try {
-        const profileData = userId ? await fetchRoleProfileData(userId, userRole) : {};
-        const searchQueries = buildSearchQueries(effectiveMessage, profileData, normalizedTags);
-        res.json({ searchQueries });
+        const topLevelIntent = await classifyFindOrKnowledge(effectiveMessage);
+        const profileData = userId ? await fetchRoleProfileData(userId, userRole) as UserProfile : {};
+
+        if (topLevelIntent !== 'find') {
+            res.json({
+                intentType: topLevelIntent,
+                locale: resolveLocaleFromProfileAndLocation(profileData, location),
+                resolvedCategories: [],
+                searchQueries: []
+            });
+            return;
+        }
+
+        const plan = await buildFindSearchPlan({
+            message: effectiveMessage,
+            tags: normalizedTags,
+            profileData,
+            location
+        });
+        res.json({
+            intentType: topLevelIntent,
+            locale: plan.locale,
+            resolvedCategories: plan.resolvedCategories,
+            searchQueries: plan.searchQueries
+        });
     } catch (error: any) {
         res.status(500).json({ error: 'Failed to build search context', details: error.message });
     }
@@ -1671,6 +1830,9 @@ function placeInventoryPriority(place: any, queries: string[]) {
 
 router.post('/places', authenticateTokenOptional, async (req: Request, res: Response) => {
     const { queries, location, radiusKm, limit } = req.body || {};
+    const user = (req as any).user;
+    const userId = user?.id;
+    const userRole = user?.role || 'consumer';
     if (!Array.isArray(queries) || queries.length === 0) {
         res.status(400).json({ error: 'queries array is required' });
         return;
@@ -1684,70 +1846,28 @@ router.post('/places', authenticateTokenOptional, async (req: Request, res: Resp
         )).slice(0, 8);
 
         const keyConfigured = Boolean(process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY);
-        const managedPlaces = await searchManagedPlaceProfiles(uniqueQueries, 8);
-        const grouped = await Promise.all(uniqueQueries.map(async (query) => {
-            try {
-                const places = await searchGooglePlaces(query, location, Number(radiusKm));
-                if (places.length > 0) return places;
-            } catch {
-                // fallback below
-            }
-
-            return [];
-        }));
-
-        const deduped = new Map<string, any>();
-        for (const places of grouped) {
-            for (const place of places) {
-                const key = String(place.id || `${place.name}-${place.address}`);
-                if (!deduped.has(key)) deduped.set(key, place);
-            }
-        }
-
         const requestedLimit = Number.isFinite(Number(limit))
             ? Math.min(48, Math.max(1, Number(limit)))
             : 16;
+        const profileData = userId ? await fetchRoleProfileData(userId, userRole) as UserProfile : {};
+        const locale = resolveLocaleFromProfileAndLocation(profileData, location);
+        const userLocation = await resolveLocationCoordinates(location, locale);
+        const results = await searchPlacesForTerms({
+            searchTerms: uniqueQueries,
+            userLocation,
+            radiusMeters: Number.isFinite(Number(radiusKm)) ? Math.max(1000, Number(radiusKm) * 1000) : 5000,
+            locale,
+            limit: requestedLimit
+        });
 
-        const places = Array.from(deduped.values())
-            .sort((a, b) => {
-                const requestMatchDiff = placeRequestMatchPriority(b, uniqueQueries) - placeRequestMatchPriority(a, uniqueQueries);
-                if (requestMatchDiff !== 0) return requestMatchDiff;
-                const priorityDiff = placeKindIntentBias(b, uniqueQueries) - placeKindIntentBias(a, uniqueQueries);
-                if (priorityDiff !== 0) return priorityDiff;
-                if (a.distance_km == null && b.distance_km == null) return 0;
-                if (a.distance_km == null) return 1;
-                if (b.distance_km == null) return -1;
-                return a.distance_km - b.distance_km;
-            })
-            .slice(0, requestedLimit);
-        const hydratedPlaces = await hydratePlacesWithProfileData(places);
-        let mergedPlaces = Array.from<any>(
-            [...managedPlaces, ...hydratedPlaces].reduce((map, place) => {
-                const key = String(place.place_profile_id || `${place.name}-${place.address}-${place.mapsUrl || ''}`);
-                if (!map.has(key)) {
-                    map.set(key, place);
-                }
-                return map;
-            }, new Map<string, any>()).values()
-        )
-            .sort((a, b) => {
-                const priorityDiff = placeInventoryPriority(b, uniqueQueries) - placeInventoryPriority(a, uniqueQueries);
-                if (priorityDiff !== 0) return priorityDiff;
-                if (a.distance_km == null && b.distance_km == null) return 0;
-                if (a.distance_km == null) return 1;
-                if (b.distance_km == null) return -1;
-                return a.distance_km - b.distance_km;
-            })
-            .slice(0, requestedLimit);
-
-        if (queryHasProduceIntent(uniqueQueries)) {
-            const produceFirst = mergedPlaces.filter((place) => placeKindIntentBias(place, uniqueQueries) >= 0);
-            if (produceFirst.length >= 3) {
-                mergedPlaces = produceFirst.slice(0, requestedLimit);
-            }
-        }
-
-        res.json({ places: mergedPlaces, enriched: keyConfigured });
+        res.json({
+            places: results.combinedResults,
+            premiumResults: results.premiumResults,
+            googleResults: results.googleResults,
+            fallbackMessage: results.fallbackMessage,
+            locale,
+            enriched: keyConfigured
+        });
     } catch (error: any) {
         res.status(500).json({ error: 'Failed to fetch places', details: error.message });
     }

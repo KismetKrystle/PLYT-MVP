@@ -171,6 +171,40 @@ CREATE TABLE IF NOT EXISTS messages_to_admin (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS user_memory_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  source_table TEXT,
+  source_id TEXT,
+  payload JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_preference_signals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  signal_type TEXT NOT NULL,
+  signal_key TEXT NOT NULL,
+  signal_value TEXT,
+  confidence NUMERIC(4,2) NOT NULL DEFAULT 0.50,
+  source TEXT NOT NULL DEFAULT 'derived',
+  first_seen_at TIMESTAMP DEFAULT NOW(),
+  last_seen_at TIMESTAMP DEFAULT NOW(),
+  metadata JSONB DEFAULT '{}'::jsonb,
+  UNIQUE (user_id, signal_type, signal_key, signal_value)
+);
+
+CREATE TABLE IF NOT EXISTS user_memory_summaries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  summary_type TEXT NOT NULL,
+  content TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (user_id, summary_type)
+);
+
 CREATE TABLE IF NOT EXISTS allowed_users (
   id SERIAL PRIMARY KEY,
   username VARCHAR(255) UNIQUE NOT NULL,
@@ -180,4 +214,5 @@ CREATE TABLE IF NOT EXISTS allowed_users (
 
 CREATE INDEX IF NOT EXISTS idx_messages_to_admin_created_at ON messages_to_admin(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_to_admin_status ON messages_to_admin(status, created_at DESC);
-
+CREATE INDEX IF NOT EXISTS idx_user_memory_events_user_id_created_at ON user_memory_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_preference_signals_user_id_type ON user_preference_signals(user_id, signal_type, last_seen_at DESC);

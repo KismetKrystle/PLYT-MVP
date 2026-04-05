@@ -13,6 +13,11 @@ import {
     normalizeManagedPlaceKind,
     updateUserPlaceVisit
 } from '../services/placeProfiles';
+import {
+    ensureUserMemorySchema,
+    recordUserMemoryEvent,
+    refreshUserMemory
+} from '../services/userMemory';
 
 const router = express.Router();
 
@@ -346,7 +351,23 @@ router.post('/:placeProfileId/visits', authenticateToken, async (req: AuthReques
         }
 
         await client.query('BEGIN');
+        await ensureUserMemorySchema(client);
         const createdVisit = await createUserPlaceVisit(client, placeProfileId, userId as string | number, visit || {});
+        await recordUserMemoryEvent(client, {
+            userId: userId as string | number,
+            eventType: 'place_visit_logged',
+            sourceTable: 'place_visits',
+            sourceId: String(createdVisit.id || ''),
+            payload: {
+                place_profile_id: placeProfileId,
+                meal_name: createdVisit.meal_name || null,
+                body_response: createdVisit.body_response || null,
+                rating: createdVisit.rating ?? null,
+                would_repeat: createdVisit.would_repeat ?? null,
+                keep_as_favorite: createdVisit.keep_as_favorite ?? null
+            }
+        });
+        await refreshUserMemory(client, userId as string | number, req.user?.role || 'consumer');
         const visits = await listUserPlaceVisits(placeProfileId, userId as string | number, client);
         await client.query('COMMIT');
 
@@ -384,7 +405,23 @@ router.put('/visits/:visitId', authenticateToken, async (req: AuthRequest, res: 
         }
 
         await client.query('BEGIN');
+        await ensureUserMemorySchema(client);
         const updatedVisit = await updateUserPlaceVisit(client, visitId, userId as string | number, visit || {});
+        await recordUserMemoryEvent(client, {
+            userId: userId as string | number,
+            eventType: 'place_visit_updated',
+            sourceTable: 'place_visits',
+            sourceId: String(updatedVisit.id || visitId),
+            payload: {
+                place_profile_id: String(updatedVisit.place_profile_id || ''),
+                meal_name: updatedVisit.meal_name || null,
+                body_response: updatedVisit.body_response || null,
+                rating: updatedVisit.rating ?? null,
+                would_repeat: updatedVisit.would_repeat ?? null,
+                keep_as_favorite: updatedVisit.keep_as_favorite ?? null
+            }
+        });
+        await refreshUserMemory(client, userId as string | number, req.user?.role || 'consumer');
         const visits = await listUserPlaceVisits(String(updatedVisit.place_profile_id), userId as string | number, client);
         await client.query('COMMIT');
 
@@ -421,7 +458,19 @@ router.delete('/visits/:visitId', authenticateToken, async (req: AuthRequest, re
         }
 
         await client.query('BEGIN');
+        await ensureUserMemorySchema(client);
         const deletedVisit = await deleteUserPlaceVisit(client, visitId, userId as string | number);
+        await recordUserMemoryEvent(client, {
+            userId: userId as string | number,
+            eventType: 'place_visit_deleted',
+            sourceTable: 'place_visits',
+            sourceId: String(deletedVisit.id || visitId),
+            payload: {
+                place_profile_id: String(deletedVisit.place_profile_id || ''),
+                meal_name: deletedVisit.meal_name || null
+            }
+        });
+        await refreshUserMemory(client, userId as string | number, req.user?.role || 'consumer');
         const visits = await listUserPlaceVisits(String(deletedVisit.place_profile_id), userId as string | number, client);
         await client.query('COMMIT');
 

@@ -6,6 +6,11 @@ import {
     markConversationSavedByUser,
     syncConversationSavedState
 } from '../services/chatRetention';
+import {
+    ensureUserMemorySchema,
+    recordUserMemoryEvent,
+    refreshUserMemory
+} from '../services/userMemory';
 
 const router = express.Router();
 
@@ -355,6 +360,20 @@ router.post('/items', authenticateToken, async (req: AuthRequest, res: Response)
             );
         }
 
+        await ensureUserMemorySchema(pool);
+        await recordUserMemoryEvent(pool, {
+            userId: userId as string | number,
+            eventType: 'library_item_saved',
+            sourceTable: 'profile_items',
+            sourceId: String(result.rows[0]?.id || ''),
+            payload: {
+                title: String(result.rows[0]?.title || normalizedTitle),
+                source: source ? String(source) : null,
+                tags: normalizedTags
+            }
+        });
+        await refreshUserMemory(pool, userId as string | number, req.user?.role || 'consumer');
+
         res.status(201).json(result.rows[0]);
     } catch (error) {
         console.error('Create profile item error:', error);
@@ -370,7 +389,7 @@ router.delete('/items/:id', authenticateToken, async (req: AuthRequest, res: Res
         const result = await pool.query(
             `DELETE FROM profile_items
              WHERE id = $1 AND user_id = $2
-             RETURNING id, source_conversation_id`,
+             RETURNING id, title, tags, source, source_conversation_id`,
             [itemId, userId]
         );
 
@@ -387,6 +406,20 @@ router.delete('/items/:id', authenticateToken, async (req: AuthRequest, res: Res
                 sourceConversationId
             );
         }
+
+        await ensureUserMemorySchema(pool);
+        await recordUserMemoryEvent(pool, {
+            userId: userId as string | number,
+            eventType: 'library_item_removed',
+            sourceTable: 'profile_items',
+            sourceId: String(result.rows[0]?.id || itemId),
+            payload: {
+                title: String(result.rows[0]?.title || ''),
+                source: result.rows[0]?.source || null,
+                tags: Array.isArray(result.rows[0]?.tags) ? result.rows[0].tags : []
+            }
+        });
+        await refreshUserMemory(pool, userId as string | number, req.user?.role || 'consumer');
 
         res.json({ success: true });
     } catch (error) {

@@ -6,6 +6,7 @@ import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import KYCForm from '../../../components/KYCForm';
+import AuthBrandShell from '../../../components/auth/AuthBrandShell';
 import { useAuth } from '../../../lib/auth';
 
 const hasClerkPublishableKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -41,7 +42,10 @@ function SignupScreen() {
 
     if (!hasClerkPublishableKey && mode !== 'kyc') {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-white px-4 py-10">
+            <AuthBrandShell
+                subtitle="Create your Plyant account so your search, preferences, and future memory can stay connected."
+                title="Start your Plyant profile"
+            >
                 <div className="max-w-md rounded-[28px] border border-amber-200 bg-white p-8 text-center shadow-sm">
                     <h1 className="text-2xl font-semibold text-[#1f2b18]">Sign up unavailable</h1>
                         <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
@@ -51,7 +55,7 @@ function SignupScreen() {
                         Back to home
                     </Link>
                 </div>
-            </div>
+            </AuthBrandShell>
         );
     }
 
@@ -132,7 +136,10 @@ function SignupScreen() {
     }
 
     return (
-        <div className="flex min-h-[100dvh] items-center justify-center bg-white px-4 py-6 sm:min-h-screen sm:py-10">
+        <AuthBrandShell
+            subtitle="Set up your account so Plyant can start learning your health profile, preferences, and sourcing habits."
+            title="Join Plyant"
+        >
             <ClerkProvider localization={clerkLocalization}>
                 <SignUp
                     appearance={clerkAppearance}
@@ -143,13 +150,13 @@ function SignupScreen() {
                     signInUrl={loginUrl}
                 />
             </ClerkProvider>
-        </div>
+        </AuthBrandShell>
     );
 }
 
 export default function SignupPage() {
     return (
-        <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-white text-sm text-[#6b6d61]">Loading sign up...</div>}>
+        <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#f5f3ed] text-sm text-[#6b6d61]">Loading sign up...</div>}>
             <SignupScreen />
         </Suspense>
     );

@@ -12,6 +12,13 @@ import {
     markConversationSavedByUser,
     syncConversationSavedState
 } from '../services/chatRetention';
+import {
+    buildRelevantMemoryPromptSection,
+    buildUserMemoryContext,
+    recordUserMemoryEvent,
+    refreshUserMemory,
+    ensureUserMemorySchema
+} from '../services/userMemory';
 
 const router = express.Router();
 const VALID_ROLES = new Set(['consumer', 'farmer', 'expert', 'distributor', 'servicer']);
@@ -281,6 +288,7 @@ router.post('/favorites/places', authenticateToken, async (req: AuthRequest, res
         }
 
         await client.query('BEGIN');
+        await ensureUserMemorySchema(client);
         const existingResult = await client.query(
             `SELECT profile_data FROM users WHERE id = $1 LIMIT 1`,
             [userId]
@@ -307,6 +315,19 @@ router.post('/favorites/places', authenticateToken, async (req: AuthRequest, res
         await syncUserProfileData(client, userId as string | number, userRole, {
             favorite_places: nextPlaces
         });
+        await recordUserMemoryEvent(client, {
+            userId: userId as string | number,
+            eventType: 'place_favorited',
+            sourceTable: 'user_place_favorites',
+            sourceId: String(placeProfile?.id || placeProfile?.place_profile_id || normalizedPlace.id || normalizedPlace.mapsUrl || normalizedPlace.name || ''),
+            payload: {
+                place_profile_id: String(placeProfile?.id || placeProfile?.place_profile_id || ''),
+                place_name: normalizedPlace.name,
+                place_kind: placeProfile?.place_kind || place?.place_kind || null,
+                maps_url: normalizedPlace.mapsUrl || null
+            }
+        });
+        await refreshUserMemory(client, userId as string | number, userRole);
         const favoritePlaces = await listUserFavoritePlaces(userId as string | number, client);
 
         await client.query('COMMIT');
@@ -342,6 +363,7 @@ router.delete('/favorites/places', authenticateToken, async (req: AuthRequest, r
         }
 
         await client.query('BEGIN');
+        await ensureUserMemorySchema(client);
         const existingResult = await client.query(
             `SELECT profile_data FROM users WHERE id = $1 LIMIT 1`,
             [userId]
@@ -362,6 +384,17 @@ router.delete('/favorites/places', authenticateToken, async (req: AuthRequest, r
         await syncUserProfileData(client, userId as string | number, userRole, {
             favorite_places: nextPlaces
         });
+        await recordUserMemoryEvent(client, {
+            userId: userId as string | number,
+            eventType: 'place_unfavorited',
+            sourceTable: 'user_place_favorites',
+            sourceId: String(placeProfile?.id || targetIdentity),
+            payload: {
+                place_profile_id: String(placeProfile?.id || ''),
+                target_identity: targetIdentity
+            }
+        });
+        await refreshUserMemory(client, userId as string | number, userRole);
         const favoritePlaces = await listUserFavoritePlaces(userId as string | number, client);
 
         await client.query('COMMIT');
@@ -419,6 +452,7 @@ router.post('/favorites/chats', authenticateToken, async (req: AuthRequest, res:
 
         await client.query('BEGIN');
         await ensureConversationRetentionColumns(client);
+        await ensureUserMemorySchema(client);
         const existingResult = await client.query(
             `SELECT profile_data FROM users WHERE id = $1 LIMIT 1`,
             [userId]
@@ -441,6 +475,16 @@ router.post('/favorites/chats', authenticateToken, async (req: AuthRequest, res:
             favorite_chats: nextChats
         });
         await markConversationSavedByUser(client, userId as string | number, favoriteChat.id, true);
+        await recordUserMemoryEvent(client, {
+            userId: userId as string | number,
+            eventType: 'chat_favorited',
+            sourceTable: 'conversations',
+            sourceId: favoriteChat.id,
+            payload: {
+                title: favoriteChat.title
+            }
+        });
+        await refreshUserMemory(client, userId as string | number, userRole);
 
         await client.query('COMMIT');
         res.json({
@@ -476,6 +520,7 @@ router.delete('/favorites/chats/:conversationId', authenticateToken, async (req:
 
         await client.query('BEGIN');
         await ensureConversationRetentionColumns(client);
+        await ensureUserMemorySchema(client);
         const existingResult = await client.query(
             `SELECT profile_data FROM users WHERE id = $1 LIMIT 1`,
             [userId]
@@ -500,6 +545,14 @@ router.delete('/favorites/chats/:conversationId', authenticateToken, async (req:
             normalizedConversationId,
             updatedUser.profile_data
         );
+        await recordUserMemoryEvent(client, {
+            userId: userId as string | number,
+            eventType: 'chat_unfavorited',
+            sourceTable: 'conversations',
+            sourceId: normalizedConversationId,
+            payload: {}
+        });
+        await refreshUserMemory(client, userId as string | number, userRole);
 
         await client.query('COMMIT');
         res.json({
@@ -517,6 +570,32 @@ router.delete('/favorites/chats/:conversationId', authenticateToken, async (req:
         res.status(500).json({ error: 'Failed to remove favorite chat' });
     } finally {
         client.release();
+    }
+});
+
+router.get('/memory-context', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const userRole = req.user?.role || 'consumer';
+        const query = String(req.query.q || '').trim();
+
+        if (!userId) {
+            res.sendStatus(401);
+            return;
+        }
+
+        const memory = await buildUserMemoryContext(userId as string | number, userRole);
+        const promptSection = query
+            ? await buildRelevantMemoryPromptSection(userId as string | number, query, userRole)
+            : '';
+
+        res.json({
+            memory,
+            promptSection
+        });
+    } catch (error) {
+        console.error('Get memory context error:', error);
+        res.status(500).json({ error: 'Failed to fetch memory context' });
     }
 });
 

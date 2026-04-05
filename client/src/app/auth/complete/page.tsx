@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../lib/auth';
 import { useAuth as useClerkAuth, useUser } from '@clerk/nextjs';
 import api from '../../../lib/api';
+import AuthBrandShell from '../../../components/auth/AuthBrandShell';
 
 const hasClerkPublishableKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
@@ -118,7 +119,10 @@ function AuthCompleteScreen() {
     }, [clerkUser?.id, defaultDestination, getToken, isClerkLoaded, isClerkUserLoaded, isSignedIn, loading, login, redirectPath, retryCount, retryTick, user]);
 
     return (
-        <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-[#f5f3ed] px-4">
+        <AuthBrandShell
+            subtitle="We are securely connecting your Clerk session to your Plyant account so your profile and history come through cleanly."
+            title="Finalizing your secure sign-in"
+        >
             <div className="w-full max-w-md rounded-[28px] border border-[#dfd7c9] bg-white p-8 text-center shadow-sm">
                 <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-[#234f2e]/20 border-t-[#234f2e]" />
                 <h1 className="text-2xl font-semibold text-[#1f2b18]">Finalizing your sign-in</h1>
@@ -146,14 +150,17 @@ function AuthCompleteScreen() {
                     </div>
                 ) : null}
             </div>
-        </div>
+        </AuthBrandShell>
     );
 }
 
 export default function AuthCompletePage() {
     if (!hasClerkPublishableKey) {
         return (
-            <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-[#f5f3ed] px-4">
+            <AuthBrandShell
+                subtitle="Your client session needs Clerk configured before Plyant can complete sign-in."
+                title="Clerk is not configured"
+            >
                 <div className="w-full max-w-md rounded-[28px] border border-amber-200 bg-white p-8 text-center shadow-sm">
                     <h1 className="text-2xl font-semibold text-[#1f2b18]">Clerk is not configured</h1>
                     <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
@@ -163,12 +170,12 @@ export default function AuthCompletePage() {
                         Back to login
                     </Link>
                 </div>
-            </div>
+            </AuthBrandShell>
         );
     }
 
     return (
-        <Suspense fallback={<div className="flex min-h-[calc(100vh-4rem)] items-center justify-center text-sm text-[#6b6d61]">Finishing sign in...</div>}>
+        <Suspense fallback={<div className="flex min-h-[100dvh] items-center justify-center bg-[#f5f3ed] text-sm text-[#6b6d61]">Finishing sign in...</div>}>
             <AuthCompleteScreen />
         </Suspense>
     );

@@ -10,6 +10,8 @@
     "seed:phase1": "ts-node src/scripts/seed-phase1-profiles.ts",
     "seed": "ts-node src/seed.ts",
     "seed-user": "ts-node src/scripts/seed-user.ts",
+    "backfill:user-memory": "ts-node src/scripts/backfill-user-memory.ts",
+    "inspect:user-memory": "ts-node src/scripts/inspect-user-memory.ts",
     "create-allowed-users": "ts-node src/scripts/create-allowed-users.ts",
     "add-user": "ts-node src/scripts/add-user.ts",
     "check-gatekeeper": "ts-node src/scripts/check-gatekeeper.ts",

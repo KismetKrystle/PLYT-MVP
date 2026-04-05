@@ -21,6 +21,7 @@ import {
     ensureConversationRetentionColumns,
     getChatRetentionDays
 } from '../services/chatRetention';
+import { buildRelevantMemoryPromptSection } from '../services/userMemory';
 
 const router = express.Router();
 let chatSchemaReady: Promise<void> | null = null;
@@ -1200,7 +1201,13 @@ async function searchGooglePlaces(query: string, location?: string, maxRadiusKm?
         .slice(0, 12);
 }
 
-async function buildPlaceRecommendationReply(message: string, places: any[], profileData: any, userRole?: string) {
+async function buildPlaceRecommendationReply(
+    message: string,
+    places: any[],
+    profileData: any,
+    userRole?: string,
+    userId?: string | number
+) {
     if (!process.env.GEMINI_API_KEY) {
         return '';
     }
@@ -1224,12 +1231,21 @@ async function buildPlaceRecommendationReply(message: string, places: any[], pro
         ? `## Allergy guardrail
 - Never recommend anything that conflicts with these allergies: ${promptFields.allergies.join(', ')}`
         : '';
+    let memorySection = '';
+    if (userId) {
+        try {
+            memorySection = await buildRelevantMemoryPromptSection(userId, message, userRole || 'consumer');
+        } catch (error) {
+            console.warn('User memory context lookup failed for place recommendation mode, continuing without memory context:', error);
+        }
+    }
 
     const systemInstruction = buildNaviSystemInstruction({
         healthConditions: promptFields.healthConditions,
         dietaryPreferences: promptFields.dietaryPreferences,
         extraSections: [
             allergySection,
+            memorySection,
             `## PLACE RECOMMENDATION MODE
 - You are helping the user decide from a real nearby result set that has already been retrieved.
 - Only recommend places that appear in the provided place list.
@@ -1307,7 +1323,13 @@ function buildSuggestionAwareFallbackReply(message: string, places: any[]) {
     return `From your current nearby suggestions, I would start with ${placeNames}. There may be more options in the suggestions panel if you want to compare a bit wider.`;
 }
 
-async function buildSuggestionAwareReply(message: string, places: any[], profileData: any, userRole?: string) {
+async function buildSuggestionAwareReply(
+    message: string,
+    places: any[],
+    profileData: any,
+    userRole?: string,
+    userId?: string | number
+) {
     if (!process.env.GEMINI_API_KEY) {
         return buildSuggestionAwareFallbackReply(message, places);
     }
@@ -1331,12 +1353,21 @@ async function buildSuggestionAwareReply(message: string, places: any[], profile
         ? `## Allergy guardrail
 - Never recommend anything that conflicts with these allergies: ${promptFields.allergies.join(', ')}`
         : '';
+    let memorySection = '';
+    if (userId) {
+        try {
+            memorySection = await buildRelevantMemoryPromptSection(userId, message, userRole || 'consumer');
+        } catch (error) {
+            console.warn('User memory context lookup failed for suggestion follow-up mode, continuing without memory context:', error);
+        }
+    }
 
     const systemInstruction = buildNaviSystemInstruction({
         healthConditions: promptFields.healthConditions,
         dietaryPreferences: promptFields.dietaryPreferences,
         extraSections: [
             allergySection,
+            memorySection,
             `## CURRENT SUGGESTIONS FOLLOW-UP MODE
 - The user is asking about the currently displayed suggestion list.
 - Only refer to places that appear in the provided list.
@@ -1406,6 +1437,14 @@ router.post('/', authenticateTokenOptional, async (req: Request, res: Response) 
         const promptFields = getPromptProfileFields(profileData, userRole);
         const userSettings = getUserSettings(profileData, userRole);
         const locationLinkRule = buildLocationLinkRule(profileData, location);
+        let memorySection = '';
+        if (userId) {
+            try {
+                memorySection = await buildRelevantMemoryPromptSection(userId, effectiveMessage, userRole);
+            } catch (memoryErr) {
+                console.warn('User memory context lookup failed, continuing without memory context:', memoryErr);
+            }
+        }
         const allergySection = promptFields.allergies.length > 0
             ? `## Allergy guardrail
 - Never recommend anything that conflicts with these allergies: ${promptFields.allergies.join(', ')}`
@@ -1416,6 +1455,7 @@ router.post('/', authenticateTokenOptional, async (req: Request, res: Response) 
             extraSections: [
                 allergySection,
                 locationLinkRule,
+                memorySection,
                 buildUserSettingsInstruction(userSettings),
                 buildIntentSystemSection(intentClassification),
                 `## CURRENT USER PROFILE
@@ -1515,7 +1555,7 @@ Use this profile directly for personalization. Do not ask for details already pr
         let responseSearchQueries = searchQueries;
 
         if (isSuggestionFollowUp) {
-            aiResponse = await buildSuggestionAwareReply(effectiveMessage, currentVisiblePlaces, profileData, userRole);
+            aiResponse = await buildSuggestionAwareReply(effectiveMessage, currentVisiblePlaces, profileData, userRole, userId);
             modelName = 'suggestion-aware';
         } else {
             try {
@@ -1894,7 +1934,8 @@ router.post('/recommend-places', authenticateTokenOptional, async (req: Request,
                 String(message),
                 places,
                 profileData,
-                userRole
+                userRole,
+                userId
             ),
             buildPersonalizationNudge(Boolean(userId), isProfileComplete(mergedProfile))
         );

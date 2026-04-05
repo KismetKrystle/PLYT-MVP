@@ -1860,7 +1860,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             onClick={() => setActiveModal('food')}
             className={`relative min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
         >
-            <div className="relative h-40 bg-green-50">
+            <div className="relative h-[156px] bg-green-50">
                 <>
                     <Image
                         src={featuredProduce.image}
@@ -1871,7 +1871,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
                 </>
             </div>
-            <div className="flex items-start justify-between gap-4 p-4">
+            <div className="flex items-start justify-between gap-4 p-3">
                 <div>
                     <h3 className="text-lg font-bold text-gray-900">Produce</h3>
                     <p className="mt-1 text-sm font-medium text-gray-500">
@@ -1945,7 +1945,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             onClick={() => setActiveModal('supplements')}
             className={`min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
         >
-            <div className="relative h-40 bg-emerald-50">
+            <div className="relative h-[156px] bg-emerald-50">
                 {featuredSupplement ? (
                     <>
                         <Image
@@ -1965,7 +1965,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     </div>
                 )}
             </div>
-            <div className="flex items-start justify-between gap-4 p-4">
+            <div className="flex items-start justify-between gap-4 p-3">
                 <div>
                     <h3 className="text-lg font-bold text-gray-900">Supplements</h3>
                     <p className="mt-1 text-sm font-medium text-gray-500">
@@ -2026,7 +2026,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             onClick={() => setActiveModal('herbs')}
             className={`min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
         >
-            <div className="relative h-40 bg-lime-50">
+            <div className="relative h-[156px] bg-lime-50">
                 {featuredHerb ? (
                     <>
                         <Image
@@ -2046,7 +2046,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     </div>
                 )}
             </div>
-            <div className="flex items-start justify-between gap-4 p-4">
+            <div className="flex items-start justify-between gap-4 p-3">
                 <div>
                     <h3 className="text-lg font-bold text-gray-900">Herbs</h3>
                     <p className="mt-1 text-sm font-medium text-gray-500">
@@ -2197,7 +2197,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 {renderStreakCard('hidden md:flex md:col-span-1')}
 
                 <div className="col-span-2 -mx-4 overflow-x-auto px-4 no-scrollbar md:hidden">
-                    <div className="flex gap-4 pb-2">
+                    <div className="flex items-start gap-4 pb-2">
                         {renderVideosCard('w-[224px] shrink-0')}
                         {renderRecipesCard('w-[288px] shrink-0')}
                         {renderHerbsCard('w-[212px] shrink-0')}
@@ -2313,7 +2313,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     onClick={() => setActiveModal('supplements')}
                     className="hidden order-3 min-w-0 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden md:block"
                 >
-                    <div className="relative h-40 bg-emerald-50">
+                    <div className="relative h-[156px] bg-emerald-50">
                         {featuredSupplement ? (
                             <>
                                 <Image
@@ -2333,7 +2333,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             </div>
                         )}
                     </div>
-                    <div className="flex items-start justify-between gap-4 p-4">
+                    <div className="flex items-start justify-between gap-4 p-3">
                         <div>
                             <h3 className="text-lg font-bold text-gray-900">Supplements</h3>
                                 <p className="hidden">
@@ -2395,7 +2395,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     onClick={() => setActiveModal('herbs')}
                     className="hidden order-2 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden md:block"
                 >
-                    <div className="relative h-40 bg-lime-50">
+                    <div className="relative h-[156px] bg-lime-50">
                         {featuredHerb ? (
                             <>
                                 <Image
@@ -2415,7 +2415,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             </div>
                         )}
                     </div>
-                    <div className="flex items-start justify-between gap-4 p-4">
+                    <div className="flex items-start justify-between gap-4 p-3">
                         <div>
                             <h3 className="text-lg font-bold text-gray-900">Herbs</h3>
                             <p className="mt-1 text-sm font-medium text-gray-500">

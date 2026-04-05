@@ -7,6 +7,8 @@ import { useAuth } from '../../lib/auth';
 import {
     formatJournalDate,
     getTodayIsoDate,
+    JOURNAL_CATEGORIES,
+    JournalCategory,
     JournalEntry,
     loadJournalEntries,
     saveJournalEntries
@@ -18,6 +20,7 @@ export default function JournalPage() {
     const [content, setContent] = useState('');
     const [imageUrl, setImageUrl] = useState('');
     const [tagsInput, setTagsInput] = useState('');
+    const [category, setCategory] = useState<JournalCategory>('food');
     const [entries, setEntries] = useState<JournalEntry[]>([]);
     const [editingEntryId, setEditingEntryId] = useState<number | null>(null);
 
@@ -52,7 +55,8 @@ export default function JournalPage() {
                             entryDate,
                             content: trimmed,
                             imageUrl: normalizedImageUrl || undefined,
-                            tags
+                            tags,
+                            category
                         }
                         : entry
                 )
@@ -65,6 +69,7 @@ export default function JournalPage() {
                     content: trimmed,
                     imageUrl: normalizedImageUrl || undefined,
                     tags,
+                    category,
                     createdAt: new Date().toISOString()
                 },
                 ...current
@@ -74,6 +79,7 @@ export default function JournalPage() {
         setContent('');
         setImageUrl('');
         setTagsInput('');
+        setCategory('food');
         setEntryDate(getTodayIsoDate());
         setEditingEntryId(null);
     };
@@ -85,6 +91,7 @@ export default function JournalPage() {
             setContent('');
             setImageUrl('');
             setTagsInput('');
+            setCategory('food');
             setEntryDate(getTodayIsoDate());
         }
     };
@@ -95,6 +102,7 @@ export default function JournalPage() {
         setContent(entry.content);
         setImageUrl(entry.imageUrl || '');
         setTagsInput((entry.tags || []).join(', '));
+        setCategory(entry.category || 'food');
     };
 
     const resetEditor = () => {
@@ -103,6 +111,7 @@ export default function JournalPage() {
         setContent('');
         setImageUrl('');
         setTagsInput('');
+        setCategory('food');
     };
 
     if (loading) {
@@ -170,6 +179,20 @@ export default function JournalPage() {
                                     onChange={(event) => setEntryDate(event.target.value)}
                                     className="w-full rounded-2xl border border-green-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-green-400"
                                 />
+                            </div>
+                            <div>
+                                <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-600">Category</label>
+                                <select
+                                    value={category}
+                                    onChange={(event) => setCategory(event.target.value as JournalCategory)}
+                                    className="w-full rounded-2xl border border-green-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-green-400"
+                                >
+                                    {JOURNAL_CATEGORIES.map((option) => (
+                                        <option key={option} value={option}>
+                                            {option.charAt(0).toUpperCase() + option.slice(1)}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
                             <div>
                                 <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-600">Daily note</label>
@@ -249,6 +272,11 @@ export default function JournalPage() {
                                                 <p className="mt-1 text-xs text-gray-400">
                                                     Added {new Date(entry.createdAt).toLocaleString()}
                                                 </p>
+                                                {entry.category ? (
+                                                    <span className="mt-2 inline-flex rounded-full bg-green-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-green-700">
+                                                        {entry.category}
+                                                    </span>
+                                                ) : null}
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <button

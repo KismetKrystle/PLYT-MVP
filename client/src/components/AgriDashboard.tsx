@@ -2181,29 +2181,9 @@ export default function AgriDashboard() {
             {/* Middle Column: Main Content (Dashboard OR Chat) */}
             <div className="flex-1 flex flex-col min-w-0 bg-white relative">
 
-                {/* Tab Navigation */}
-                {activeTab !== 'home' && (
-                    <div className="flex border-b border-gray-100 items-center justify-center px-4 pt-2 shrink-0">
-                        <div className="flex space-x-1 overflow-x-auto no-scrollbar w-full max-w-2xl justify-center">
-                            {['chat'].map((tab) => (
-                                <button
-                                    key={tab}
-                                    onClick={() => setActiveTab(tab as Tab)}
-                                    className={`px-4 md:px-6 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${activeTab === tab
-                                        ? 'border-green-600 text-green-700'
-                                        : 'border-transparent text-gray-500 hover:text-gray-800'
-                                        }`}
-                                >
-                                    {tab === 'chat' && 'Assistant'}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
                 {/* Content Area */}
-                <div className="flex-1 overflow-y-auto relative bg-gray-50/50 flex flex-col">
-                    {/* Dashboard Content */}
+                    <div className="flex-1 overflow-y-auto relative bg-gray-50/50 flex flex-col">
+                        {/* Dashboard Content */}
                     <div className="flex-1 overflow-y-auto no-scrollbar relative z-0">
 
                         {/* HOME TAB - PUBLIC PROFILE V2 (Bento Grid) */}
@@ -2296,31 +2276,32 @@ export default function AgriDashboard() {
                             <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full h-full">
                                 {/* Chat Area */}
                                 <div className="flex-1 flex flex-col overflow-hidden">
-                                <div className="border-b border-gray-100 bg-white px-4 py-3 md:px-6">
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex items-center gap-3">
-                                            <FoodChatMascot />
-                                            <div>
-                                                <h2 className="text-sm font-bold text-gray-800">Hi, I'm Navi.</h2>
-                                                <p className="text-xs text-gray-400">I search cities for the healthiest food sources, for your unique health conditions and diet preferences.</p>
+                                    <div className="flex-1 overflow-y-auto no-scrollbar">
+                                        <div className="border-b border-gray-100 bg-white px-4 py-3 md:px-6">
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div className="flex items-center gap-3">
+                                                    <FoodChatMascot />
+                                                    <div>
+                                                        <h2 className="text-sm font-bold text-gray-800">Hi, I'm Navi.</h2>
+                                                        <p className="text-xs text-gray-400">I find the healthiest foods for your unique profile.</p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleStartNewChat}
+                                                    className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:border-green-300 hover:text-green-700"
+                                                >
+                                                    New chat
+                                                </button>
                                             </div>
+                                            {chatSaveStatus ? (
+                                                <div className="mt-3 rounded-2xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-800">
+                                                    {chatSaveStatus}
+                                                </div>
+                                            ) : null}
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={handleStartNewChat}
-                                            className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:border-green-300 hover:text-green-700"
-                                        >
-                                            New chat
-                                        </button>
-                                    </div>
-                                    {chatSaveStatus ? (
-                                        <div className="mt-3 rounded-2xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-800">
-                                            {chatSaveStatus}
-                                        </div>
-                                    ) : null}
-                                </div>
-                                <div className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-6 space-y-4">
-                                    {(chatHistory['chat'] || []).map((msg, idx, messages) => (
+                                        <div className="p-4 md:p-6 space-y-4">
+                                            {(chatHistory['chat'] || []).map((msg, idx, messages) => (
                                         <motion.div
                                             key={idx}
                                             initial={{ opacity: 0, y: 10 }}
@@ -2425,14 +2406,15 @@ export default function AgriDashboard() {
                                                 ) : null}
                                             </div>
                                         </motion.div>
-                                    ))}
-                                    <AnimatePresence>
-                                        {isLoading && pendingIntent ? (
-                                            <IntentLoader classification={pendingIntent} />
-                                        ) : null}
-                                    </AnimatePresence>
-                                    <div ref={messagesEndRef} />
-                                </div>
+                                            ))}
+                                            <AnimatePresence>
+                                                {isLoading && pendingIntent ? (
+                                                    <IntentLoader classification={pendingIntent} />
+                                                ) : null}
+                                            </AnimatePresence>
+                                            <div ref={messagesEndRef} />
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* Suggested Products Panel */}
@@ -2471,7 +2453,7 @@ export default function AgriDashboard() {
                                                           ?
                                                       </button>
                                                       {isSuggestionModeInfoOpen ? (
-                                                          <div className="absolute right-0 top-7 z-[70] w-64 max-w-[calc(100vw-2rem)] rounded-2xl border border-gray-200 bg-white p-3 text-[11px] font-medium leading-relaxed text-gray-600 shadow-2xl">
+                                                          <div className="absolute left-1/2 top-7 z-[70] w-64 max-w-[calc(100vw-3rem)] -translate-x-1/2 rounded-2xl border border-gray-200 bg-white p-3 text-[11px] font-medium leading-relaxed text-gray-600 shadow-2xl md:left-auto md:right-0 md:translate-x-0">
                                                               {activeSuggestionPanelMeta.description}
                                                           </div>
                                                       ) : null}
@@ -3786,18 +3768,14 @@ export default function AgriDashboard() {
 
                     {/* Main Chat Input Area (Hidden in Learn Mode, Visible in Home/Find/Pick) */}
                     {
-                        activeTab !== 'learn' && activeTab !== 'health_profiles' && activeTab !== 'customer_profile' && (
-                            <div className={`shrink-0 z-10 transition-all duration-500 ${(activeTab === 'home')
-                                ? 'p-4 md:p-6 bg-gradient-to-t from-white via-white to-transparent'
-                                : 'p-4 md:p-6 bg-white border-t border-gray-100'
-                                }`}>
-                                <div className={`mx-auto transition-all duration-500 relative shadow-xl bg-white border border-gray-200 rounded-3xl ${(activeTab === 'home') ? 'max-w-2xl' : 'max-w-3xl'
-                                    }`}>
+                        activeTab !== 'learn' && activeTab !== 'health_profiles' && activeTab !== 'customer_profile' && activeTab !== 'home' && (
+                            <div className="shrink-0 z-10 p-4 md:p-6 bg-white border-t border-gray-100 transition-all duration-500">
+                                <div className="mx-auto max-w-3xl transition-all duration-500 relative shadow-xl bg-white border border-gray-200 rounded-3xl">
                                     <textarea
                                         value={prompt}
                                         onChange={(e) => setPrompt(e.target.value)}
                                         onKeyDown={handleKeyDown}
-                                        placeholder={(activeTab === 'home') ? "Ask a question..." : "Type your message..."}
+                                        placeholder="Type your message..."
                                         className="w-full pl-6 pr-14 py-4 rounded-3xl resize-none focus:outline-none focus:ring-2 focus:ring-green-500/50 bg-transparent text-gray-700 placeholder:text-gray-400"
                                         rows={1}
                                         style={{ minHeight: '60px' }}
@@ -3812,11 +3790,6 @@ export default function AgriDashboard() {
                                         </svg>
                                     </button>
                                 </div>
-                                {activeTab === 'home' && (
-                                    <p className="text-center text-xs text-gray-400 mt-2">
-                                        Start a chat to find food, discover places nearby, or get personalized guidance.
-                                    </p>
-                                )}
                             </div>
                         )
                     }

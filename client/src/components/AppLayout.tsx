@@ -77,6 +77,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const { savedLessons, activeLesson, setActiveLesson } = useLessons();
     const isStandaloneAuthPath = pathname === '/signup' || pathname === '/login' || pathname === '/auth/complete';
     const currentAppLocation = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+    const currentTab = searchParams.get('tab') || '';
+    const isAboutYouTab = currentTab === 'customer_profile';
+    const showMobileFooter = !isAboutYouTab;
+    const profileAvatarSrc = String(user?.avatar_url || user?.profile_data?.avatar_url || '/assets/images/gallery/user_avatar.png').trim();
+    const profileDisplayName = String(user?.full_name || user?.profile_data?.full_name || user?.email?.split('@')[0] || 'Guest User').trim() || 'Guest User';
 
     const requestSignIn = () => {
         setLeftSidebarOpen(false);
@@ -319,6 +324,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )
         },
         {
+            name: 'Health Profile', href: '/?tab=health_profiles&profile=consumer', icon: (
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-current px-1 text-[10px] font-bold leading-none">
+                    HP
+                </span>
+            )
+        },
+        {
             name: 'Chats', href: '/?tab=chat', icon: (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
             )
@@ -368,7 +380,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     ];
 
     return (
-        <div className="flex h-screen bg-gray-50 overflow-hidden relative">
+        <div className="relative flex min-h-[100dvh] bg-gray-50 overflow-hidden">
             {isFeedbackOpen ? (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 backdrop-blur-sm">
                     <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-gray-200">
@@ -728,21 +740,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </aside>
 
             {/* Main Content Wrapper */}
-            <div className="flex-1 flex flex-col min-w-0 h-full relative transition-all duration-300">
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto transition-all duration-300 md:overflow-hidden">
 
                 {/* Universal Top Header (Mobile & Desktop) */}
-                <header className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 md:px-6 z-40 md:relative md:border-gray-200 md:shrink-0 transition-all">
+                <header className="relative z-40 border-b border-gray-100 bg-white px-4 pt-[env(safe-area-inset-top)] md:shrink-0 md:border-gray-200 md:px-6 md:pt-0">
+                    <div className="flex min-h-16 items-center justify-between">
 
                     {/* Mobile: Back Button & Logo */}
                     <div className="flex items-center gap-4 md:hidden w-full">
-                        <button
-                            type="button"
-                            onClick={handleMobileHeaderBack}
-                            className="text-gray-600"
-                            aria-label={canGoBackInApp ? 'Go back' : 'Open menu'}
-                        >
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setLeftSidebarOpen((prev) => !prev)}
+                                className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-green-200 hover:text-green-700"
+                                aria-label="Toggle menu"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleMobileHeaderBack}
+                                className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-green-200 hover:text-green-700"
+                                aria-label={canGoBackInApp ? 'Go back' : 'Open menu'}
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                            </button>
+                        </div>
                         <div className="flex-1 flex justify-center">
                             <Link href="/?tab=landing">
                                 <Logo variant="dark" width={80} />
@@ -761,13 +784,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             <div className="relative">
                             <button
                                 onClick={() => setIsProfileOpen(!isProfileOpen)}
-                                className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-inner hover:ring-2 hover:ring-green-500/20 transition-all border border-green-100 ${
-                                    user
-                                        ? 'bg-gradient-to-br from-green-100 to-emerald-200 text-green-800'
-                                        : 'bg-gray-100 text-gray-500'
-                                }`}
+                                className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-green-100 bg-white shadow-inner transition-all hover:ring-2 hover:ring-green-500/20"
                             >
-                                {user ? (user.email?.[0].toUpperCase() || 'U') : 'G'}
+                                <img src={profileAvatarSrc} alt={profileDisplayName} className="h-full w-full object-cover" />
                             </button>
 
                             {isProfileOpen && (
@@ -779,7 +798,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                     <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 divide-y divide-gray-100 z-40 overflow-hidden text-sm animate-in fade-in slide-in-from-top-2 duration-200">
                                         <div className="px-5 py-4 bg-gray-50/50">
                                             <p className="text-sm font-semibold text-gray-900 truncate">
-                                                {user ? 'Kismet' : 'Guest User'}
+                                                {profileDisplayName}
                                             </p>
                                             <p className="text-xs text-gray-500 truncate">
                                                 {user ? user.email : 'Sign in to sync your data'}
@@ -890,11 +909,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         <div className="relative ml-2">
                             <button
                                 onClick={() => setIsProfileOpen(!isProfileOpen)}
-                                className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-inner hover:ring-2 hover:ring-green-500/20 transition-all border border-green-100 ${user
-                                    ? 'bg-gradient-to-br from-green-100 to-emerald-200 text-green-800'
-                                    : 'bg-gray-100 text-gray-500'}`}
+                                className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-green-100 bg-white shadow-inner transition-all hover:ring-2 hover:ring-green-500/20"
                             >
-                                {user ? (user.email?.[0].toUpperCase() || 'U') : 'G'}
+                                <img src={profileAvatarSrc} alt={profileDisplayName} className="h-full w-full object-cover" />
                             </button>
 
                             {isProfileOpen && (
@@ -906,7 +923,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                     <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 divide-y divide-gray-100 z-40 overflow-hidden text-sm animate-in fade-in slide-in-from-top-2 duration-200">
                                         <div className="px-5 py-4 bg-gray-50/50">
                                             <p className="text-sm font-semibold text-gray-900 truncate">
-                                                {user ? 'Kismet' : 'Guest User'}
+                                                {profileDisplayName}
                                             </p>
                                             <p className="text-xs text-gray-500 truncate">
                                                 {user ? user.email : 'Sign in to sync your data'}
@@ -1030,17 +1047,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             )}
                         </div>
                     </div>
+                    </div>
                 </header>
 
                 {/* Scrollable Main Content Layout & Padding for Mobile Header/Footer */}
-                <main className="flex-1 overflow-hidden relative flex flex-row pt-16 md:pt-0 pb-20 md:pb-0">
-                    <div className="flex-1 overflow-y-auto bg-gray-50 relative">
+                <main className={`flex-1 overflow-visible md:overflow-hidden relative flex flex-row ${showMobileFooter ? 'pb-16' : 'pb-0'} md:pb-0`}>
+                    <div className="flex-1 overflow-visible md:overflow-y-auto bg-gray-50 relative">
                         {children}
                     </div>
                 </main>
 
                 {/* Mobile Navigation Footer (Fixed Bottom) */}
-                <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-100 md:hidden z-50 flex items-center justify-around px-2">
+                {showMobileFooter ? (
+                <div className="fixed bottom-0 left-0 right-0 h-14 bg-white border-t border-gray-100 md:hidden z-50 flex items-center justify-around px-2">
                     <Link
                         href="/?tab=customer_profile&focus=favorites"
                         onClick={(event) => {
@@ -1087,10 +1106,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         </span>
                     </Link>
 
-                    <button onClick={() => setLeftSidebarOpen((prev) => !prev)} className="flex flex-col items-center p-2 text-gray-400">
-                        <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
-                    </button>
+                    <Link
+                        href="/journal"
+                        onClick={(event) => {
+                            if (handleProtectedNavigation(event)) return;
+                            setLeftSidebarOpen(false);
+                        }}
+                        className="flex flex-col items-center p-2 text-gray-400"
+                    >
+                        <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m-7-7h14" /></svg>
+                    </Link>
                 </div>
+                ) : null}
             </div>
             {/* Global Overlays */}
             <OnboardingTour />

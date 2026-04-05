@@ -1,11 +1,16 @@
 'use client';
 
+export const JOURNAL_CATEGORIES = ['videos', 'food', 'supplements', 'herbs', 'recipes'] as const;
+
+export type JournalCategory = (typeof JOURNAL_CATEGORIES)[number];
+
 export type JournalEntry = {
     id: number;
     entryDate: string;
     content: string;
     imageUrl?: string;
     tags?: string[];
+    category?: JournalCategory;
     createdAt: string;
 };
 

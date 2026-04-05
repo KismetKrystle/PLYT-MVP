@@ -20,13 +20,12 @@ export default function AboutYouListPanel({
 }: Props) {
     return (
         <>
-            <div className="max-w-7xl mx-auto mb-4 border-b border-gray-200 pb-4">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="mx-auto mb-4 max-w-7xl">
+                <div className="flex flex-col gap-4">
                     <div>
-                        <p className="text-xs font-bold uppercase tracking-[0.22em] text-gray-400">About You</p>
-                        <h2 className="mt-1 text-lg font-bold text-gray-900">Your living library.</h2>
+                        <h2 className="text-3xl font-extrabold tracking-tight text-gray-900 md:text-4xl">Your Living Library</h2>
                     </div>
-                    <div className="inline-flex rounded-2xl border border-gray-200 bg-gray-50 p-1">
+                    <div className="inline-flex w-fit rounded-2xl border border-gray-200 bg-gray-50 p-1">
                         <button
                             type="button"
                             onClick={() => onViewModeChange('cards')}

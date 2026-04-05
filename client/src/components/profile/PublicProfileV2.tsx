@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { formatJournalDate, JournalEntry, loadJournalEntries, saveJournalEntries } from '../../lib/journal';
+import { formatJournalDate, JournalCategory, JournalEntry, loadJournalEntries, saveJournalEntries } from '../../lib/journal';
 import AboutYouListPanel from './about-you/AboutYouListPanel';
 import HerbsModalSection from './about-you/HerbsModalSection';
 import SupplementsModalSection from './about-you/SupplementsModalSection';
@@ -401,6 +401,13 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         )
     ), [journalEntries, visibleJournalExampleEntries]);
     const hasVisibleJournalExamples = visibleJournalExampleEntries.length > 0;
+    const journalEntriesByCategory = useMemo(() => ({
+        videos: journalEntries.filter((entry) => entry.category === 'videos'),
+        food: journalEntries.filter((entry) => entry.category === 'food'),
+        supplements: journalEntries.filter((entry) => entry.category === 'supplements'),
+        herbs: journalEntries.filter((entry) => entry.category === 'herbs'),
+        recipes: journalEntries.filter((entry) => entry.category === 'recipes')
+    }), [journalEntries]);
     const filteredProduce = useMemo(() => {
         const normalizedQuery = produceSearch.trim().toLowerCase();
 
@@ -1836,8 +1843,309 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         setEditingWallContent('');
     };
 
+    const renderStreakCard = (className = '') => (
+        <Link
+            href="/health-challenges"
+            className={`flex flex-col items-center justify-center rounded-3xl border border-amber-100 bg-white p-5 text-center shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:border-amber-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] ${className}`}
+        >
+            <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-amber-200 bg-amber-50 shadow-[0_0_0_6px_rgba(251,191,36,0.18)]">
+                <span className="text-[2.85rem] font-extrabold leading-none text-amber-700">{healthyDays}</span>
+            </div>
+            <p className="mt-4 text-sm font-semibold leading-6 text-gray-600">Day Streak of a Healthier You</p>
+        </Link>
+    );
+
+    const renderFoodCard = (className = '') => (
+        <div
+            onClick={() => setActiveModal('food')}
+            className={`relative min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
+        >
+            <div className="relative h-36 bg-green-50">
+                <>
+                    <Image
+                        src={featuredProduce.image}
+                        alt="Produce Cover"
+                        fill
+                        className="object-cover transition duration-700 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+                </>
+            </div>
+            <div className="flex items-start justify-between gap-4 p-5">
+                <div>
+                    <h3 className="text-lg font-bold text-gray-900">Produce</h3>
+                    <p className="mt-1 text-sm font-medium text-gray-500">
+                        {featuredProduce.title}
+                    </p>
+                </div>
+                <span className="text-4xl font-extrabold leading-none text-gray-900">
+                    {PRODUCE_LIBRARY.length}
+                </span>
+            </div>
+        </div>
+    );
+
+    const renderVideosCard = (className = '') => (
+        <div
+            onClick={() => setActiveModal('grow')}
+            className={`relative min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
+        >
+            {featuredVideo ? (
+                <>
+                    <div className="absolute inset-0">
+                        <img
+                            src={featuredVideo.image}
+                            alt={featuredVideo.title}
+                            className="h-full w-full scale-125 object-cover transition duration-700 group-hover:scale-[1.32]"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                    </div>
+
+                    <div className="relative z-10 flex h-full min-h-[220px] flex-col justify-end px-2 pb-3 pt-4 md:px-3 md:pb-4 md:pt-5">
+                        <h3 className="mb-2 flex items-center gap-2 text-[1.65rem] font-extrabold tracking-tight text-white md:text-[1.9rem]">
+                            <span className="h-3 w-3 shrink-0 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]" />
+                            Videos
+                        </h3>
+                        <div className="min-w-0">
+                            <p className="mb-1 border-l-4 border-blue-500 pl-2 text-lg font-bold leading-tight text-white">{featuredVideo.title}</p>
+                            <p className="pl-3 text-sm text-white/80">{featuredVideo.channel}</p>
+                        </div>
+                    </div>
+                </>
+            ) : (
+                <div className="relative z-10 flex h-full min-h-[220px] flex-col justify-end p-6">
+                    <h3 className="mb-2 flex items-center gap-2 whitespace-nowrap text-[1.9rem] font-extrabold tracking-tight text-gray-900">
+                        <span className="h-3 w-3 shrink-0 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.35)]" />
+                        Videos that help
+                    </h3>
+                    <div>
+                        <p className="text-lg font-bold text-gray-900">No videos saved yet</p>
+                        <p className="mt-2 text-sm text-gray-500">Add a few creators or talks that support your journey.</p>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+
+    const renderQuoteCard = (className = '') => (
+        <div className={`relative flex min-h-[220px] flex-col items-center justify-center overflow-hidden rounded-3xl bg-white p-6 text-center group ${className}`}>
+            {isOwner ? (
+                <button className="absolute right-2 top-2 opacity-0 transition group-hover:opacity-100 text-gray-300 hover:text-gray-500">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                </button>
+            ) : null}
+            <div className="absolute right-0 top-0 -mr-4 -mt-8 font-serif text-9xl text-gray-100">"</div>
+            <p className="relative z-10 text-sm font-serif italic text-gray-800 md:text-base">"{quoteText}"</p>
+            <p className="mt-3 text-xs font-bold uppercase tracking-wider text-gray-400">- Audrey Hepburn</p>
+        </div>
+    );
+
+    const renderSupplementsCard = (className = '') => (
+        <div
+            onClick={() => setActiveModal('supplements')}
+            className={`min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
+        >
+            <div className="relative h-36 bg-emerald-50">
+                {featuredSupplement ? (
+                    <>
+                        <Image
+                            src={featuredSupplement.image}
+                            alt={featuredSupplement.title}
+                            fill
+                            className="object-cover transition duration-700 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+                    </>
+                ) : (
+                    <div className="flex h-full items-center justify-center text-emerald-700">
+                        <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m7-7H5" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 9h10v6H7z" />
+                        </svg>
+                    </div>
+                )}
+            </div>
+            <div className="flex items-start justify-between gap-4 p-5">
+                <div>
+                    <h3 className="text-lg font-bold text-gray-900">Supplements</h3>
+                    <p className="mt-1 text-sm font-medium text-gray-500">
+                        {featuredSupplement ? featuredSupplement.title : 'Build your supplement list'}
+                    </p>
+                </div>
+                <span className="text-4xl font-extrabold leading-none text-gray-900">{supplements.length}</span>
+            </div>
+        </div>
+    );
+
+    const renderRecipesCard = (className = '') => (
+        <div
+            onClick={() => {
+                setSelectedRecipe(featuredRecipe || null);
+                setActiveModal('recipes');
+            }}
+            className={`relative min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
+        >
+            {featuredRecipe ? (
+                <>
+                    <div className="absolute inset-0">
+                        <Image
+                            src={featuredRecipe.image}
+                            alt="Recipe Cover"
+                            fill
+                            className="object-cover transition duration-700 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                    </div>
+
+                    <div className="relative z-10 flex h-full min-h-[220px] flex-col justify-end px-2 pb-3 pt-4 md:px-3 md:pb-4 md:pt-5">
+                        <h3 className="mb-2 flex items-center gap-2 text-[1.65rem] font-extrabold tracking-tight text-white md:text-[1.9rem]">
+                            <span className="h-3 w-3 rounded-full bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.8)]" />
+                            Recipes
+                        </h3>
+                        <div className="min-w-0">
+                            <p className="mb-1 border-l-4 border-yellow-400 pl-2 text-lg font-bold leading-tight text-white">{featuredRecipe.title}</p>
+                            <p className="pl-3 text-sm text-white/80">Saved recipe library</p>
+                        </div>
+                    </div>
+                </>
+            ) : (
+                <div className="relative z-10 flex h-full min-h-[220px] flex-col justify-end">
+                    <h3 className="mb-2 flex items-center gap-2 text-3xl font-extrabold tracking-tight text-gray-900 shadow-sm">
+                        <span className="h-3 w-3 rounded-full bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.35)]" />
+                        Recipes
+                    </h3>
+                    <p className="text-lg font-bold text-gray-900">No recipes saved yet</p>
+                    <p className="mt-2 text-sm text-gray-500">Add recipes you cook often or want to remember.</p>
+                </div>
+            )}
+        </div>
+    );
+
+    const renderHerbsCard = (className = '') => (
+        <div
+            onClick={() => setActiveModal('herbs')}
+            className={`min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
+        >
+            <div className="relative h-36 bg-lime-50">
+                {featuredHerb ? (
+                    <>
+                        <Image
+                            src={featuredHerb.image}
+                            alt={featuredHerb.title}
+                            fill
+                            className="object-cover transition duration-700 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+                    </>
+                ) : (
+                    <div className="flex h-full items-center justify-center text-lime-700">
+                        <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21c4.97-4.17 8-7.39 8-11a4 4 0 00-7.2-2.4L12 8.4l-.8-.8A4 4 0 004 10c0 3.61 3.03 6.83 8 11z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.5 1.5-2.5 3.4-2.5 5.5" />
+                        </svg>
+                    </div>
+                )}
+            </div>
+            <div className="flex items-start justify-between gap-4 p-5">
+                <div>
+                    <h3 className="text-lg font-bold text-gray-900">Herbs</h3>
+                    <p className="mt-1 text-sm font-medium text-gray-500">
+                        {featuredHerb ? featuredHerb.title : 'Build your herb shelf'}
+                    </p>
+                </div>
+                <span className="text-4xl font-extrabold leading-none text-gray-900">{herbs.length}</span>
+            </div>
+        </div>
+    );
+
+    const renderMealPlanCard = (className = '') => (
+        <div
+            onClick={() => setActiveModal('meal_plan')}
+            className={`cursor-pointer rounded-3xl border border-gray-100 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
+        >
+            <div className="max-w-xl">
+                <h3 className="text-2xl font-bold text-gray-900">
+                    {todayMeal ? 'Meals of the Day' : 'Meals of the Day'}
+                </h3>
+                <p className="mt-2 text-sm text-gray-500">
+                    {todayMeal
+                        ? "A wider snapshot of today's breakfast, lunch, and dinner."
+                        : 'Open your meal plan to add a daily rhythm for breakfast, lunch, and dinner.'}
+                </p>
+            </div>
+
+            {todayMeal ? (
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-2xl border border-green-100 bg-green-50/70 px-4 py-3">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-green-700">Breakfast</p>
+                        <p className="mt-1 text-sm font-semibold text-gray-900">{todayMeal.breakfast}</p>
+                    </div>
+                    <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700">Lunch</p>
+                        <p className="mt-1 text-sm font-semibold text-gray-900">{todayMeal.lunch}</p>
+                    </div>
+                    <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-sky-700">Dinner</p>
+                        <p className="mt-1 text-sm font-semibold text-gray-900">{todayMeal.dinner}</p>
+                    </div>
+                </div>
+            ) : (
+                <div className="mt-5 rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                    No generated meal plan is available yet.
+                </div>
+            )}
+
+            <div className="mt-5 flex justify-start">
+                <button
+                    type="button"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        setActiveModal('meal_plan');
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-[11px] font-bold text-green-700 transition hover:bg-green-100"
+                >
+                    View Full Meal Plan
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    );
+
+    const renderJournalCategoryReferences = (category: JournalCategory, label: string) => {
+        const entries = journalEntriesByCategory[category];
+
+        if (!entries.length) return null;
+
+        return (
+            <div className="rounded-3xl border border-green-100 bg-green-50/60 p-5">
+                <div className="flex items-center justify-between gap-3">
+                    <div>
+                        <p className="text-sm font-semibold text-gray-900">From your journal</p>
+                        <p className="mt-1 text-sm text-gray-600">Recent notes you tagged for {label.toLowerCase()}.</p>
+                    </div>
+                    <Link
+                        href="/journal"
+                        className="inline-flex items-center rounded-full border border-green-200 bg-white px-3 py-1.5 text-xs font-bold text-green-700 transition hover:bg-green-100"
+                    >
+                        Open journal
+                    </Link>
+                </div>
+                <div className="mt-4 space-y-3">
+                    {entries.slice(0, 3).map((entry) => (
+                        <div key={entry.id} className="rounded-2xl border border-white/70 bg-white px-4 py-3 shadow-sm">
+                            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-green-700">{formatJournalDate(entry.entryDate)}</p>
+                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">{truncateText(entry.content, 160)}</p>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
     return (
-        <div className="relative h-full w-full overflow-y-auto overflow-x-hidden bg-gray-50 p-4 md:p-8 no-scrollbar">
+        <div className="relative min-h-full w-full overflow-visible overflow-x-hidden bg-gray-50 p-4 md:p-8 no-scrollbar">
             <AboutYouListPanel
                 viewMode={viewMode}
                 onViewModeChange={toggleViewMode}
@@ -1855,7 +2163,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     onClick={() => {
                         if (isOwner) setActiveModal('edit');
                     }}
-                    className={`col-span-2 md:col-span-4 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex items-center gap-6 relative overflow-hidden group ${isOwner ? 'cursor-pointer' : ''}`}
+                    className={`col-span-2 md:col-span-3 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex items-center gap-6 relative overflow-hidden group ${isOwner ? 'cursor-pointer' : ''}`}
                 >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-green-50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
                     <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-4 border-white shadow-lg overflow-hidden shrink-0 relative z-10">
@@ -1886,18 +2194,37 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     </div>
                 </div>
 
+                {renderStreakCard('hidden md:flex md:col-span-1')}
+
+                <div className="col-span-2 -mx-4 overflow-x-auto px-4 no-scrollbar md:hidden">
+                    <div className="flex gap-4 pb-2">
+                        {renderVideosCard('w-[224px] shrink-0')}
+                        {renderRecipesCard('w-[288px] shrink-0')}
+                        {renderHerbsCard('w-[212px] shrink-0')}
+                        {renderSupplementsCard('w-[212px] shrink-0')}
+                        {renderFoodCard('w-[244px] shrink-0')}
+                    </div>
+                </div>
+
+                <div className="hidden md:col-span-4 md:grid md:grid-cols-4 md:gap-4">
+                    {renderMealPlanCard('col-span-3')}
+                    {renderQuoteCard('col-span-1 border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)]')}
+                </div>
+
                 {/* -- Box 3: Stats (Row 2, Col 1) -- */}
                 {/* -- Box 3: Stats (Row 2, Col 1) -- */}
-                <Link href="/health-challenges" className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex flex-col justify-center items-center text-center hover:border-green-400 cursor-pointer group">
+                <Link href="/health-challenges" className="hidden bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 flex-col justify-center items-center text-center hover:border-green-400 cursor-pointer group">
                     <p className="text-gray-400 text-xs font-bold uppercase tracking-wider group-hover:text-green-600 transition-colors">Health Streak</p>
                     <p className="text-5xl font-extrabold text-gray-900 mt-2 group-hover:scale-110 transition-transform">{healthyDays}</p>
                     <p className="text-xs text-green-600 font-medium mt-2 bg-green-50 px-2 py-1 rounded-full">Showing up for your health</p>
                 </Link>
 
+                {renderRecipesCard('hidden md:col-span-3 md:block')}
+
                 {/* -- Box 4: Food I Eat (Row 2, Col 2-4) -- */}
                 <div
                     onClick={() => setActiveModal('food')}
-                    className="md:col-span-3 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 relative overflow-hidden group cursor-pointer"
+                    className="hidden"
                 >
                     {/* Background Image (Cover) */}
                     <div className="absolute inset-0">
@@ -1928,7 +2255,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 {/* -- Box 5: Videos I Love (Vertical) -- */}
                 <div
                     onClick={() => setActiveModal('grow')}
-                    className="col-span-1 min-w-0 md:col-span-1 md:row-span-2 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 relative overflow-hidden group cursor-pointer"
+                    className="hidden col-span-1 min-w-0 md:col-span-1 md:row-span-2 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 relative overflow-hidden group cursor-pointer md:block"
                 >
                     {featuredVideo ? (
                         <>
@@ -1968,7 +2295,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                 {/* -- Box 5b: Favorite Quote / Status (Mobile Gap Filler) -- */}
                 {/*  Next to 'How I Grow' on Mobile, stacked elsewhere on Desktop if needed  */}
-                <div className="col-span-1 md:col-span-1 md:row-span-1 bg-white rounded-3xl p-6 relative overflow-hidden flex flex-col justify-center items-center text-center group">
+                <div className="col-span-2 md:hidden bg-white rounded-3xl p-6 relative overflow-hidden flex flex-col justify-center items-center text-center group">
                     {isOwner && (
                         <button className="absolute top-2 right-2 text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100 transition">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
@@ -1984,7 +2311,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 {/* -- Box 6: Supplements (Row 3, Col 3-4) -- */}
                 <div
                     onClick={() => setActiveModal('supplements')}
-                    className="order-3 min-w-0 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden"
+                    className="hidden order-3 min-w-0 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden md:block"
                 >
                     <div className="relative h-36 bg-emerald-50">
                         {featuredSupplement ? (
@@ -2022,13 +2349,15 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     </div>
                 </div>
 
+                {renderFoodCard('hidden order-4 md:block')}
+
                 {/* -- Box 7: Recipes (Row 4, Col 1) -- */}
                 <div
                     onClick={() => {
                         setSelectedRecipe(featuredRecipe || null);
                         setActiveModal('recipes');
                     }}
-                    className="order-4 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 overflow-hidden group relative cursor-pointer"
+                    className="hidden"
                 >
                     {featuredRecipe ? (
                         <>
@@ -2064,7 +2393,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                 <div
                     onClick={() => setActiveModal('herbs')}
-                    className="order-2 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden"
+                    className="hidden order-2 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden md:block"
                 >
                     <div className="relative h-36 bg-lime-50">
                         {featuredHerb ? (
@@ -2099,9 +2428,11 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     </div>
                 </div>
 
+                {renderMealPlanCard('col-span-2 md:hidden')}
+
                 <div
                     onClick={() => setActiveModal('meal_plan')}
-                    className="order-1 col-span-2 md:col-span-2 bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group"
+                    className="hidden col-span-2 rounded-3xl border border-gray-100 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] cursor-pointer group md:hidden"
                 >
                     <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
                         <div className="max-w-xl">
@@ -2159,19 +2490,18 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                 {favoritesEnabled ? (
                 <div ref={favoritesSectionRef} className="order-5 col-span-2 md:col-span-2 md:col-start-2 bg-white rounded-3xl p-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-3 gap-3">
                         {favoriteSections.map((section) => (
                             <button
                                 key={`${section.key}-link`}
                                 type="button"
                                 onClick={() => setActiveModal(section.key)}
-                                className="flex items-center justify-between rounded-2xl border border-gray-100 bg-gradient-to-r from-white to-gray-50 px-4 py-4 text-left transition hover:-translate-y-0.5 hover:border-gray-200 hover:shadow-sm"
+                                className="flex min-w-0 flex-col items-center justify-between rounded-2xl border border-gray-100 bg-gradient-to-r from-white to-gray-50 px-3 py-4 text-center transition hover:-translate-y-0.5 hover:border-gray-200 hover:shadow-sm md:px-4"
                             >
                                 <div>
                                     <p className="text-sm font-bold text-gray-900">❤️ {section.label}</p>
-                                    <p className="mt-1 text-xs text-gray-500">{section.emptyState}</p>
                                 </div>
-                                <span className="inline-flex min-w-8 items-center justify-center rounded-full bg-gray-900 px-2 py-1 text-[11px] font-bold text-white">
+                                <span className="mt-2 inline-flex min-w-8 items-center justify-center rounded-full bg-gray-900 px-2 py-1 text-[11px] font-bold text-white">
                                     {section.count}
                                 </span>
                             </button>
@@ -2343,10 +2673,6 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             </div>
             )}
 
-            <div className="text-center mt-8 pb-4 flex flex-col items-center gap-2">
-                <p className="text-xs text-gray-300 font-medium">Bento Grid Layout v1.0</p>
-            </div>
-
             {/* -- Expanded Content Modal -- */}
             <AnimatePresence>
                 {activeModal && (
@@ -2472,6 +2798,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                                 {activeModal === 'food' && (
                                     <div className="space-y-6">
+                                        {renderJournalCategoryReferences('food', 'Food')}
                                         <div className="rounded-2xl border border-green-100 bg-green-50/70 p-5">
                                             <p className="text-sm font-semibold text-gray-900">Fresh produce gallery</p>
                                             <p className="mt-1 text-sm text-gray-600">Choose produce you enjoy most, then explore the details at the top while browsing the wider library below.</p>
@@ -2598,69 +2925,76 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                 )}
 
                                 {activeModal === 'supplements' && (
-                                    <SupplementsModalSection
-                                        isOwner={isOwner}
-                                        selectedSupplement={selectedSupplement}
-                                        isEditingSupplements={isEditingSupplements}
-                                        editingSupplementId={editingSupplementId}
-                                        newSupplementTitle={newSupplementTitle}
-                                        setNewSupplementTitle={setNewSupplementTitle}
-                                        newSupplementImage={newSupplementImage}
-                                        setNewSupplementImage={setNewSupplementImage}
-                                        newSupplementNutrients={newSupplementNutrients}
-                                        setNewSupplementNutrients={setNewSupplementNutrients}
-                                        newSupplementBenefits={newSupplementBenefits}
-                                        setNewSupplementBenefits={setNewSupplementBenefits}
-                                        newSupplementNotes={newSupplementNotes}
-                                        setNewSupplementNotes={setNewSupplementNotes}
-                                        resetSupplementEditor={resetSupplementEditor}
-                                        toggleSupplementEditor={toggleSupplementEditor}
-                                        handleAddSupplement={handleAddSupplement}
-                                        handleRemoveSupplement={handleRemoveSupplement}
-                                        filteredSupplements={filteredSupplements}
-                                        supplementSearch={supplementSearch}
-                                        setSupplementSearch={setSupplementSearch}
-                                        visibleSupplements={visibleSupplements}
-                                        setSelectedSupplement={setSelectedSupplement}
-                                        handleEditSupplement={handleEditSupplement}
-                                        showMoreSupplements={() => setVisibleSupplementCount((count) => count + 6)}
-                                        hasMoreSupplements={filteredSupplements.length > visibleSupplements.length}
-                                    />
+                                    <div className="space-y-6">
+                                        {renderJournalCategoryReferences('supplements', 'Supplements')}
+                                        <SupplementsModalSection
+                                            isOwner={isOwner}
+                                            selectedSupplement={selectedSupplement}
+                                            isEditingSupplements={isEditingSupplements}
+                                            editingSupplementId={editingSupplementId}
+                                            newSupplementTitle={newSupplementTitle}
+                                            setNewSupplementTitle={setNewSupplementTitle}
+                                            newSupplementImage={newSupplementImage}
+                                            setNewSupplementImage={setNewSupplementImage}
+                                            newSupplementNutrients={newSupplementNutrients}
+                                            setNewSupplementNutrients={setNewSupplementNutrients}
+                                            newSupplementBenefits={newSupplementBenefits}
+                                            setNewSupplementBenefits={setNewSupplementBenefits}
+                                            newSupplementNotes={newSupplementNotes}
+                                            setNewSupplementNotes={setNewSupplementNotes}
+                                            resetSupplementEditor={resetSupplementEditor}
+                                            toggleSupplementEditor={toggleSupplementEditor}
+                                            handleAddSupplement={handleAddSupplement}
+                                            handleRemoveSupplement={handleRemoveSupplement}
+                                            filteredSupplements={filteredSupplements}
+                                            supplementSearch={supplementSearch}
+                                            setSupplementSearch={setSupplementSearch}
+                                            visibleSupplements={visibleSupplements}
+                                            setSelectedSupplement={setSelectedSupplement}
+                                            handleEditSupplement={handleEditSupplement}
+                                            showMoreSupplements={() => setVisibleSupplementCount((count) => count + 6)}
+                                            hasMoreSupplements={filteredSupplements.length > visibleSupplements.length}
+                                        />
+                                    </div>
                                 )}
 
                                 {activeModal === 'herbs' && (
-                                    <HerbsModalSection
-                                        isOwner={isOwner}
-                                        selectedHerb={selectedHerb}
-                                        isEditingHerbs={isEditingHerbs}
-                                        editingHerbId={editingHerbId}
-                                        newHerbTitle={newHerbTitle}
-                                        setNewHerbTitle={setNewHerbTitle}
-                                        newHerbImage={newHerbImage}
-                                        setNewHerbImage={setNewHerbImage}
-                                        newHerbNutrients={newHerbNutrients}
-                                        setNewHerbNutrients={setNewHerbNutrients}
-                                        newHerbBenefits={newHerbBenefits}
-                                        setNewHerbBenefits={setNewHerbBenefits}
-                                        newHerbNotes={newHerbNotes}
-                                        setNewHerbNotes={setNewHerbNotes}
-                                        resetHerbEditor={resetHerbEditor}
-                                        toggleHerbEditor={toggleHerbEditor}
-                                        handleAddHerb={handleAddHerb}
-                                        handleRemoveHerb={handleRemoveHerb}
-                                        filteredHerbs={filteredHerbs}
-                                        herbSearch={herbSearch}
-                                        setHerbSearch={setHerbSearch}
-                                        visibleHerbs={visibleHerbs}
-                                        setSelectedHerb={setSelectedHerb}
-                                        handleEditHerb={handleEditHerb}
-                                        showMoreHerbs={() => setVisibleHerbCount((count) => count + 6)}
-                                        hasMoreHerbs={filteredHerbs.length > visibleHerbs.length}
-                                    />
+                                    <div className="space-y-6">
+                                        {renderJournalCategoryReferences('herbs', 'Herbs')}
+                                        <HerbsModalSection
+                                            isOwner={isOwner}
+                                            selectedHerb={selectedHerb}
+                                            isEditingHerbs={isEditingHerbs}
+                                            editingHerbId={editingHerbId}
+                                            newHerbTitle={newHerbTitle}
+                                            setNewHerbTitle={setNewHerbTitle}
+                                            newHerbImage={newHerbImage}
+                                            setNewHerbImage={setNewHerbImage}
+                                            newHerbNutrients={newHerbNutrients}
+                                            setNewHerbNutrients={setNewHerbNutrients}
+                                            newHerbBenefits={newHerbBenefits}
+                                            setNewHerbBenefits={setNewHerbBenefits}
+                                            newHerbNotes={newHerbNotes}
+                                            setNewHerbNotes={setNewHerbNotes}
+                                            resetHerbEditor={resetHerbEditor}
+                                            toggleHerbEditor={toggleHerbEditor}
+                                            handleAddHerb={handleAddHerb}
+                                            handleRemoveHerb={handleRemoveHerb}
+                                            filteredHerbs={filteredHerbs}
+                                            herbSearch={herbSearch}
+                                            setHerbSearch={setHerbSearch}
+                                            visibleHerbs={visibleHerbs}
+                                            setSelectedHerb={setSelectedHerb}
+                                            handleEditHerb={handleEditHerb}
+                                            showMoreHerbs={() => setVisibleHerbCount((count) => count + 6)}
+                                            hasMoreHerbs={filteredHerbs.length > visibleHerbs.length}
+                                        />
+                                    </div>
                                 )}
 
                                 {activeModal === 'grow' && (
                                     <div className="space-y-6">
+                                        {renderJournalCategoryReferences('videos', 'Videos')}
                                         {isOwner ? (
                                             <div className="flex items-center justify-between gap-4">
                                                 <div>
@@ -2827,6 +3161,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                                 {activeModal === 'recipes' && (
                                     <div className="space-y-6">
+                                        {renderJournalCategoryReferences('recipes', 'Recipes')}
                                         {isOwner ? (
                                             <div className="flex items-center justify-between gap-4">
                                                 <div>

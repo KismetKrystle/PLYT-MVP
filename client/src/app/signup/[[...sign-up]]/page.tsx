@@ -157,7 +157,7 @@ function SignupScreen() {
         <AuthBrandShell
             backgroundVariant="banner"
             eyebrowLabel="Personal Food Search Companion"
-            subtitle="Set up your account so Plyant can start learning your health profile, preferences, and sourcing habits."
+            subtitle={'Set up your profile and inherit a search engine filtered by what "best serves you."'}
             title="Join Plyant"
         >
             <ClerkProvider localization={clerkLocalization}>

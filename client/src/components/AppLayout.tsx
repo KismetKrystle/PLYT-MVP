@@ -79,7 +79,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const currentAppLocation = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     const currentTab = searchParams.get('tab') || '';
     const isAboutYouTab = currentTab === 'customer_profile';
-    const showMobileFooter = !isAboutYouTab;
+    const showMobileFooter = true;
     const profileAvatarSrc = String(user?.avatar_url || user?.profile_data?.avatar_url || '/assets/images/gallery/user_avatar.png').trim();
     const profileDisplayName = String(user?.full_name || user?.profile_data?.full_name || user?.email?.split('@')[0] || 'Guest User').trim() || 'Guest User';
 
@@ -743,7 +743,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto transition-all duration-300 md:overflow-hidden">
 
                 {/* Universal Top Header (Mobile & Desktop) */}
-                <header className="relative z-40 border-b border-gray-100 bg-white px-4 pt-[env(safe-area-inset-top)] md:shrink-0 md:border-gray-200 md:px-6 md:pt-0">
+                <header className="fixed inset-x-0 top-0 z-40 border-b border-gray-100 bg-white px-4 pt-[env(safe-area-inset-top)] md:relative md:shrink-0 md:border-gray-200 md:px-6 md:pt-0">
                     <div className="flex min-h-16 items-center justify-between">
 
                     {/* Mobile: Back Button & Logo */}
@@ -1051,7 +1051,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </header>
 
                 {/* Scrollable Main Content Layout & Padding for Mobile Header/Footer */}
-                <main className={`flex-1 overflow-visible md:overflow-hidden relative flex flex-row ${showMobileFooter ? 'pb-16' : 'pb-0'} md:pb-0`}>
+                <main className={`flex-1 overflow-visible md:overflow-hidden relative flex flex-row pt-[calc(4rem+env(safe-area-inset-top))] ${showMobileFooter ? 'pb-16' : 'pb-0'} md:pt-0 md:pb-0`}>
                     <div className="flex-1 overflow-visible md:overflow-y-auto bg-gray-50 relative">
                         {children}
                     </div>

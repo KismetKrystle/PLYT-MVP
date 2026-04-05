@@ -1860,7 +1860,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             onClick={() => setActiveModal('food')}
             className={`relative min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
         >
-            <div className="relative h-36 bg-green-50">
+            <div className="relative h-40 bg-green-50">
                 <>
                     <Image
                         src={featuredProduce.image}
@@ -1871,7 +1871,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
                 </>
             </div>
-            <div className="flex items-start justify-between gap-4 p-5">
+            <div className="flex items-start justify-between gap-4 p-4">
                 <div>
                     <h3 className="text-lg font-bold text-gray-900">Produce</h3>
                     <p className="mt-1 text-sm font-medium text-gray-500">
@@ -1945,7 +1945,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             onClick={() => setActiveModal('supplements')}
             className={`min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
         >
-            <div className="relative h-36 bg-emerald-50">
+            <div className="relative h-40 bg-emerald-50">
                 {featuredSupplement ? (
                     <>
                         <Image
@@ -1965,7 +1965,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     </div>
                 )}
             </div>
-            <div className="flex items-start justify-between gap-4 p-5">
+            <div className="flex items-start justify-between gap-4 p-4">
                 <div>
                     <h3 className="text-lg font-bold text-gray-900">Supplements</h3>
                     <p className="mt-1 text-sm font-medium text-gray-500">
@@ -2026,7 +2026,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
             onClick={() => setActiveModal('herbs')}
             className={`min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
         >
-            <div className="relative h-36 bg-lime-50">
+            <div className="relative h-40 bg-lime-50">
                 {featuredHerb ? (
                     <>
                         <Image
@@ -2046,7 +2046,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     </div>
                 )}
             </div>
-            <div className="flex items-start justify-between gap-4 p-5">
+            <div className="flex items-start justify-between gap-4 p-4">
                 <div>
                     <h3 className="text-lg font-bold text-gray-900">Herbs</h3>
                     <p className="mt-1 text-sm font-medium text-gray-500">
@@ -2313,7 +2313,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     onClick={() => setActiveModal('supplements')}
                     className="hidden order-3 min-w-0 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden md:block"
                 >
-                    <div className="relative h-36 bg-emerald-50">
+                    <div className="relative h-40 bg-emerald-50">
                         {featuredSupplement ? (
                             <>
                                 <Image
@@ -2333,7 +2333,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             </div>
                         )}
                     </div>
-                    <div className="flex items-start justify-between gap-4 p-5">
+                    <div className="flex items-start justify-between gap-4 p-4">
                         <div>
                             <h3 className="text-lg font-bold text-gray-900">Supplements</h3>
                                 <p className="hidden">
@@ -2395,7 +2395,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     onClick={() => setActiveModal('herbs')}
                     className="hidden order-2 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden md:block"
                 >
-                    <div className="relative h-36 bg-lime-50">
+                    <div className="relative h-40 bg-lime-50">
                         {featuredHerb ? (
                             <>
                                 <Image
@@ -2415,7 +2415,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             </div>
                         )}
                     </div>
-                    <div className="flex items-start justify-between gap-4 p-5">
+                    <div className="flex items-start justify-between gap-4 p-4">
                         <div>
                             <h3 className="text-lg font-bold text-gray-900">Herbs</h3>
                             <p className="mt-1 text-sm font-medium text-gray-500">
@@ -2498,12 +2498,12 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                                 onClick={() => setActiveModal(section.key)}
                                 className="flex min-w-0 flex-col items-center justify-between rounded-2xl border border-gray-100 bg-gradient-to-r from-white to-gray-50 px-3 py-4 text-center transition hover:-translate-y-0.5 hover:border-gray-200 hover:shadow-sm md:px-4"
                             >
-                                <div>
-                                    <p className="text-sm font-bold text-gray-900">❤️ {section.label}</p>
-                                </div>
-                                <span className="mt-2 inline-flex min-w-8 items-center justify-center rounded-full bg-gray-900 px-2 py-1 text-[11px] font-bold text-white">
+                                <span className="inline-flex min-w-8 items-center justify-center rounded-full bg-gray-900 px-2 py-1 text-[11px] font-bold text-white">
                                     {section.count}
                                 </span>
+                                <div className="mt-2">
+                                    <p className="text-sm font-bold text-gray-900">❤️ {section.label}</p>
+                                </div>
                             </button>
                         ))}
                     </div>

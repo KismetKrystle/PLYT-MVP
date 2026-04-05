@@ -21,32 +21,40 @@ export default function AboutYouListPanel({
     return (
         <>
             <div className="mx-auto mb-4 max-w-7xl">
-                <div className="flex flex-col gap-4">
-                    <div>
-                        <h2 className="text-3xl font-extrabold tracking-tight text-gray-900 md:text-4xl">Your Living Library</h2>
+                <div className="flex items-center justify-between gap-3 md:gap-4">
+                    <div className="min-w-0 flex-1">
+                        <h2 className="whitespace-nowrap text-[1.15rem] font-extrabold uppercase tracking-[0.02em] text-gray-900 sm:text-2xl md:text-[1.7rem]">Your Living Library</h2>
                     </div>
-                    <div className="inline-flex w-fit rounded-2xl border border-gray-200 bg-gray-50 p-1">
+                    <div className="inline-flex shrink-0 rounded-2xl border border-gray-200 bg-gray-50 p-0.5">
                         <button
                             type="button"
                             onClick={() => onViewModeChange('cards')}
-                            className={`rounded-2xl px-4 py-2 text-sm font-bold transition ${
+                            className={`flex h-8 w-8 items-center justify-center rounded-2xl transition sm:h-10 sm:w-10 ${
                                 viewMode === 'cards'
                                     ? 'bg-white text-gray-900 shadow-sm'
                                     : 'text-gray-500 hover:text-gray-700'
                             }`}
+                            aria-label="Card view"
+                            title="Card view"
                         >
-                            Cards
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5h7v6H4V5zm9 0h7v6h-7V5zM4 13h7v6H4v-6zm9 0h7v6h-7v-6z" />
+                            </svg>
                         </button>
                         <button
                             type="button"
                             onClick={() => onViewModeChange('list')}
-                            className={`rounded-2xl px-4 py-2 text-sm font-bold transition ${
+                            className={`flex h-8 w-8 items-center justify-center rounded-2xl transition sm:h-10 sm:w-10 ${
                                 viewMode === 'list'
                                     ? 'bg-white text-gray-900 shadow-sm'
                                     : 'text-gray-500 hover:text-gray-700'
                             }`}
+                            aria-label="List view"
+                            title="List view"
                         >
-                            List
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />
+                            </svg>
                         </button>
                     </div>
                 </div>

@@ -320,6 +320,13 @@ export async function refreshUserPreferenceSignals(queryable: Queryable, userId:
     recentEventsRes.rows.forEach((row) => {
         const eventType = String(row?.event_type || '').trim().toLowerCase();
         const payload = row?.payload && typeof row.payload === 'object' ? row.payload : {};
+        const contentSource = String((payload as Record<string, any>)?.source || '').trim().toLowerCase();
+        const isRemovalEvent = eventType === 'chat_unfavorited' || eventType === 'library_item_removed';
+
+        if (isRemovalEvent || contentSource === 'starter') {
+            return;
+        }
+
         const text = `${eventType} ${flattenBehaviorPayload(payload)}`.trim();
         const theme = inferThemeFromText(text);
         if (theme) {
@@ -331,12 +338,12 @@ export async function refreshUserPreferenceSignals(queryable: Queryable, userId:
             fulfillmentCounts.set(fulfillmentMode, (fulfillmentCounts.get(fulfillmentMode) || 0) + 1);
         }
 
-        if (eventType === 'chat_favorited' || eventType === 'chat_unfavorited') {
+        if (eventType === 'chat_favorited') {
             contentSourceCounts.set('chat', (contentSourceCounts.get('chat') || 0) + 1);
         }
 
-        if (eventType === 'library_item_saved' || eventType === 'library_item_removed') {
-            const source = String((payload as Record<string, any>)?.source || 'library').trim().toLowerCase() || 'library';
+        if (eventType === 'library_item_saved') {
+            const source = contentSource || 'library';
             contentSourceCounts.set(source, (contentSourceCounts.get(source) || 0) + 1);
         }
     });

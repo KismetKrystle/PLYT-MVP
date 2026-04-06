@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { createClerkClient, verifyToken } from '@clerk/backend';
 import pool from '../db';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { ensureStarterLibraryForUser } from '../services/profileLibrarySeed';
 
 const router = express.Router();
 const VALID_ROLES = new Set(['consumer', 'farmer', 'expert']);
@@ -63,6 +64,14 @@ function signToken(user: { id: string | number; email: string; role: string }) {
     );
 }
 
+async function seedStarterLibraryForNewUser(userId: string | number) {
+    try {
+        await ensureStarterLibraryForUser(pool, userId);
+    } catch (error) {
+        console.warn('Unable to seed starter library for new user:', error);
+    }
+}
+
 function getClerkClient() {
     const secretKey = process.env.CLERK_SECRET_KEY;
     if (!secretKey) {
@@ -115,6 +124,8 @@ router.post('/signup', async (req: Request, res: Response) => {
             [normalizedName, normalizedEmail, passwordHash, normalizedRole, JSON.stringify(profileDataPatch)]
         );
 
+        await seedStarterLibraryForNewUser(result.rows[0].id);
+
         const user = sanitizeUser(result.rows[0]);
         const token = signToken(user);
         res.status(201).json({ token, user, isNewUser: true, requiresOnboarding: shouldRequireOnboarding(user.role, profileDataPatch) });
@@ -151,6 +162,8 @@ router.post('/google-login', async (req: Request, res: Response) => {
                  RETURNING id, name, email, role, created_at, updated_at`,
                 [normalizedName, normalizedEmail, '', 'consumer', JSON.stringify(profileDataPatch)]
             );
+
+            await seedStarterLibraryForNewUser(created.rows[0].id);
 
             const user = sanitizeUser(created.rows[0]);
             const token = signToken(user);
@@ -260,6 +273,7 @@ router.post('/clerk-login', async (req: Request, res: Response) => {
 
             appUser = created.rows[0];
             isNewUser = true;
+            await seedStarterLibraryForNewUser(appUser.id);
         } else {
             const existingUser = existing.rows[0];
             const mergedProfileData = {
@@ -323,6 +337,8 @@ router.post('/login', async (req: Request, res: Response) => {
                  RETURNING id, name, email, role, created_at, updated_at`,
                 [defaultName, normalizedEmail, passwordHash, 'consumer']
             );
+
+            await seedStarterLibraryForNewUser(created.rows[0].id);
 
             const user = sanitizeUser(created.rows[0]);
             const token = signToken(user);
@@ -404,6 +420,7 @@ router.post('/gatekeeper-login', async (req: Request, res: Response) => {
                 [defaultName, syntheticEmail, allowedUser.hashed_password, 'consumer']
             );
             appUser = created.rows[0];
+            await seedStarterLibraryForNewUser(appUser.id);
         } else {
             appUser = appUserResult.rows[0];
         }

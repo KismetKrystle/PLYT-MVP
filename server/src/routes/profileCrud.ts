@@ -1,6 +1,11 @@
 import { Response } from 'express';
 import pool from '../db';
 import { AuthRequest } from '../middleware/auth';
+import {
+    ensureUserMemorySchema,
+    recordUserMemoryEvent,
+    refreshUserMemory
+} from '../services/userMemory';
 
 function normalizeConsumerLocation(profileData: Record<string, any>) {
     const rawLocation = profileData?.location;
@@ -54,6 +59,69 @@ async function syncConsumerProfileToUser(userId: string | number, profileData: R
     );
 }
 
+async function clearConsumerProfileFromUser(userId: string | number) {
+    const existingUser = await pool.query(
+        `SELECT profile_data
+         FROM users
+         WHERE id = $1
+         LIMIT 1`,
+        [userId]
+    );
+
+    if (existingUser.rows.length === 0) {
+        return;
+    }
+
+    const currentProfile = existingUser.rows[0]?.profile_data || {};
+    const nextProfile = { ...currentProfile };
+    [
+        'health_conditions',
+        'dietary_preferences',
+        'allergies',
+        'wellness_goals',
+        'health_areas',
+        'health_documents',
+        'notes',
+        'location',
+        'location_city',
+        'location_address',
+        'location_country',
+        'country'
+    ].forEach((key) => {
+        delete nextProfile[key];
+    });
+
+    await pool.query(
+        `UPDATE users
+         SET profile_data = $2::jsonb,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [userId, JSON.stringify(nextProfile)]
+    );
+}
+
+function getRoleForProfileTable(table: 'consumer_profiles' | 'farmer_profiles' | 'expert_profiles') {
+    if (table === 'farmer_profiles') return 'farmer';
+    if (table === 'expert_profiles') return 'expert';
+    return 'consumer';
+}
+
+function buildProfileMemoryPayload(profileData: Record<string, any>) {
+    return {
+        health_conditions: Array.isArray(profileData?.health_conditions) ? profileData.health_conditions : [],
+        dietary_preferences: Array.isArray(profileData?.dietary_preferences) ? profileData.dietary_preferences : [],
+        allergies: Array.isArray(profileData?.allergies) ? profileData.allergies : [],
+        wellness_goals: Array.isArray(profileData?.wellness_goals) ? profileData.wellness_goals : [],
+        health_areas: Array.isArray(profileData?.health_areas) ? profileData.health_areas : [],
+        location: profileData?.location && typeof profileData.location === 'object' && !Array.isArray(profileData.location)
+            ? profileData.location
+            : {
+                city: String(profileData?.location_city || '').trim(),
+                address: String(profileData?.location_address || profileData?.location || '').trim()
+            }
+    };
+}
+
 export async function getProfileByUserId(
     table: 'consumer_profiles' | 'farmer_profiles' | 'expert_profiles',
     userId: string | number
@@ -101,6 +169,16 @@ export async function createProfile(
         if (table === 'consumer_profiles') {
             await syncConsumerProfileToUser(user_id, profile_data as Record<string, any>);
         }
+
+        await ensureUserMemorySchema(pool);
+        await recordUserMemoryEvent(pool, {
+            userId: user_id,
+            eventType: 'profile_created',
+            sourceTable: table,
+            sourceId: String(created.rows[0]?.id || ''),
+            payload: buildProfileMemoryPayload(profile_data as Record<string, any>)
+        });
+        await refreshUserMemory(pool, user_id, getRoleForProfileTable(table));
 
         res.status(201).json(created.rows[0]);
     } catch (error) {
@@ -165,6 +243,16 @@ export async function updateProfile(
             await syncConsumerProfileToUser(targetUserId, profile_data as Record<string, any>);
         }
 
+        await ensureUserMemorySchema(pool);
+        await recordUserMemoryEvent(pool, {
+            userId: targetUserId,
+            eventType: 'profile_updated',
+            sourceTable: table,
+            sourceId: String(updated.rows[0]?.id || ''),
+            payload: buildProfileMemoryPayload(profile_data as Record<string, any>)
+        });
+        await refreshUserMemory(pool, targetUserId, getRoleForProfileTable(table));
+
         res.json(updated.rows[0]);
     } catch (error) {
         console.error(`Update ${table} error:`, error);
@@ -187,7 +275,7 @@ export async function deleteProfile(
         const deleted = await pool.query(
             `DELETE FROM ${table}
              WHERE user_id = $1
-             RETURNING id`,
+             RETURNING id, profile_data`,
             [targetUserId]
         );
 
@@ -195,6 +283,20 @@ export async function deleteProfile(
             res.status(404).json({ error: 'Profile not found' });
             return;
         }
+
+        if (table === 'consumer_profiles') {
+            await clearConsumerProfileFromUser(targetUserId);
+        }
+
+        await ensureUserMemorySchema(pool);
+        await recordUserMemoryEvent(pool, {
+            userId: targetUserId,
+            eventType: 'profile_deleted',
+            sourceTable: table,
+            sourceId: String(deleted.rows[0]?.id || ''),
+            payload: buildProfileMemoryPayload((deleted.rows[0]?.profile_data || {}) as Record<string, any>)
+        });
+        await refreshUserMemory(pool, targetUserId, getRoleForProfileTable(table));
 
         res.status(204).send();
     } catch (error) {

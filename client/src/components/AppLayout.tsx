@@ -80,8 +80,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const currentTab = searchParams.get('tab') || '';
     const isAboutYouTab = currentTab === 'customer_profile';
     const showMobileFooter = true;
-    const profileAvatarSrc = String(user?.avatar_url || user?.profile_data?.avatar_url || '/assets/images/gallery/user_avatar.png').trim();
+    const profileAvatarSrc = String(user?.avatar_url || user?.profile_data?.avatar_url || (user ? '/assets/images/gallery/user_avatar.png' : '')).trim();
     const profileDisplayName = String(user?.full_name || user?.profile_data?.full_name || user?.email?.split('@')[0] || 'Guest User').trim() || 'Guest User';
+    const showGuestAvatar = !user;
+
+    const renderProfileAvatar = () => {
+        if (showGuestAvatar) {
+            return (
+                <span className="flex h-full w-full items-center justify-center bg-gradient-to-br from-emerald-100 via-lime-50 to-white text-sm font-bold text-emerald-700">
+                    G
+                </span>
+            );
+        }
+
+        return <img src={profileAvatarSrc} alt={profileDisplayName} className="h-full w-full object-cover" />;
+    };
 
     const requestSignIn = () => {
         setLeftSidebarOpen(false);
@@ -786,7 +799,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                                 className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-green-100 bg-white shadow-inner transition-all hover:ring-2 hover:ring-green-500/20"
                             >
-                                <img src={profileAvatarSrc} alt={profileDisplayName} className="h-full w-full object-cover" />
+                                {renderProfileAvatar()}
                             </button>
 
                             {isProfileOpen && (
@@ -911,7 +924,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                                 className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-green-100 bg-white shadow-inner transition-all hover:ring-2 hover:ring-green-500/20"
                             >
-                                <img src={profileAvatarSrc} alt={profileDisplayName} className="h-full w-full object-cover" />
+                                {renderProfileAvatar()}
                             </button>
 
                             {isProfileOpen && (

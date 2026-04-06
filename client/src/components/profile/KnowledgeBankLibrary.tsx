@@ -112,15 +112,6 @@ const DEFAULT_LIBRARY_ITEMS: Record<
             tags: ['recipe', 'greens', 'fresh'],
             source: 'manual',
             is_private: true
-        },
-        {
-            title: 'Tomato Basil Market Plate',
-            media_url: '/assets/images/gallery/cherry_tomatoes.png',
-            media_type: 'image',
-            description: 'Simple plated meal idea using tomatoes, basil, olive oil, and seasonal produce.',
-            tags: ['recipe', 'tomato', 'meal idea'],
-            source: 'manual',
-            is_private: true
         }
     ],
     foods: [
@@ -130,15 +121,6 @@ const DEFAULT_LIBRARY_ITEMS: Record<
             media_type: 'image',
             description: 'Reference item for spinach quality, source details, and seasonal use.',
             tags: ['food', 'spinach', 'produce'],
-            source: 'upload',
-            is_private: true
-        },
-        {
-            title: 'Fresh Herb Bundle Reference',
-            media_url: '/assets/images/gallery/fresh_herbs.png',
-            media_type: 'image',
-            description: 'Starter card for herbs, flavor pairings, and sourcing observations.',
-            tags: ['food', 'herbs', 'reference'],
             source: 'upload',
             is_private: true
         }
@@ -152,15 +134,6 @@ const DEFAULT_LIBRARY_ITEMS: Record<
             tags: ['health', 'wellness', 'tips'],
             source: 'manual',
             is_private: true
-        },
-        {
-            title: 'Hydration and Mineral Support',
-            media_url: '/assets/images/gallery/community_garden.png',
-            media_type: 'image',
-            description: 'Basic notes on hydration, mineral-rich foods, and daily consistency.',
-            tags: ['health', 'hydration', 'minerals'],
-            source: 'manual',
-            is_private: true
         }
     ],
     research: [
@@ -172,16 +145,6 @@ const DEFAULT_LIBRARY_ITEMS: Record<
             tags: ['research', 'nutrition', 'community'],
             source: 'research',
             source_ref: 'starter-research-001',
-            is_private: true
-        },
-        {
-            title: 'Produce Quality Observation Log',
-            media_url: '/assets/images/gallery/indoor_garden.png',
-            media_type: 'image',
-            description: 'Reference slot for comparing freshness, nutrient density, and sourcing notes.',
-            tags: ['research', 'produce', 'notes'],
-            source: 'research',
-            source_ref: 'starter-research-002',
             is_private: true
         }
     ]
@@ -199,17 +162,6 @@ const MOCK_PREVIEW_ITEMS: Record<string, LibraryItem[]> = {
             tags: ['recipe', 'greens', 'fresh'],
             source: 'manual',
             is_private: true
-        },
-        {
-            id: 'mock-recipe-2',
-            category_id: 'mock-recipes',
-            title: 'Tomato Basil Market Plate',
-            media_url: '/assets/images/gallery/cherry_tomatoes.png',
-            media_type: 'image',
-            description: 'A visual placeholder for plated meal ideas and seasonal ingredient pairings.',
-            tags: ['recipe', 'tomato', 'meal idea'],
-            source: 'manual',
-            is_private: true
         }
     ],
     'mock-foods': [
@@ -221,17 +173,6 @@ const MOCK_PREVIEW_ITEMS: Record<string, LibraryItem[]> = {
             media_type: 'image',
             description: 'Example food reference with source notes, freshness cues, and usage ideas.',
             tags: ['food', 'spinach', 'produce'],
-            source: 'upload',
-            is_private: true
-        },
-        {
-            id: 'mock-food-2',
-            category_id: 'mock-foods',
-            title: 'Fresh Herb Bundle Reference',
-            media_url: '/assets/images/gallery/fresh_herbs.png',
-            media_type: 'image',
-            description: 'A sample card for herbs, pairings, and sensory observations.',
-            tags: ['food', 'herbs', 'reference'],
             source: 'upload',
             is_private: true
         }
@@ -247,17 +188,6 @@ const MOCK_PREVIEW_ITEMS: Record<string, LibraryItem[]> = {
             tags: ['health', 'wellness', 'tips'],
             source: 'manual',
             is_private: true
-        },
-        {
-            id: 'mock-health-2',
-            category_id: 'mock-health-tips',
-            title: 'Hydration and Mineral Support',
-            media_url: '/assets/images/gallery/community_garden.png',
-            media_type: 'image',
-            description: 'Preview content for hydration guidance and mineral-rich food reminders.',
-            tags: ['health', 'hydration', 'minerals'],
-            source: 'manual',
-            is_private: true
         }
     ],
     'mock-research': [
@@ -271,18 +201,6 @@ const MOCK_PREVIEW_ITEMS: Record<string, LibraryItem[]> = {
             tags: ['research', 'nutrition', 'community'],
             source: 'research',
             source_ref: 'mock-research-001',
-            is_private: true
-        },
-        {
-            id: 'mock-research-2',
-            category_id: 'mock-research',
-            title: 'Produce Quality Observation Log',
-            media_url: '/assets/images/gallery/indoor_garden.png',
-            media_type: 'image',
-            description: 'Example note for freshness observations, sourcing, and comparison tracking.',
-            tags: ['research', 'produce', 'notes'],
-            source: 'research',
-            source_ref: 'mock-research-002',
             is_private: true
         }
     ]

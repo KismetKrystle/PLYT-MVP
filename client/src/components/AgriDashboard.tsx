@@ -382,7 +382,14 @@ type LibraryCategory = {
     created_at?: string;
 };
 
-type Tab = 'home' | 'chat' | 'find_produce' | 'pick_system' | 'learn' | 'impact' | 'guide' | 'health_profiles' | 'customer_profile';
+type Tab = 'home' | 'chat' | 'find_produce' | 'pick_system' | 'learn' | 'impact' | 'guide' | 'about_you' | 'living_library';
+
+function normalizeDashboardTab(tab: string | null) {
+    const normalized = String(tab || '').trim().toLowerCase();
+    if (normalized === 'health_profiles') return 'about_you';
+    if (normalized === 'customer_profile') return 'living_library';
+    return normalized;
+}
 
 import { useSearchParams, useRouter } from 'next/navigation';
 import api from '../lib/api';
@@ -533,13 +540,14 @@ export default function AgriDashboard() {
     const searchParams = useSearchParams();
     const historyId = searchParams.get('historyId');
     const requestedTab = searchParams.get('tab');
+    const normalizedRequestedTab = normalizeDashboardTab(requestedTab);
 
     const { user, requireAuth, openLoginModal } = useAuth(); // Get user for profile & requireAuth
     const { addToCart } = useCart();
     const defaultSearchRadiusKm = getDefaultSearchRadiusKm(user?.profile_data);
 
-    const isProfileTab = requestedTab === 'customer_profile' || requestedTab === 'health_profiles';
-    const shouldShowDelegatedDashboard = !requestedTab || requestedTab === 'home';
+    const isProfileTab = normalizedRequestedTab === 'living_library' || normalizedRequestedTab === 'about_you';
+    const shouldShowDelegatedDashboard = !normalizedRequestedTab || normalizedRequestedTab === 'home';
     const delegatedDashboard = !isProfileTab && shouldShowDelegatedDashboard
         ? user?.role === 'farmer'
             ? <FarmerDashboard />
@@ -566,9 +574,9 @@ export default function AgriDashboard() {
 
     // Sync Tab with URL query param
     useEffect(() => {
-        const tab = searchParams.get('tab');
-        if (tab && ['home', 'chat', 'find_produce', 'impact', 'guide', 'health_profiles', 'customer_profile'].includes(tab)) {
-            setActiveTab(tab === 'customer_profile' ? 'home' : tab as Tab);
+        const tab = normalizeDashboardTab(searchParams.get('tab'));
+        if (tab && ['home', 'chat', 'find_produce', 'impact', 'guide', 'about_you', 'living_library'].includes(tab)) {
+            setActiveTab(tab as Tab);
         }
     }, [searchParams]);
 
@@ -1250,7 +1258,7 @@ export default function AgriDashboard() {
         setSuggestionPanelSubject(messageText.trim());
         setIsStandaloneGoogleRequested(false);
         setGoogleInquiryPlaces([]);
-        const targetTab: 'chat' | 'find_produce' | 'pick_system' | 'learn' = activeTab === 'home' || activeTab === 'impact' || activeTab === 'guide' || activeTab === 'health_profiles' || activeTab === 'customer_profile' ? 'chat' : activeTab as any;
+        const targetTab: 'chat' | 'find_produce' | 'pick_system' | 'learn' = activeTab === 'home' || activeTab === 'impact' || activeTab === 'guide' || activeTab === 'about_you' || activeTab === 'living_library' ? 'chat' : activeTab as any;
         const predictedIntent = classifyIntent(messageText, normalizedTags);
         setSuggestionPanelMode(inferSuggestionPanelModeFromContext(messageText, predictedIntent.intent, []));
 
@@ -2192,12 +2200,16 @@ export default function AgriDashboard() {
                             <PublicProfileV2 user={user} />
                         )}
 
+                        {activeTab === 'living_library' && (
+                            <PublicProfileV2 user={user} />
+                        )}
+
                         {/* IMPACT TAB */}
                         {activeTab === 'impact' && (
                             <ImpactMetrics />
                         )}
 
-                        {activeTab === 'health_profiles' && (
+                        {activeTab === 'about_you' && (
                             <ProfileWorkspace />
                         )}
 
@@ -2382,8 +2394,8 @@ export default function AgriDashboard() {
                                                         <button
                                                             type="button"
                                                             onClick={() => {
-                                                                setActiveTab('health_profiles');
-                                                                router.push('/?tab=health_profiles&profile=consumer');
+                                                                setActiveTab('about_you');
+                                                                router.push('/?tab=about_you&profile=consumer');
                                                             }}
                                                             className="rounded-full bg-green-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700"
                                                         >
@@ -3769,7 +3781,7 @@ export default function AgriDashboard() {
 
                     {/* Main Chat Input Area (Hidden in Learn Mode, Visible in Home/Find/Pick) */}
                     {
-                        activeTab !== 'learn' && activeTab !== 'health_profiles' && activeTab !== 'customer_profile' && activeTab !== 'home' && (
+                        activeTab !== 'learn' && activeTab !== 'about_you' && activeTab !== 'living_library' && activeTab !== 'home' && (
                             <div className="shrink-0 z-10 p-4 md:p-6 bg-white border-t border-gray-100 transition-all duration-500">
                                 <div className="mx-auto max-w-3xl transition-all duration-500 relative shadow-xl bg-white border border-gray-200 rounded-3xl">
                                     <textarea

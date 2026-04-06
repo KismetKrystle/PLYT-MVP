@@ -50,6 +50,14 @@ function extractFavoriteConversationIds(favoriteChats: unknown): string[] {
         .filter(Boolean);
 }
 
+function normalizePrimaryTab(value: string | null) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'about_you' || normalized === 'health_profiles') return 'about_you';
+    if (normalized === 'living_library' || normalized === 'customer_profile') return 'living_library';
+    if (normalized === 'chat') return 'chat';
+    return normalized;
+}
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
@@ -78,7 +86,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const isStandaloneAuthPath = pathname === '/signup' || pathname === '/login' || pathname === '/auth/complete';
     const currentAppLocation = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     const currentTab = searchParams.get('tab') || '';
-    const isAboutYouTab = currentTab === 'customer_profile';
+    const primaryTab = normalizePrimaryTab(currentTab);
     const showMobileFooter = true;
     const profileAvatarSrc = String(user?.avatar_url || user?.profile_data?.avatar_url || (user ? '/assets/images/gallery/user_avatar.png' : '')).trim();
     const profileDisplayName = String(user?.full_name || user?.profile_data?.full_name || user?.email?.split('@')[0] || 'Guest User').trim() || 'Guest User';
@@ -332,20 +340,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     const NAV_ITEMS = [
         {
-            name: 'About You', href: '/?tab=customer_profile', icon: (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
-            )
-        },
-        {
-            name: 'Health Profile', href: '/?tab=health_profiles&profile=consumer', icon: (
-                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-current px-1 text-[10px] font-bold leading-none">
-                    HP
-                </span>
-            )
-        },
-        {
-            name: 'Chats', href: '/?tab=chat', icon: (
+            name: 'Chats', href: '/?tab=chat', tabKey: 'chat', icon: (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+            )
+        },
+        {
+            name: 'About You', href: '/?tab=about_you&profile=consumer', tabKey: 'about_you', icon: (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A10 10 0 1118.88 17.8M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            )
+        },
+        {
+            name: 'Living Library', href: '/?tab=living_library', tabKey: 'living_library', icon: (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
             )
         },
         // {
@@ -532,9 +540,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="flex-1 overflow-y-auto no-scrollbar w-64">
                     <nav className="px-4 space-y-2 mt-2">
                         {NAV_ITEMS.map((item) => {
-                            const currentTab = searchParams.get('tab');
                             const isChats = item.name === 'Chats';
-                            const isActive = isChats ? currentTab === 'chat' : pathname === item.href;
+                            const isActive = isChats ? primaryTab === 'chat' : item.tabKey === primaryTab;
                             const isLessons = item.name === 'Lessons';
 
                             if (isLessons) {
@@ -820,20 +827,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
                                         <div className="py-2">
                                             <Link
-                                                href={user ? "/?tab=customer_profile" : "#"}
+                                                href={user ? "/?tab=living_library" : "#"}
+                                                onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
+                                                className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
+                                            >
+                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                                                Living Library
+                                            </Link>
+                                            <Link
+                                                href={user ? "/?tab=about_you&profile=consumer" : "#"}
                                                 onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
                                                 className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
                                             >
                                                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A10 10 0 1118.88 17.8M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                                 About You
-                                            </Link>
-                                            <Link
-                                                href={user ? "/settings" : "#"}
-                                                onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
-                                                className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
-                                            >
-                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                Settings
                                             </Link>
                                         </div>
                                         <div className="py-2 bg-red-50/30">
@@ -985,7 +992,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
                                         <div className="py-2">
                                             <Link
-                                                href={user ? "/?tab=customer_profile" : "#"}
+                                                href={user ? "/?tab=living_library" : "#"}
+                                                onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
+                                                className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
+                                            >
+                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                                                Living Library
+                                            </Link>
+                                            <Link
+                                                href={user ? "/?tab=about_you&profile=consumer" : "#"}
                                                 onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
                                                 className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
                                             >
@@ -1074,24 +1089,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {showMobileFooter ? (
                 <div className="fixed bottom-0 left-0 right-0 h-14 bg-white border-t border-gray-100 md:hidden z-50 flex items-center justify-around px-2">
                     <Link
-                        href="/?tab=customer_profile&focus=favorites"
+                        href="/?tab=living_library&focus=favorites"
                         onClick={(event) => {
                             if (handleProtectedNavigation(event)) return;
                         }}
-                        className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'customer_profile' && searchParams.get('focus') === 'favorites' ? 'text-green-600' : 'text-gray-400'}`}
+                        className={`flex flex-col items-center p-2 ${primaryTab === 'living_library' && searchParams.get('focus') === 'favorites' ? 'text-green-600' : 'text-gray-400'}`}
                     >
                         <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
                     </Link>
 
                     <Link
-                        href={user ? "/?tab=customer_profile" : "#"}
+                        href={user ? "/?tab=living_library" : "#"}
                         onClick={(event) => {
                             if (handleProtectedNavigation(event)) return;
                             setLeftSidebarOpen(false);
                         }}
-                        className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'customer_profile' && !searchParams.get('focus') ? 'text-green-600' : 'text-gray-400'}`}
+                        className={`flex flex-col items-center p-2 ${primaryTab === 'living_library' && !searchParams.get('focus') ? 'text-green-600' : 'text-gray-400'}`}
                     >
-                        <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                        <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
                     </Link>
 
                     <div className="relative -top-5">
@@ -1108,14 +1123,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     </div>
 
                     <Link
-                        href="/?tab=health_profiles&profile=consumer"
+                        href="/?tab=about_you&profile=consumer"
                         onClick={(event) => {
                             if (handleProtectedNavigation(event)) return;
                         }}
-                        className={`flex flex-col items-center p-2 ${searchParams.get('tab') === 'health_profiles' ? 'text-green-600' : 'text-gray-400'}`}
+                        className={`flex flex-col items-center p-2 ${primaryTab === 'about_you' ? 'text-green-600' : 'text-gray-400'}`}
                     >
                         <span className="mb-1 inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-current px-1.5 text-[11px] font-bold leading-none">
-                            HP
+                            AY
                         </span>
                     </Link>
 

@@ -245,8 +245,8 @@ function getHeading(mode: ProfileMode) {
         };
     }
     return {
-        title: 'Consumer Health Profile',
-        subtitle: 'Personalize your food and wellness recommendations based on your needs.'
+        title: 'About You',
+        subtitle: 'Shape the health, preference, and habit context Navi uses to support you better.'
     };
 }
 
@@ -277,7 +277,7 @@ function buildHealthInsightSummary(input: {
     const riskParts = [];
     if (input.allergies.length) riskParts.push(`Food exclusions include ${input.allergies.join(', ')}.`);
     if (input.notes.trim()) riskParts.push(`Notes mention: ${input.notes.trim()}.`);
-    if (input.aboutYouBio?.trim()) riskParts.push(`About You context: ${input.aboutYouBio.trim()}.`);
+    if (input.aboutYouBio?.trim()) riskParts.push(`Living Library context: ${input.aboutYouBio.trim()}.`);
 
     const contextParts = [];
     if (input.aboutYouLocation?.trim()) contextParts.push(`Primary location is ${input.aboutYouLocation.trim()}.`);
@@ -286,7 +286,7 @@ function buildHealthInsightSummary(input: {
     return [
         `${name} ${overviewParts.join(' ')}.`.replace(/\s+\./g, '.'),
         riskParts.length ? riskParts.join(' ') : 'No additional risks or special notes are currently recorded.',
-        contextParts.length ? contextParts.join(' ') : 'Refresh this summary after updating About You details or health uploads.'
+        contextParts.length ? contextParts.join(' ') : 'Refresh this summary after updating your About You details or health uploads.'
     ].join(' ');
 }
 
@@ -801,7 +801,7 @@ export default function ProfileWorkspace() {
                 <div className="mt-4 space-y-3">
                     <button
                         type="button"
-                        onClick={() => router.push('/?tab=customer_profile')}
+                        onClick={() => router.push('/?tab=living_library')}
                         className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:border-green-500 hover:text-green-700"
                     >
                         <span aria-hidden="true">←</span>
@@ -909,7 +909,7 @@ export default function ProfileWorkspace() {
                                     consumerTab === tab ? 'bg-green-600 text-white' : 'text-gray-600 hover:text-gray-900'
                                 }`}
                             >
-                                {tab === 'report' ? 'Health Report' : 'Edit Profile'}
+                                {tab === 'report' ? 'About You Report' : 'Edit About You'}
                             </button>
                         ))}
                     </div>
@@ -922,7 +922,7 @@ export default function ProfileWorkspace() {
                     <section className="rounded-2xl bg-gradient-to-br from-green-600 to-emerald-700 p-6 text-white shadow-sm">
                         <div className="flex flex-wrap items-start justify-between gap-4">
                             <div>
-                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/75">Health Report</p>
+                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/75">About You Report</p>
                                 <h3 className="mt-2 text-2xl font-bold">{displayName} Health Summary</h3>
                                 <p className="mt-1 text-sm text-white/80">{consumerForm.location.trim() || 'Location not set'}</p>
                             </div>
@@ -930,7 +930,7 @@ export default function ProfileWorkspace() {
                         </div>
                         <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.05fr_0.95fr]">
                             <section className="rounded-2xl border border-white/20 bg-white/12 p-5 backdrop-blur-sm">
-                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">My Health Profile</p>
+                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">My About You Snapshot</p>
                                 <div className="mt-4 flex flex-wrap gap-3">
                                     <div className="rounded-xl bg-white/15 px-4 py-3 text-center">
                                         <p className="text-2xl font-bold">{consumerForm.health_conditions.length + fromCsv(consumerForm.other_conditions).length}</p>
@@ -951,7 +951,7 @@ export default function ProfileWorkspace() {
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
                                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">AI Summary</p>
-                                        <p className="mt-1 text-xs text-white/70">Generated from your health profile, About You details, and uploaded health context.</p>
+                                        <p className="mt-1 text-xs text-white/70">Generated from your About You details, Living Library context, and uploaded health documents.</p>
                                     </div>
                                     <div className="text-right">
                                         <button

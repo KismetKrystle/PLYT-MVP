@@ -989,11 +989,11 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 },
                 {
                     id: 'overview-health-record',
-                    title: 'Health Record',
-                    subtitle: 'Open your health profile and consumer health details.',
+                    title: 'About You',
+                    subtitle: 'Open your personal health, preference, and context details.',
                     meta: 'Open',
                     kind: 'Health',
-                    onClick: () => router.push('/?tab=health_profiles&profile=consumer')
+                    onClick: () => router.push('/?tab=about_you&profile=consumer')
                 },
                 ...(profileLocation
                     ? [{
@@ -2180,8 +2180,8 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             {profileBio}
                         </p>
                         <div className="flex flex-wrap gap-2 mt-3">
-                            <Link href="/?tab=health_profiles&profile=consumer" className="inline-flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-full hover:bg-green-100 transition-colors">
-                                View Health Record
+                            <Link href="/?tab=about_you&profile=consumer" className="inline-flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-full hover:bg-green-100 transition-colors">
+                                View About You
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                             </Link>
                             {user?.location_city && (

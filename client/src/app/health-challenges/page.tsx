@@ -94,10 +94,10 @@ export default function HealthChallengesPage() {
                             <p>Track streaks and completion history.</p>
                         </div>
                         <Link
-                            href="/?tab=customer_profile"
+                            href="/?tab=living_library"
                             className="mt-6 inline-flex rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
                         >
-                            Return to profile
+                            Return to Living Library
                         </Link>
                     </div>
                 </div>

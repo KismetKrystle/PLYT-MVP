@@ -135,10 +135,10 @@ export default function JournalPage() {
                             Sign in
                         </button>
                         <Link
-                            href="/?tab=customer_profile"
+                            href="/?tab=living_library"
                             className="rounded-full border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
                         >
-                            Back to About You
+                            Back to Living Library
                         </Link>
                     </div>
                 </div>
@@ -158,10 +158,10 @@ export default function JournalPage() {
                         </p>
                     </div>
                     <Link
-                        href="/?tab=customer_profile"
+                        href="/?tab=living_library"
                         className="inline-flex items-center rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
                     >
-                        Back to About You
+                        Back to Living Library
                     </Link>
                 </div>
 

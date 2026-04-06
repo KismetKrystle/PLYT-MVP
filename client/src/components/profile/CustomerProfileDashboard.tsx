@@ -474,7 +474,7 @@ export default function CustomerProfileDashboard({ user }: Props) {
 
                 <section className="md:col-span-4 rounded-2xl border-2 border-green-200 bg-gradient-to-br from-green-50 to-white p-6 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold text-gray-900">My Health Profile</h3>
+                        <h3 className="text-lg font-bold text-gray-900">My About You Snapshot</h3>
                         <div className="flex items-center gap-2">
                             <button
                                 type="button"
@@ -501,8 +501,8 @@ export default function CustomerProfileDashboard({ user }: Props) {
                             ) : !hasHealthProfile ? (
                                 <div className="text-center py-6">
                                     <p className="text-sm text-gray-500 mb-3">No health profile set up yet.</p>
-                                    <Link href="/?tab=health_profiles&profile=consumer" className="text-green-600 text-sm font-semibold hover:underline">
-                                        Complete your health profile &rarr;
+                                    <Link href="/?tab=about_you&profile=consumer" className="text-green-600 text-sm font-semibold hover:underline">
+                                        Complete your About You details &rarr;
                                     </Link>
                                 </div>
                             ) : (
@@ -526,7 +526,7 @@ export default function CustomerProfileDashboard({ user }: Props) {
                                             <p className="mt-3 text-xs text-white/70">{new Date().toLocaleDateString()}</p>
                                         </div>
                                         <Link
-                                            href="/?tab=health_profiles&profile=consumer"
+                                            href="/?tab=about_you&profile=consumer"
                                             className="inline-flex rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
                                         >
                                             View Full Report

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ProductPreviewPanel, { ProductDetail } from './ProductPreviewPanel';
 import IntentLoader from './chat/IntentLoader';
+import NaviAvatar from './chat/NaviAvatar';
 import { useLessons } from '../context/LessonContext';
 import { classifyIntent, IntentClassification, IntentConfidence, IntentName } from '../lib/intentClassifier';
 import { renderMarkdownToHtml, stripMarkdownToPlainText } from '../lib/markdownDocument';
@@ -404,21 +405,14 @@ import DistributorDashboard from './dashboards/DistributorDashboard';
 import ServicerDashboard from './dashboards/ServicerDashboard';
 import ProfileWorkspace from './consumer-health-profile/ProfileWorkspace';
 
-const MOCK_SYSTEMS_DB: Omit<ProduceItem, 'quantity'>[] = [
-    { id: 's1', name: 'Hydro-Starter Kit', price: 1200000, unit: 'unit', plyt: '1200', image: '/assets/images/store/hydro_starter_kit.png', description: 'Perfect for beginners. Includes 10 net pots.', specs: ['10 Pots', 'Air Pump'], farm: 'HydroBasics', growMethod: 'NFT' },
-    { id: 's2', name: 'Vertical Tower V2', price: 3500000, unit: 'unit', plyt: '3500', image: '/assets/images/store/vertical_tower_v2.png', description: 'Space-saving vertical tower for leafy greens.', specs: ['36 Pots', 'Vertical'], farm: 'VertiGrow', growMethod: 'Aeroponics' },
-    { id: 's3', name: 'Hydro Tower Pro', price: 2500000, unit: 'unit', plyt: '2500', image: '/assets/images/systems/tower_system_white.png', description: 'Professional grade tower system for maximum yield.', specs: ['36 Sites', 'High Efficiency'], farm: 'VertiTech', growMethod: 'Aeroponic' },
-    { id: 'c1', name: 'Terracotta Pot (L)', price: 150000, unit: 'unit', plyt: '150', image: '/assets/images/gallery/soil_garden.png', description: 'Handcrafted clay pot.', specs: ['Breathable', 'Natural'], farm: 'Bali Clay', artisan: 'Wayan Sudra', material: 'Red Clay', impactScore: 850, growMethod: 'Handmade' },
-];
-
 const SEARCH_RADIUS_OPTIONS_KM = [5, 10, 25, 50, 80, 120];
 const INITIAL_VISIBLE_PLACE_COUNT = 6;
 const PLACE_PANEL_INCREMENT = 6;
 const DEFAULT_CHAT_GREETING = 'Hello! I can help you find fresh food, nearby places, recipes, and practical nutrition guidance. What are you looking for?';
-const GUEST_CHAT_LIMIT = 3;
-const GUEST_CHAT_STORAGE_KEY = 'plyt_guest_chat_count';
+const GOOGLE_SEARCH_RESULT_LIMIT = 5;
+const AUTO_GOOGLE_FALLBACK_QUERY_LIMIT = 2;
 const AUTH_MODAL_LINKS = new Set(['/login', '/signup', 'plyt://auth-modal']);
-const GUEST_CHAT_LIMIT_MESSAGE = 'You have used your 3 guest questions. This search is designed to adapt to your health preferences. Please [Signup/in](/login) and complete a bit of your health profile so the results can serve you better.';
+const SIGN_IN_REQUIRED_MESSAGE = 'Sign in or create your profile before searching so Navi can tailor results to your health context and preferences.';
 const DEFAULT_LIBRARY_CATEGORIES = [
     { label: 'Recipes', emoji: '🍽️', color: '#4ade80', sort_order: 0 },
     { label: 'Foods', emoji: '🥦', color: '#facc15', sort_order: 1 },
@@ -479,50 +473,6 @@ function deriveChatSaveTitle(content: string, intent?: IntentName) {
     return clipped;
 }
 
-function FoodChatMascot() {
-    return (
-        <motion.div
-            aria-hidden="true"
-            animate={{ y: [0, -4, 0], rotate: [0, 2, 0, -2, 0] }}
-            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-            className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-100 via-teal-50 to-white shadow-[0_8px_24px_rgba(16,185,129,0.18)] ring-1 ring-emerald-100"
-        >
-            <svg viewBox="0 0 64 64" className="h-10 w-10 drop-shadow-sm">
-                <defs>
-                    <linearGradient id="plyt-mascot-body" x1="0%" x2="100%" y1="0%" y2="100%">
-                        <stop offset="0%" stopColor="#6ee7b7" />
-                        <stop offset="100%" stopColor="#059669" />
-                    </linearGradient>
-                    <linearGradient id="plyt-mascot-wing" x1="0%" x2="100%" y1="50%" y2="50%">
-                        <stop offset="0%" stopColor="#99f6e4" />
-                        <stop offset="100%" stopColor="#34d399" />
-                    </linearGradient>
-                </defs>
-                <motion.g
-                    animate={{ rotate: [0, -8, 0, 8, 0] }}
-                    transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-                    style={{ originX: '50%', originY: '45%' }}
-                >
-                    <ellipse cx="18" cy="28" rx="13" ry="6" fill="url(#plyt-mascot-wing)" transform="rotate(-22 18 28)" />
-                    <ellipse cx="46" cy="28" rx="13" ry="6" fill="url(#plyt-mascot-wing)" transform="rotate(22 46 28)" />
-                </motion.g>
-                <ellipse cx="32" cy="33" rx="12" ry="15" fill="url(#plyt-mascot-body)" />
-                <circle cx="36" cy="20" r="9" fill="url(#plyt-mascot-body)" />
-                <circle cx="39" cy="19" r="3" fill="#fff7ed" />
-                <circle cx="40" cy="19" r="1.5" fill="#7c2d12" />
-                <path d="M44 20l11-2-10 6z" fill="#0f766e" />
-                <path d="M28 28c4 4 8 4 12 0" stroke="#d1fae5" strokeWidth="2" strokeLinecap="round" fill="none" />
-                <path d="M26 48c2-1 4-1 6 0M34 48c2-1 4-1 6 0" stroke="#065f46" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            <motion.span
-                className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-orange-300 ring-2 ring-white"
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-            />
-        </motion.div>
-    );
-}
-
 function normalizeSearchLocationText(location?: string) {
     const value = String(location || '').trim();
     if (!value || /^Lat:\s*[-0-9.]+\s*,\s*Lng:\s*[-0-9.]+$/i.test(value)) {
@@ -561,7 +511,6 @@ export default function AgriDashboard() {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<Tab>('home');
     const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
-    const [guestQuestionCount, setGuestQuestionCount] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
     const [prompt, setPrompt] = useState('');
     const [showPreview, setShowPreview] = useState(false);
@@ -579,19 +528,6 @@ export default function AgriDashboard() {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        if (user?.id) {
-            localStorage.removeItem(GUEST_CHAT_STORAGE_KEY);
-            setGuestQuestionCount(0);
-            return;
-        }
-
-        const storedCount = Number(localStorage.getItem(GUEST_CHAT_STORAGE_KEY) || '0');
-        setGuestQuestionCount(Number.isFinite(storedCount) ? Math.max(0, storedCount) : 0);
-    }, [user?.id]);
 
     // Mobile Panel State
     const [isPanelOpen, setIsPanelOpen] = useState(false);
@@ -611,6 +547,7 @@ export default function AgriDashboard() {
     const [suggestedProducts, setSuggestedProducts] = useState<ProduceItem[]>([]);
     const [suggestedPlaces, setSuggestedPlaces] = useState<PlaceSuggestion[]>([]);
     const [googleInquiryPlaces, setGoogleInquiryPlaces] = useState<PlaceSuggestion[]>([]);
+    const [googleInquiryQueries, setGoogleInquiryQueries] = useState<string[]>([]);
     const [favoritePlaces, setFavoritePlaces] = useState<FavoritePlaceRecord[]>([]);
     const [isLoadingFavoritePlaces, setIsLoadingFavoritePlaces] = useState(false);
     const [pendingFavoriteKeys, setPendingFavoriteKeys] = useState<string[]>([]);
@@ -811,6 +748,15 @@ export default function AgriDashboard() {
 
     const buildGroceryBundleKey = (messageIndex: number) => `${currentConversationId || 'draft'}:${messageIndex}`;
 
+    const getGroceryBundleMessageIndex = (bundleKey?: string | null) => {
+        const normalizedKey = String(bundleKey || '').trim();
+        if (!normalizedKey) return null;
+        const separatorIndex = normalizedKey.lastIndexOf(':');
+        const indexValue = separatorIndex >= 0 ? normalizedKey.slice(separatorIndex + 1) : normalizedKey;
+        const parsed = Number(indexValue);
+        return Number.isInteger(parsed) ? parsed : null;
+    };
+
     const updateGroceryBundle = (
         key: string,
         updater: (bundle: GroceryBundle | null) => GroceryBundle | null
@@ -915,26 +861,15 @@ export default function AgriDashboard() {
     };
 
     const handleSearchGoogleForCurrentInquiry = async () => {
-        setIsStandaloneGoogleRequested(true);
-        setGoogleInquiryPlaces([]);
-
         if (!lastPlaceSearch) {
             return;
         }
 
         setIsRefreshingSuggestions(true);
         try {
-            const places = await api.post('/chat/places', {
-                queries: lastPlaceSearch.queries,
-                location: lastPlaceSearch.location,
-                radiusKm: searchRadiusKm,
-                limit: Math.max(16, suggestedPlaces.length || 16)
-            });
-
-            const freshPlaces = Array.isArray(places.data?.places) ? places.data.places as PlaceSuggestion[] : [];
-            setGoogleInquiryPlaces(normalizeSuggestedPlaces(freshPlaces));
-            setShowPreview(true);
-            setIsPanelOpen(true);
+            setGoogleInquiryPlaces([]);
+            const result = await fetchGoogleInquiryPlaces(lastPlaceSearch.queries, lastPlaceSearch.location, searchRadiusKm);
+            applyGoogleInquiryResults(result.queries, result.places);
         } catch (error) {
             console.warn('Unable to search Google for the current inquiry.', error);
         } finally {
@@ -1126,6 +1061,9 @@ export default function AgriDashboard() {
                 ? state.locationSourceLabel
                 : 'device'
         );
+        setGoogleInquiryPlaces([]);
+        setGoogleInquiryQueries([]);
+        setIsStandaloneGoogleRequested(false);
         setShowPreview(Boolean(state?.showPreview) || nextPlaces.length > 0 || nextProducts.length > 0);
         setIsPanelOpen(nextPlaces.length > 0 || nextProducts.length > 0);
     };
@@ -1161,6 +1099,51 @@ export default function AgriDashboard() {
         setSuggestedProducts([]);
         setShowPreview(true);
         return places as PlaceSuggestion[];
+    };
+
+    const normalizeSearchQueries = (queries: string[], limit?: number) => Array.from(new Set(
+        queries
+            .map((query) => String(query || '').trim())
+            .filter(Boolean)
+    )).slice(0, typeof limit === 'number' ? limit : queries.length);
+
+    const fetchGoogleInquiryPlaces = async (
+        queries: string[],
+        location: string,
+        radiusKm: number,
+        queryLimit?: number
+    ) => {
+        const normalizedQueries = normalizeSearchQueries(queries, queryLimit);
+        if (normalizedQueries.length === 0) {
+            return {
+                queries: [] as string[],
+                places: [] as PlaceSuggestion[]
+            };
+        }
+
+        const response = await api.post('/chat/source-inquiry/google', {
+            queries: normalizedQueries,
+            location,
+            radiusKm,
+            limit: GOOGLE_SEARCH_RESULT_LIMIT
+        });
+        const places = Array.isArray(response.data?.places)
+            ? normalizeSuggestedPlaces(response.data.places as PlaceSuggestion[])
+            : [];
+
+        return {
+            queries: normalizedQueries,
+            places
+        };
+    };
+
+    const applyGoogleInquiryResults = (queries: string[], places: PlaceSuggestion[]) => {
+        setIsStandaloneGoogleRequested(true);
+        setGoogleInquiryQueries(queries);
+        setGoogleInquiryPlaces(places);
+        setVisiblePlaceCount(INITIAL_VISIBLE_PLACE_COUNT);
+        setShowPreview(true);
+        setIsPanelOpen(true);
     };
 
     // Auto-switch to Learn tab when a lesson is selected
@@ -1249,24 +1232,63 @@ export default function AgriDashboard() {
         }
     };
 
-    const handleSend = async (overridePrompt?: string, tags?: string[], overrideScope?: 'local' | 'global', overrideLocation?: string) => {
+    const handleSend = async (
+        overridePrompt?: string,
+        tags?: string[],
+        overrideScope?: 'local' | 'global',
+        overrideLocation?: string,
+        freshChat?: boolean
+    ) => {
         const messageText = overridePrompt || prompt;
         const normalizedTags = tags || [];
         if (!messageText.trim() && normalizedTags.length === 0) return;
+        const shouldStartFreshChat = Boolean(freshChat);
+        const targetTab: 'chat' | 'find_produce' | 'pick_system' | 'learn' = activeTab === 'home' || activeTab === 'impact' || activeTab === 'guide' || activeTab === 'about_you' || activeTab === 'living_library' ? 'chat' : activeTab as any;
+
+        if (shouldStartFreshChat) {
+            setSkipAutoRestore(true);
+            setCurrentConversationId(null);
+            setActiveGroceryBundleKey(null);
+            setPendingGroceryBundleKey(null);
+            setIsGroceryListModalOpen(false);
+            setSuggestionPanelMode('suggestions');
+            setSuggestionPanelSubject('');
+            setLastPlaceSearch(null);
+            setSuggestedPlaces([]);
+            setGoogleInquiryPlaces([]);
+            setGoogleInquiryQueries([]);
+            setSuggestedProducts([]);
+            setShowPreview(false);
+            setPrompt('');
+            setSelectedAssistantMessageIndex(null);
+            setChatSaveStatus('');
+            setChatHistory((prev) => ({
+                ...prev,
+                chat: [{ role: 'assistant', content: DEFAULT_CHAT_GREETING }]
+            }));
+            setActiveTab('chat');
+        }
 
         setActiveGroceryBundleKey(null);
         setSuggestionPanelSubject(messageText.trim());
         setIsStandaloneGoogleRequested(false);
         setGoogleInquiryPlaces([]);
-        const targetTab: 'chat' | 'find_produce' | 'pick_system' | 'learn' = activeTab === 'home' || activeTab === 'impact' || activeTab === 'guide' || activeTab === 'about_you' || activeTab === 'living_library' ? 'chat' : activeTab as any;
+        setGoogleInquiryQueries([]);
+        setSuggestedProducts([]);
         const predictedIntent = classifyIntent(messageText, normalizedTags);
         setSuggestionPanelMode(inferSuggestionPanelModeFromContext(messageText, predictedIntent.intent, []));
 
-        if (!user && guestQuestionCount >= GUEST_CHAT_LIMIT) {
+        if (!user) {
             setActiveTab('chat');
             setChatHistory(prev => ({
                 ...prev,
-                [targetTab]: [...prev[targetTab], { role: 'assistant', content: GUEST_CHAT_LIMIT_MESSAGE }]
+                [targetTab]: [...prev[targetTab], { role: 'assistant', content: SIGN_IN_REQUIRED_MESSAGE }]
+            }));
+            localStorage.setItem('pendingChatPrompt', JSON.stringify({
+                tags: normalizedTags,
+                text: messageText,
+                scope: overrideScope || 'local',
+                location: overrideLocation
             }));
             requireAuth(() => { });
             return;
@@ -1274,7 +1296,12 @@ export default function AgriDashboard() {
 
         setChatHistory(prev => ({
             ...prev,
-            [targetTab]: [...prev[targetTab], { role: 'user', content: messageText, tags: normalizedTags }]
+            [targetTab]: shouldStartFreshChat
+                ? [
+                    { role: 'assistant', content: DEFAULT_CHAT_GREETING },
+                    { role: 'user', content: messageText, tags: normalizedTags }
+                ]
+                : [...prev[targetTab], { role: 'user', content: messageText, tags: normalizedTags }]
         }));
 
         if (!overridePrompt) setPrompt('');
@@ -1284,17 +1311,18 @@ export default function AgriDashboard() {
 
         setIsLoading(true);
         try {
+            const conversationIdForRequest = shouldStartFreshChat ? null : currentConversationId;
             const resolvedSearch = await resolveSearchLocation(overrideLocation);
             const finalLocation = resolvedSearch.location;
             setSearchAreaLabel(resolvedSearch.areaLabel);
             setLocationSourceLabel(resolvedSearch.source);
             const chatPromise = api.post('/chat', {
                 message: messageText,
-                conversationId: currentConversationId,
+                conversationId: conversationIdForRequest,
                 tags: normalizedTags,
                 scope: overrideScope || 'local',
                 location: finalLocation,
-                visiblePlaces: suggestedPlaces.slice(0, 12)
+                visiblePlaces: shouldStartFreshChat ? [] : suggestedPlaces.slice(0, 12)
             });
             const searchContextPromise = api.post('/chat/search-context', {
                 message: messageText,
@@ -1332,16 +1360,6 @@ export default function AgriDashboard() {
 
             const res = await chatPromise;
 
-            if (!user) {
-                setGuestQuestionCount((current) => {
-                    const nextCount = Math.min(GUEST_CHAT_LIMIT, current + 1);
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem(GUEST_CHAT_STORAGE_KEY, String(nextCount));
-                    }
-                    return nextCount;
-                });
-            }
-
             const aiResponse = res.data.reply || res.data.response;
             const usedFallback = Boolean(res.data?.usedFallback);
             const incompleteProfile = Boolean(res.data?.incomplete_profile);
@@ -1353,7 +1371,7 @@ export default function AgriDashboard() {
                     : predictedIntent.confidence;
             const responseMixedIntent = normalizeIntentName(res.data?.mixedIntent) || predictedIntent.mixed;
 
-            if (newConvId && !currentConversationId) {
+            if (newConvId && !conversationIdForRequest) {
                 setCurrentConversationId(newConvId);
             }
             if (newConvId) {
@@ -1444,7 +1462,18 @@ export default function AgriDashboard() {
                         }
                     } else {
                         replaceSuggestedPlaces([]);
-                        setShowPreview(false);
+                        setShowPreview(true);
+                        try {
+                            const googleFallback = await fetchGoogleInquiryPlaces(
+                                placeQueries,
+                                finalLocation,
+                                searchRadiusKm,
+                                AUTO_GOOGLE_FALLBACK_QUERY_LIMIT
+                            );
+                            applyGoogleInquiryResults(googleFallback.queries, googleFallback.places);
+                        } catch (googleError) {
+                            console.warn('Unable to auto-search Google after empty premium findings.', googleError);
+                        }
                         setChatHistory(prev => ({
                             ...prev,
                             [targetTab]: [...prev[targetTab], {
@@ -1491,20 +1520,6 @@ export default function AgriDashboard() {
                 }]
             }));
 
-            const aiLower = aiResponse.toLowerCase();
-            const isSystem = aiLower.includes('system') || aiLower.includes('tower') || aiLower.includes('grow');
-
-            let suggestions: any[] = [];
-            if (isSystem) {
-                suggestions = [...MOCK_SYSTEMS_DB].sort(() => 0.5 - Math.random()).slice(0, 2).map(p => ({ ...p, quantity: 1 }));
-            }
-
-            if (suggestions.length > 0) {
-                setSuggestedPlaces([]);
-                setSuggestedProducts(suggestions);
-                setShowPreview(true);
-            }
-
         } catch (error: any) {
             console.error('Chat error full:', error);
             if (error.response) {
@@ -1520,7 +1535,7 @@ export default function AgriDashboard() {
         }
     };
 
-    // Restore Guest Prompt or handle redirect-from-landing
+    // Restore pending prompt after sign-in or handle redirect-from-landing
     useEffect(() => {
         const urlConvId = searchParams.get('conversationId');
         if (urlConvId) {
@@ -1529,19 +1544,23 @@ export default function AgriDashboard() {
             return;
         }
 
+        if (!user?.id) {
+            return;
+        }
+
         const stored = localStorage.getItem('pendingChatPrompt');
         if (stored) {
             try {
                 const parsed = JSON.parse(stored);
                 if (parsed.text) {
-                    handleSend(parsed.text, parsed.tags, parsed.scope, parsed.location);
+                    handleSend(parsed.text, parsed.tags, parsed.scope, parsed.location, Boolean(parsed.freshChat));
                 }
                 localStorage.removeItem('pendingChatPrompt');
             } catch (e) {
                 console.error(e);
             }
         }
-    }, [searchParams, user, guestQuestionCount]);
+    }, [searchParams, user?.id]);
 
     useEffect(() => {
         const urlConvId = searchParams.get('conversationId');
@@ -1760,6 +1779,85 @@ export default function AgriDashboard() {
         }
     };
 
+    const quickSaveChatMessage = async (messageIndex: number, description = 'Full response saved from a Navi chat answer.') => {
+        const targetMessage = chatHistory.chat[messageIndex];
+        if (!targetMessage || targetMessage.role !== 'assistant' || isSavingChatDocument) return;
+
+        const categories = knowledgeBankCategories.length > 0
+            ? knowledgeBankCategories
+            : await ensureKnowledgeBankCategories();
+        const defaultCategory = categories.find(
+            (category) => normalizeLibraryLabel(category.label) === getSuggestedLibraryCategoryLabel(targetMessage.intent)
+        ) || categories[0] || null;
+
+        if (!defaultCategory?.id) {
+            setChatSaveStatus('Could not save this chat right now.');
+            return;
+        }
+
+        const markdownContent = targetMessage.content.trim();
+        const plainText = stripMarkdownToPlainText(markdownContent);
+        const defaultTags = Array.from(new Set([
+            targetMessage.intent ? targetMessage.intent.replace(/_/g, ' ') : '',
+            targetMessage.mixedIntent ? targetMessage.mixedIntent.replace(/_/g, ' ') : ''
+        ].filter(Boolean)));
+        const documentType = deriveDocumentType(targetMessage.intent);
+
+        setIsSavingChatDocument(true);
+        try {
+            await api.post('/profile-library/items', {
+                category_id: defaultCategory.id,
+                title: deriveChatSaveTitle(markdownContent, targetMessage.intent),
+                description,
+                media_url: null,
+                media_type: 'markdown',
+                document_type: documentType,
+                tags: defaultTags,
+                source: 'ai_chat',
+                source_ref: `${currentConversationId || 'unsaved-conversation'}:${messageIndex}`,
+                source_conversation_id: currentConversationId,
+                source_message_index: messageIndex,
+                selection_text: null,
+                content_markdown: markdownContent,
+                content_json: {
+                    version: 1,
+                    documentType,
+                    title: deriveChatSaveTitle(markdownContent, targetMessage.intent),
+                    description,
+                    markdown: markdownContent,
+                    plainText,
+                    tags: defaultTags,
+                    selectionMode: 'full',
+                    source: {
+                        conversationId: currentConversationId,
+                        messageIndex
+                    }
+                }
+            });
+
+            setChatSaveStatus('Saved this chat to your Knowledge Bank.');
+        } catch (error) {
+            console.warn('Failed to quick-save chat response.', error);
+            setChatSaveStatus('Could not save this chat right now.');
+        } finally {
+            setIsSavingChatDocument(false);
+        }
+    };
+
+    const handleSaveActiveGroceryListChat = async () => {
+        const messageIndex = getGroceryBundleMessageIndex(activeGroceryBundleKey);
+        if (messageIndex == null) {
+            setChatSaveStatus('Could not find the recipe chat to save.');
+            return;
+        }
+
+        await quickSaveChatMessage(
+            messageIndex,
+            'Recipe companion saved from a Navi grocery list.'
+        );
+        setIsGroceryListModalOpen(false);
+    };
+
     const handleSaveChatResponse = async () => {
         if (chatSaveTargetIndex == null || !chatSaveCategoryId || isSavingChatDocument) return;
 
@@ -1888,15 +1986,12 @@ export default function AgriDashboard() {
 
         setIsLoading(true);
         try {
-            const places = await api.post('/chat/places', {
-                queries: lastPlaceSearch.queries,
-                location: lastPlaceSearch.location,
-                radiusKm: nextRadiusKm,
-                limit: Math.max(24, googleInquiryPlaces.length + 12)
-            });
-            const freshPlaces = Array.isArray(places.data?.places) ? places.data.places as PlaceSuggestion[] : [];
-            setGoogleInquiryPlaces(normalizeSuggestedPlaces(freshPlaces));
-            setShowPreview(true);
+            const result = await fetchGoogleInquiryPlaces(
+                googleInquiryQueries.length > 0 ? googleInquiryQueries : lastPlaceSearch.queries,
+                lastPlaceSearch.location,
+                nextRadiusKm
+            );
+            applyGoogleInquiryResults(result.queries, result.places);
             setChatHistory((prev) => {
                 const chatMessages = prev.chat;
                 if (chatMessages.length === 0) return prev;
@@ -1950,16 +2045,12 @@ export default function AgriDashboard() {
             }
 
             if (isStandaloneGoogleRequested) {
-                const places = await api.post('/chat/places', {
-                    queries: lastPlaceSearch.queries,
-                    location: lastPlaceSearch.location,
-                    radiusKm: searchRadiusKm,
-                    limit: Math.max(16, googleInquiryPlaces.length || 16)
-                });
-
-                const freshPlaces = Array.isArray(places.data?.places) ? places.data.places as PlaceSuggestion[] : [];
-                setGoogleInquiryPlaces(normalizeSuggestedPlaces(freshPlaces));
-                setShowPreview(true);
+                const result = await fetchGoogleInquiryPlaces(
+                    googleInquiryQueries.length > 0 ? googleInquiryQueries : lastPlaceSearch.queries,
+                    lastPlaceSearch.location,
+                    searchRadiusKm
+                );
+                applyGoogleInquiryResults(result.queries, result.places);
                 return;
             }
 
@@ -2290,10 +2381,10 @@ export default function AgriDashboard() {
                                 {/* Chat Area */}
                                 <div className="flex-1 flex flex-col overflow-hidden">
                                     <div className="flex-1 overflow-y-auto no-scrollbar">
-                                        <div className="border-b border-gray-100 bg-white px-4 py-3 md:px-6">
+                                        <div className="sticky top-0 z-10 border-b border-gray-100 bg-white/95 px-4 py-3 shadow-sm backdrop-blur md:px-6">
                                             <div className="flex items-start justify-between gap-4">
                                                 <div className="flex items-center gap-3">
-                                                    <FoodChatMascot />
+                                                    <NaviAvatar />
                                                     <div>
                                                         <h2 className="text-sm font-bold text-gray-800">Hi, I'm Navi.</h2>
                                                         <p className="text-xs text-gray-400">I find the healthiest foods for your unique profile.</p>
@@ -2310,6 +2401,11 @@ export default function AgriDashboard() {
                                             {chatSaveStatus ? (
                                                 <div className="mt-3 rounded-2xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-800">
                                                     {chatSaveStatus}
+                                                </div>
+                                            ) : null}
+                                            {!user ? (
+                                                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                                                    Sign in or create your profile before searching so Navi can personalize results around your health context.
                                                 </div>
                                             ) : null}
                                         </div>
@@ -3788,7 +3884,7 @@ export default function AgriDashboard() {
                                         value={prompt}
                                         onChange={(e) => setPrompt(e.target.value)}
                                         onKeyDown={handleKeyDown}
-                                        placeholder="Type your message..."
+                                        placeholder={user ? 'Type your message...' : 'Sign in to start a personalized search...'}
                                         className="w-full pl-6 pr-14 py-4 rounded-3xl resize-none focus:outline-none focus:ring-2 focus:ring-green-500/50 bg-transparent text-gray-700 placeholder:text-gray-400"
                                         rows={1}
                                         style={{ minHeight: '60px' }}
@@ -3808,9 +3904,9 @@ export default function AgriDashboard() {
                     }
 
                     {isGroceryListModalOpen && activeGroceryBundle ? (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6 backdrop-blur-sm">
-                            <div className="w-full max-w-2xl rounded-[2rem] border border-gray-200 bg-white p-6 shadow-2xl">
-                                <div className="flex items-start justify-between gap-4">
+                        <div className="fixed inset-x-0 bottom-0 top-[calc(4rem+env(safe-area-inset-top))] z-50 bg-black/30 backdrop-blur-sm sm:inset-0 sm:flex sm:items-center sm:justify-center sm:px-4 sm:py-6">
+                            <div className="flex h-full w-full max-w-2xl flex-col overflow-hidden rounded-t-[2rem] border border-gray-200 bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:rounded-[2rem]">
+                                <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-4 py-4 sm:px-6 sm:py-5">
                                     <div>
                                         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-600">Recipe Companion</p>
                                         <h3 className="mt-2 text-2xl font-bold text-gray-900">{activeGroceryBundle.title}</h3>
@@ -3827,55 +3923,65 @@ export default function AgriDashboard() {
                                     </button>
                                 </div>
 
-                                <div className="mt-5 rounded-3xl border border-amber-100 bg-amber-50/60 p-4">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-700">Grocery list</p>
-                                        <span className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
-                                            {activeGroceryBundle.items.filter((item) => item.checked).length}/{activeGroceryBundle.items.length} selected
-                                        </span>
-                                    </div>
-                                    <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto pr-1">
-                                        {activeGroceryBundle.items.length > 0 ? (
-                                            activeGroceryBundle.items.map((item) => (
-                                                <label
-                                                    key={item.id}
-                                                    className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${
-                                                        item.checked
-                                                            ? 'border-green-200 bg-green-50'
-                                                            : 'border-white bg-white/90 hover:border-amber-200'
-                                                    }`}
-                                                >
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={item.checked}
-                                                        onChange={() => { if (activeGroceryBundleKey) { toggleGroceryItemChecked(activeGroceryBundleKey, item.id); } }}
-                                                        className="mt-1 h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
-                                                    />
-                                                    <div className="min-w-0">
-                                                        <p className={`text-sm font-semibold ${item.checked ? 'text-green-800 line-through' : 'text-gray-900'}`}>
-                                                            {item.display || item.name}
-                                                        </p>
-                                                        {!item.display || item.display === item.name ? null : (
-                                                            <p className="mt-1 text-xs text-gray-500">{item.name}</p>
-                                                        )}
-                                                    </div>
-                                                </label>
-                                            ))
-                                        ) : (
-                                            <div className="rounded-2xl border border-dashed border-amber-200 bg-white/80 px-4 py-4 text-sm text-gray-500">
-                                                No structured ingredients were extracted from this recipe yet.
-                                            </div>
-                                        )}
+                                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+                                    <div className="rounded-3xl border border-amber-100 bg-amber-50/60 p-4">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-700">Grocery list</p>
+                                            <span className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+                                                {activeGroceryBundle.items.filter((item) => item.checked).length}/{activeGroceryBundle.items.length} selected
+                                            </span>
+                                        </div>
+                                        <div className="mt-4 space-y-2">
+                                            {activeGroceryBundle.items.length > 0 ? (
+                                                activeGroceryBundle.items.map((item) => (
+                                                    <label
+                                                        key={item.id}
+                                                        className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${
+                                                            item.checked
+                                                                ? 'border-green-200 bg-green-50'
+                                                                : 'border-white bg-white/90 hover:border-amber-200'
+                                                        }`}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={item.checked}
+                                                            onChange={() => { if (activeGroceryBundleKey) { toggleGroceryItemChecked(activeGroceryBundleKey, item.id); } }}
+                                                            className="mt-1 h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                                        />
+                                                        <div className="min-w-0">
+                                                            <p className={`text-sm font-semibold ${item.checked ? 'text-green-800 line-through' : 'text-gray-900'}`}>
+                                                                {item.display || item.name}
+                                                            </p>
+                                                            {!item.display || item.display === item.name ? null : (
+                                                                <p className="mt-1 text-xs text-gray-500">{item.name}</p>
+                                                            )}
+                                                        </div>
+                                                    </label>
+                                                ))
+                                            ) : (
+                                                <div className="rounded-2xl border border-dashed border-amber-200 bg-white/80 px-4 py-4 text-sm text-gray-500">
+                                                    No structured ingredients were extracted from this recipe yet.
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                                <div className="flex flex-col gap-3 border-t border-gray-100 px-4 py-4 sm:flex-row sm:justify-end sm:px-6 sm:py-5">
                                     <button
                                         type="button"
                                         onClick={() => setIsGroceryListModalOpen(false)}
                                         className="rounded-2xl border border-gray-200 bg-white px-5 py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50"
                                     >
                                         Close
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => requireAuth(() => { void handleSaveActiveGroceryListChat(); })}
+                                        disabled={isSavingChatDocument}
+                                        className="rounded-2xl border border-green-200 bg-green-50 px-5 py-3 text-sm font-bold text-green-700 transition hover:border-green-300 hover:bg-green-100 disabled:opacity-60"
+                                    >
+                                        {isSavingChatDocument ? 'Saving...' : 'Save list'}
                                     </button>
                                     <button
                                         type="button"

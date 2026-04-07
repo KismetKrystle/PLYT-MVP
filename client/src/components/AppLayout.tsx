@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth';
 import { useLessons } from '../context/LessonContext';
 import { useCart } from '../context/CartContext';
 import Logo from './Logo';
-import { FormEvent, MouseEvent, useEffect, useState } from 'react';
+import { FormEvent, MouseEvent, useEffect, useRef, useState } from 'react';
 import RightSidebar from './RightSidebar';
 import api from '../lib/api';
 
@@ -82,11 +82,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
     const [feedbackStatus, setFeedbackStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const [canGoBackInApp, setCanGoBackInApp] = useState(false);
+    const [isMobileHeaderVisible, setIsMobileHeaderVisible] = useState(true);
     const { savedLessons, activeLesson, setActiveLesson } = useLessons();
+    const mobileScrollContainerRef = useRef<HTMLDivElement | null>(null);
+    const lastMobileScrollTopRef = useRef(0);
     const isStandaloneAuthPath = pathname === '/signup' || pathname === '/login' || pathname === '/auth/complete';
     const currentAppLocation = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     const currentTab = searchParams.get('tab') || '';
     const primaryTab = normalizePrimaryTab(currentTab);
+    const isLandingExperience = pathname === '/' && (!currentTab || currentTab === 'landing');
     const showMobileFooter = true;
     const profileAvatarSrc = String(user?.avatar_url || user?.profile_data?.avatar_url || (user ? '/assets/images/gallery/user_avatar.png' : '')).trim();
     const profileDisplayName = String(user?.full_name || user?.profile_data?.full_name || user?.email?.split('@')[0] || 'Guest User').trim() || 'Guest User';
@@ -103,6 +107,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         return <img src={profileAvatarSrc} alt={profileDisplayName} className="h-full w-full object-cover" />;
     };
+
+    const renderAboutYouIcon = (className = 'w-5 h-5') => (
+        <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15.5 8.5a3.5 3.5 0 11-7 0 3.5 3.5 0 017 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 18.5a7 7 0 0114 0" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M18.5 5.5h.01M20.5 8.5h.01M3.5 8.5h.01" />
+        </svg>
+    );
 
     const requestSignIn = () => {
         setLeftSidebarOpen(false);
@@ -170,6 +182,39 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             setIsChatsOpen(true);
         }
     }, [searchParams]);
+
+    useEffect(() => {
+        const handleScroll = () => {
+            if (window.innerWidth >= 768) {
+                setIsMobileHeaderVisible(true);
+                lastMobileScrollTopRef.current = 0;
+                return;
+            }
+
+            const activeElement = document.scrollingElement as HTMLElement | null;
+            const nextScrollTop = activeElement?.scrollTop || window.scrollY || 0;
+            const delta = nextScrollTop - lastMobileScrollTopRef.current;
+
+            if (nextScrollTop <= 16) {
+                setIsMobileHeaderVisible(true);
+            } else if (delta > 8) {
+                setIsMobileHeaderVisible(false);
+            } else if (delta < -8) {
+                setIsMobileHeaderVisible(true);
+            }
+
+            lastMobileScrollTopRef.current = nextScrollTop;
+        };
+
+        handleScroll();
+        document.addEventListener('scroll', handleScroll, { passive: true, capture: true });
+        return () => document.removeEventListener('scroll', handleScroll, { capture: true });
+    }, []);
+
+    useEffect(() => {
+        setIsMobileHeaderVisible(true);
+        lastMobileScrollTopRef.current = 0;
+    }, [currentAppLocation, leftSidebarOpen, isProfileOpen, isFeedbackOpen]);
 
     useEffect(() => {
         if (isStandaloneAuthPath) {
@@ -311,6 +356,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     const handleMobileHeaderBack = () => {
         setIsProfileOpen(false);
+        setLeftSidebarOpen(false);
 
         const existingHistory = readAppNavHistory();
         if (existingHistory.length > 1) {
@@ -319,7 +365,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
             writeAppNavHistory(nextHistory);
             setCanGoBackInApp(nextHistory.length > 1);
-            setLeftSidebarOpen(false);
 
             if (previousLocation) {
                 router.push(previousLocation);
@@ -327,7 +372,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             }
         }
 
-        setLeftSidebarOpen(true);
+        if (typeof window !== 'undefined' && window.history.length > 1) {
+            router.back();
+            return;
+        }
+
+        const fallbackLocation = primaryTab === 'chat' ? '/' : '/?tab=chat';
+        if (currentAppLocation !== fallbackLocation) {
+            router.push(fallbackLocation);
+        }
     };
 
     // 1. Auth & Loading Guard
@@ -335,6 +388,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     // Hide the app chrome on standalone auth flows so the forms stay centered.
     if (isStandaloneAuthPath) {
+        return <>{children}</>;
+    }
+
+    // Let the landing chat page own the full viewport without dashboard chrome.
+    if (isLandingExperience) {
         return <>{children}</>;
     }
 
@@ -346,7 +404,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         },
         {
             name: 'About You', href: '/?tab=about_you&profile=consumer', tabKey: 'about_you', icon: (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A10 10 0 1118.88 17.8M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                renderAboutYouIcon()
             )
         },
         {
@@ -528,7 +586,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             `}>
                 <div className={`p-6 flex justify-between items-center shrink-0 ${!isDesktopOpen && 'hidden md:flex'}`}>
                     <div className="min-w-[100px]">
-                        <Link href="/?tab=landing">
+                        <Link href={user ? "/" : "/?tab=landing"}>
                             <Logo variant="dark" width={100} />
                         </Link>
                     </div>
@@ -760,10 +818,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </aside>
 
             {/* Main Content Wrapper */}
-            <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto transition-all duration-300 md:overflow-hidden">
+            <div ref={mobileScrollContainerRef} className="relative flex min-h-0 flex-1 flex-col overflow-y-auto transition-all duration-300 md:overflow-hidden">
 
                 {/* Universal Top Header (Mobile & Desktop) */}
-                <header className="fixed inset-x-0 top-0 z-40 border-b border-gray-100 bg-white px-4 pt-[env(safe-area-inset-top)] md:relative md:shrink-0 md:border-gray-200 md:px-6 md:pt-0">
+                <header
+                    className={`fixed inset-x-0 top-0 z-40 border-b border-gray-100 bg-white px-4 pt-[env(safe-area-inset-top)] transition-transform duration-300 md:relative md:shrink-0 md:translate-y-0 md:border-gray-200 md:px-6 md:pt-0 md:transition-none ${
+                        isMobileHeaderVisible ? 'translate-y-0' : '-translate-y-full'
+                    }`}
+                >
                     <div className="flex min-h-16 items-center justify-between">
 
                     {/* Mobile: Back Button & Logo */}
@@ -781,13 +843,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 type="button"
                                 onClick={handleMobileHeaderBack}
                                 className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:border-green-200 hover:text-green-700"
-                                aria-label={canGoBackInApp ? 'Go back' : 'Open menu'}
+                                aria-label="Go back"
+                                title={canGoBackInApp ? 'Go back' : 'Back to chats'}
                             >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                             </button>
                         </div>
                         <div className="flex-1 flex justify-center">
-                            <Link href="/?tab=landing">
+                            <Link href={user ? "/" : "/?tab=landing"}>
                                 <Logo variant="dark" width={80} />
                             </Link>
                         </div>
@@ -839,7 +902,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                 onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
                                                 className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
                                             >
-                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A10 10 0 1118.88 17.8M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                <span className="text-gray-400">{renderAboutYouIcon('h-4 w-4')}</span>
                                                 About You
                                             </Link>
                                         </div>
@@ -1004,7 +1067,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                 onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
                                                 className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
                                             >
-                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A10 10 0 1118.88 17.8M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                <span className="text-gray-400">{renderAboutYouIcon('h-4 w-4')}</span>
                                                 About You
                                             </Link>
                                             {/* <Link
@@ -1079,7 +1142,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </header>
 
                 {/* Scrollable Main Content Layout & Padding for Mobile Header/Footer */}
-                <main className={`flex-1 overflow-visible md:overflow-hidden relative flex flex-row pt-[calc(4rem+env(safe-area-inset-top))] ${showMobileFooter ? 'pb-16' : 'pb-0'} md:pt-0 md:pb-0`}>
+                <main className={`relative flex flex-1 flex-row overflow-visible transition-[padding] duration-300 ${isMobileHeaderVisible ? 'pt-[calc(4rem+env(safe-area-inset-top))]' : 'pt-[env(safe-area-inset-top)]'} ${showMobileFooter ? (isMobileHeaderVisible ? 'pb-16' : 'pb-[env(safe-area-inset-bottom)]') : 'pb-0'} md:overflow-hidden md:pt-0 md:pb-0`}>
                     <div className="flex-1 overflow-visible md:overflow-y-auto bg-gray-50 relative">
                         {children}
                     </div>
@@ -1087,7 +1150,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
                 {/* Mobile Navigation Footer (Fixed Bottom) */}
                 {showMobileFooter ? (
-                <div className="fixed bottom-0 left-0 right-0 h-14 bg-white border-t border-gray-100 md:hidden z-50 flex items-center justify-around px-2">
+                <div className={`fixed bottom-0 left-0 right-0 h-14 bg-white border-t border-gray-100 md:hidden z-50 flex items-center justify-around px-2 transition-transform duration-300 ${
+                    isMobileHeaderVisible ? 'translate-y-0' : 'translate-y-full'
+                }`}>
                     <Link
                         href="/?tab=living_library&focus=favorites"
                         onClick={(event) => {
@@ -1129,9 +1194,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         }}
                         className={`flex flex-col items-center p-2 ${primaryTab === 'about_you' ? 'text-green-600' : 'text-gray-400'}`}
                     >
-                        <span className="mb-1 inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-current px-1.5 text-[11px] font-bold leading-none">
-                            AY
-                        </span>
+                        {renderAboutYouIcon('mb-1 h-6 w-6')}
                     </Link>
 
                     <Link

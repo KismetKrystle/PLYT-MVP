@@ -11,12 +11,9 @@ import { useAuth } from '../lib/auth';
 const PRESET_TAGS = [
     'Fresh',
     'Cooked',
-    'Meal Prep',
     'Receipes',
     'Advice',
 ];
-const GUEST_CHAT_LIMIT = 3;
-const GUEST_CHAT_STORAGE_KEY = 'plyt_guest_chat_count';
 
 function describeGeolocationError(error: unknown) {
     if (typeof window !== 'undefined' && 'GeolocationPositionError' in window && error instanceof GeolocationPositionError) {
@@ -50,7 +47,9 @@ export default function LandingChatInterface() {
     const router = useRouter();
     const [prompt, setPrompt] = useState('');
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
+    const [isMobileHeaderVisible, setIsMobileHeaderVisible] = useState(true);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const lastScrollYRef = useRef(0);
 
     // Auto-resize textarea
     useEffect(() => {
@@ -59,6 +58,50 @@ export default function LandingChatInterface() {
             textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
         }
     }, [prompt]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const handleScroll = () => {
+            if (window.innerWidth >= 768) {
+                setIsMobileHeaderVisible(true);
+                lastScrollYRef.current = 0;
+                return;
+            }
+
+            const nextScrollY = window.scrollY;
+            const delta = nextScrollY - lastScrollYRef.current;
+
+            if (nextScrollY <= 16) {
+                setIsMobileHeaderVisible(true);
+            } else if (delta > 8) {
+                setIsMobileHeaderVisible(false);
+            } else if (delta < -8) {
+                setIsMobileHeaderVisible(true);
+            }
+
+            lastScrollYRef.current = nextScrollY;
+        };
+
+        handleScroll();
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
+
+    useEffect(() => {
+        if (typeof document === 'undefined') return;
+
+        const previousBodyOverflow = document.body.style.overflow;
+        const previousHtmlOverflow = document.documentElement.style.overflow;
+
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+
+        return () => {
+            document.body.style.overflow = previousBodyOverflow;
+            document.documentElement.style.overflow = previousHtmlOverflow;
+        };
+    }, []);
 
     const handleTagClick = (tag: string) => {
         if (!selectedTags.includes(tag)) {
@@ -80,6 +123,16 @@ export default function LandingChatInterface() {
     const [isLoading, setIsLoading] = useState(false);
     const { user, openLoginModal } = useAuth();
     const homeLocation = (user?.location_address || user?.location_city || '').trim();
+
+    const queuePendingPrompt = (location: string) => {
+        localStorage.setItem('pendingChatPrompt', JSON.stringify({
+            tags: selectedTags,
+            text: prompt,
+            scope: 'local',
+            location,
+            freshChat: true
+        }));
+    };
 
     const resolveSearchLocation = async () => {
         if (typeof navigator === 'undefined' || !navigator.geolocation) {
@@ -108,43 +161,18 @@ export default function LandingChatInterface() {
         const finalLocation = await resolveSearchLocation();
 
         if (!user) {
-            const storedGuestCount = typeof window !== 'undefined'
-                ? Number(localStorage.getItem(GUEST_CHAT_STORAGE_KEY) || '0')
-                : 0;
-
-            if (storedGuestCount >= GUEST_CHAT_LIMIT) {
-                openLoginModal();
-                return;
-            }
-
-            const payload = {
-                tags: selectedTags,
-                text: prompt,
-                scope: 'local',
-                location: finalLocation
-            };
-            localStorage.setItem('pendingChatPrompt', JSON.stringify(payload));
-            router.push('/?tab=chat');
+            queuePendingPrompt(finalLocation);
+            openLoginModal();
             return;
         }
 
         setIsLoading(true);
         try {
-            localStorage.setItem('pendingChatPrompt', JSON.stringify({
-                tags: selectedTags,
-                text: prompt,
-                scope: 'local',
-                location: finalLocation
-            }));
+            queuePendingPrompt(finalLocation);
             router.push('/?tab=chat');
         } catch (error: any) {
             console.error('Chat error:', error);
-            localStorage.setItem('pendingChatPrompt', JSON.stringify({
-                tags: selectedTags,
-                text: prompt,
-                scope: 'local',
-                location: finalLocation
-            }));
+            queuePendingPrompt(finalLocation);
             router.push('/?tab=chat');
         } finally {
             setIsLoading(false);
@@ -159,39 +187,58 @@ export default function LandingChatInterface() {
     };
 
     return (
-        <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-white to-green-50/30 overflow-hidden relative">
+        <div className="relative flex h-[100dvh] w-full max-w-full flex-col overflow-hidden bg-gradient-to-br from-gray-50 via-white to-green-50/30">
             {/* Background Ambience */}
-            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-200/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-emerald-100/30 rounded-full blur-3xl translate-y-1/2 -translate-x-1/4 pointer-events-none" />
+            <div className="pointer-events-none absolute right-0 top-0 h-[240px] w-[240px] -translate-y-1/3 translate-x-1/3 rounded-full bg-green-200/20 blur-3xl md:h-[500px] md:w-[500px] md:-translate-y-1/2 md:translate-x-1/2" />
+            <div className="pointer-events-none absolute bottom-0 left-0 h-[280px] w-[280px] translate-y-1/3 -translate-x-1/4 rounded-full bg-emerald-100/30 blur-3xl md:h-[600px] md:w-[600px] md:translate-y-1/2" />
 
             {/* Header / Nav Area */}
-            <header className="p-4 md:p-6 flex justify-between items-center z-10 relative shrink-0">
+            <header
+                className={`fixed inset-x-0 top-0 z-20 flex shrink-0 items-center justify-between px-3 pb-3 pt-[max(2rem,env(safe-area-inset-top))] transition-transform duration-300 md:relative md:translate-y-0 md:px-6 md:pb-6 md:pt-8 md:transition-none ${
+                    isMobileHeaderVisible ? 'translate-y-0' : '-translate-y-full'
+                }`}
+            >
                 <Logo variant="dark" width={90} />
-                <div className="flex gap-3 md:gap-4">
+                {user ? (
                     <button
-                        onClick={openLoginModal}
-                        className="text-gray-600 font-medium hover:text-green-700 transition-colors text-sm md:text-base"
+                        type="button"
+                        onClick={() => router.push('/?tab=living_library')}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/90 px-3 py-1.5 text-[11px] font-semibold text-gray-700 shadow-sm backdrop-blur transition hover:border-green-200 hover:text-green-700 md:px-4 md:py-2 md:text-sm"
                     >
-                        Sign In
+                        <svg className="h-3.5 w-3.5 md:h-4 md:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                        </svg>
+                        Living Library
                     </button>
-                    <button
-                        onClick={() => router.push('/signup')}
-                        className="px-4 py-1.5 md:px-5 md:py-2 bg-green-600 text-white rounded-full font-medium shadow-lg shadow-green-600/20 hover:bg-green-700 hover:shadow-xl hover:-translate-y-0.5 transition-all text-xs md:text-sm"
-                    >
-                        Join Network
-                    </button>
-                </div>
+                ) : (
+                    <div className="flex gap-2 md:gap-4">
+                        <button
+                            onClick={openLoginModal}
+                            className="text-sm font-medium text-gray-600 transition-colors hover:text-green-700 md:text-base"
+                        >
+                            Sign In
+                        </button>
+                        <button
+                            onClick={() => router.push('/signup')}
+                            className="rounded-full bg-green-600 px-3 py-1.5 text-[11px] font-medium text-white shadow-lg shadow-green-600/20 transition-all hover:-translate-y-0.5 hover:bg-green-700 hover:shadow-xl md:px-5 md:py-2 md:text-sm"
+                        >
+                            Join Network
+                        </button>
+                    </div>
+                )}
             </header>
 
             {/* Main Content Area */}
-            <main className="flex-1 flex flex-col items-center justify-center w-full max-w-4xl mx-auto px-4 z-10 relative space-y-4 md:space-y-8 min-h-0">
+            <main className={`relative z-10 mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col items-center justify-center space-y-4 overflow-hidden px-3 pb-[max(3.5rem,env(safe-area-inset-bottom))] md:px-4 md:space-y-8 md:pb-20 md:pt-16 ${
+                isMobileHeaderVisible ? 'pt-[calc(9rem+env(safe-area-inset-top))]' : 'pt-24'
+            }`}>
 
                 {/* Hero Text */}
-                <div className="text-center space-y-2 md:space-y-4 mb-0 md:mb-2 shrink-0">
+                <div className="mb-0 shrink-0 space-y-2 text-center md:mb-2 md:space-y-4">
                     <motion.h1
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="text-3xl md:text-6xl font-extrabold text-gray-900 tracking-tight leading-tight"
+                        className="text-[2rem] font-extrabold leading-[1.05] tracking-tight text-gray-900 md:text-6xl"
                     >
                         What's your <br />
                         <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-600 to-emerald-600">
@@ -210,16 +257,16 @@ export default function LandingChatInterface() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 0.2 }}
-                        className="text-sm text-gray-500 font-light max-w-xs mx-auto md:hidden"
+                        className="mx-auto max-w-[18rem] text-sm font-light text-gray-500 md:hidden"
                      >
                          Know what you eat. Own how you feel.
                      </motion.p>
                     {!user ? (
                         <p className="text-xs text-emerald-700 max-w-xl mx-auto">
-                            Try up to 3 guest questions, then sign up to personalise results around your health profile.
+                            Sign in or create your profile before searching so Navi can tailor results to your health context from the start.
                         </p>
                     ) : null}
-                    <p className="text-xs text-gray-400 max-w-xl mx-auto">
+                    <p className="mx-auto max-w-xl text-[11px] text-gray-400 md:text-xs">
                         Mention a city, area, ZIP code, or neighborhood if you want search outside your current location.
                     </p>
                 </div>
@@ -229,7 +276,7 @@ export default function LandingChatInterface() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.3 }}
-                    className="w-full bg-white rounded-3xl shadow-2xl shadow-green-900/5 ring-1 ring-gray-100 overflow-hidden p-1 md:p-2 shrink-0"
+                    className="w-full max-w-full shrink-0 overflow-hidden rounded-[1.75rem] bg-white p-1 shadow-2xl shadow-green-900/5 ring-1 ring-gray-100 md:rounded-3xl md:p-2"
                 >
                     {/* Active Tags Area */}
                     <AnimatePresence>
@@ -262,27 +309,22 @@ export default function LandingChatInterface() {
                     </AnimatePresence>
 
                     {/* Input Area */}
-                    <div className="relative p-2">
-                        <textarea
-                            ref={textareaRef}
-                            value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            placeholder="Ask me anything..."
-                            className="w-full text-base md:text-lg text-gray-800 placeholder:text-gray-300 bg-transparent border-0 focus:ring-0 resize-none max-h-40 md:max-h-60 py-2 md:py-3 px-2 md:px-4 leading-relaxed"
-                            rows={1}
-                        />
-
-                        {/* Action Bar */}
-                        <div className="flex justify-between items-center px-2 md:px-4 pb-1 pt-1 md:pb-2 md:pt-2">
-                            <div className="text-[10px] md:text-xs text-gray-400 font-medium hidden xs:block">
-                                {prompt.length > 0 || selectedTags.length > 0 ? 'Press Enter' : ''}
-                            </div>
-                            <div className="flex-1" /> {/* Spacer */}
+                    <div className="p-2">
+                        <div className="flex items-end gap-2 rounded-[1.4rem] bg-transparent px-1 py-1 md:gap-3 md:px-2">
+                            <textarea
+                                ref={textareaRef}
+                                value={prompt}
+                                onChange={(e) => setPrompt(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                placeholder={user ? 'Ask me anything...' : 'Sign in to start a personalized search...'}
+                                className="min-w-0 flex-1 text-base md:text-lg text-gray-800 placeholder:text-gray-300 bg-transparent border-0 focus:ring-0 resize-none max-h-40 md:max-h-60 py-2 md:py-3 px-2 md:px-4 leading-relaxed"
+                                rows={1}
+                            />
                             <button
                                 onClick={() => handleSubmit()}
                                 disabled={(prompt.length === 0 && selectedTags.length === 0) || isLoading}
-                                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white p-2 md:p-3 rounded-xl transition-all shadow-md disabled:shadow-none min-w-[3rem] flex items-center justify-center"
+                                className="mb-1 shrink-0 bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white p-2 md:p-3 rounded-xl transition-all shadow-md disabled:shadow-none min-w-[3rem] flex items-center justify-center"
+                                aria-label={user ? 'Start search' : 'Sign in to start search'}
                             >
                                 {isLoading ? (
                                     <div className="w-5 h-5 border-2 border-gray-400 border-t-white rounded-full animate-spin" />
@@ -301,7 +343,7 @@ export default function LandingChatInterface() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.4 }}
-                    className="flex flex-wrap justify-center gap-2 md:gap-3 mb-2 md:mb-8 shrink-0"
+                    className="mb-1 flex shrink-0 flex-wrap justify-center gap-2 md:mb-8 md:gap-3"
                 >
                     {PRESET_TAGS.map((tag) => (
                         <button
@@ -322,7 +364,7 @@ export default function LandingChatInterface() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.5 }}
-                    className="w-full max-w-5xl shrink-0"
+                    className="mt-4 w-full max-w-full shrink-0 md:mt-5"
                 >
                     <div className="text-center mb-1 md:mb-2 text-[10px] md:text-xs text-gray-300 font-medium uppercase tracking-widest">
                         Live Market
@@ -332,7 +374,7 @@ export default function LandingChatInterface() {
             </main>
 
             {/* Simple Footer */}
-            <footer className="w-full py-4 text-center text-xs text-gray-300 relative z-10">
+            <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 py-3 text-center text-[10px] text-gray-300 md:py-4 md:text-xs">
                 © 2026 Plyant. All rights reserved.
             </footer>
         </div>

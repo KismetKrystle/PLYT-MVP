@@ -244,6 +244,7 @@ function parseBooleanChoice(value: string) {
 }
 
 type MealEntry = { breakfast: string; lunch: string; dinner: string; notes: string };
+type MealSlotKey = 'breakfast' | 'lunch' | 'dinner';
 
 function getLocalIsoDate() {
     const now = new Date();
@@ -303,6 +304,13 @@ function buildInitialMealPlan(profile: any): MealPlanDay[] {
             notes: generated.notes
         };
     });
+}
+
+function getCurrentMealSlot(date = new Date()): MealSlotKey {
+    const hour = date.getHours();
+    if (hour < 11) return 'breakfast';
+    if (hour < 16) return 'lunch';
+    return 'dinner';
 }
 
 export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) {
@@ -375,7 +383,8 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     const [newHerbBenefits, setNewHerbBenefits] = useState('');
     const [newHerbNotes, setNewHerbNotes] = useState('');
     const [mealPlan, setMealPlan] = useState<MealPlanDay[]>([]);
-    const [isEditingMealPlan, setIsEditingMealPlan] = useState(false);
+    const [activeMealPlanCardId, setActiveMealPlanCardId] = useState<string | null>(null);
+    const [editingMealPlanDayId, setEditingMealPlanDayId] = useState<string | null>(null);
     const featuredVideo = videos[videos.length - 1] || null;
     const featuredRecipe = recipes[0] || null;
     const featuredProduce = PRODUCE_LIBRARY[0];
@@ -824,6 +833,226 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
         if (!profileData || !autoMealPlanEnabled) return null;
         return buildAutoMealForDay(new Date().getDay(), profileData);
     }, [autoMealPlanEnabled, profileData]);
+    const activeMealSlot = useMemo(() => getCurrentMealSlot(), []);
+    const streakJarCoins = useMemo(() => {
+        const visibleCoins = Math.min(Math.max(healthyDays, 1), 18);
+
+        return Array.from({ length: visibleCoins }).map((_, index) => {
+            const column = index % 4;
+            const row = Math.floor(index / 4);
+
+            return {
+                id: `coin-${index}`,
+                left: 16 + column * 18 + (row % 2 === 0 ? 0 : 6),
+                bottom: 16 + row * 14,
+                rotate: (index % 2 === 0 ? -1 : 1) * (4 + (index % 3) * 3),
+                scale: 0.95 + (index % 3) * 0.04
+            };
+        });
+    }, [healthyDays]);
+    const mealPlanDayCards = mealPlan.map((dayPlan, index) => {
+        const isToday = index === 0;
+        const isActive = activeMealPlanCardId === dayPlan.id;
+        const isEditingDay = editingMealPlanDayId === dayPlan.id;
+        const summaryText = [dayPlan.breakfast, dayPlan.lunch, dayPlan.dinner].filter(Boolean).join(' | ');
+        const mealGroups: Array<{ key: MealSlotKey; label: string; value: string }> = [
+            { key: 'breakfast', label: 'Breakfast', value: dayPlan.breakfast },
+            { key: 'lunch', label: 'Lunch', value: dayPlan.lunch },
+            { key: 'dinner', label: 'Dinner', value: dayPlan.dinner }
+        ];
+
+        return (
+            <div
+                key={dayPlan.id}
+                className={`overflow-hidden rounded-[2rem] border shadow-[0_18px_50px_rgba(15,23,42,0.06)] transition ${
+                    isToday
+                        ? 'border-emerald-200 bg-gradient-to-br from-white via-emerald-50 to-green-100/70 text-slate-900'
+                        : 'border-gray-100 bg-white text-slate-900'
+                }`}
+            >
+                <button
+                    type="button"
+                    onClick={() => handleToggleMealPlanCard(dayPlan.id)}
+                    onDoubleClick={() => handleStartMealPlanDayEdit(dayPlan.id)}
+                    className="w-full text-left"
+                    title={isOwner ? `Tap to open ${dayPlan.dayLabel}. Double click to edit in place.` : `Open ${dayPlan.dayLabel}`}
+                >
+                    <div className="flex items-start justify-between gap-4 px-5 py-5 md:px-6">
+                        <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] ${
+                                    isToday ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                    {dayPlan.dayLabel}
+                                </span>
+                                <span className={`text-xs font-medium ${isToday ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                    {isToday ? 'Today' : `${index} day${index > 1 ? 's' : ''} ahead`}
+                                </span>
+                                {isToday ? (
+                                    <span className="rounded-full bg-amber-200 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-900">
+                                        {activeMealSlot} due now
+                                    </span>
+                                ) : null}
+                            </div>
+                            <p className={`mt-3 text-base font-semibold leading-7 ${isToday ? 'text-slate-900' : 'text-slate-900'}`}>
+                                {summaryText}
+                            </p>
+                            <p className={`mt-2 text-sm leading-6 ${isToday ? 'text-emerald-900/75' : 'text-slate-500'}`}>
+                                {dayPlan.notes || 'Tap to open tools. Double click to edit in place.'}
+                            </p>
+                        </div>
+                        <div className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${isToday ? 'bg-white text-emerald-700 shadow-sm' : 'bg-slate-100 text-slate-500'}`}>
+                            <svg className={`h-4 w-4 transition ${isActive ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </div>
+                    </div>
+                </button>
+
+                {isActive ? (
+                    <div className={`px-5 pb-5 md:px-6 md:pb-6 ${isToday ? 'border-t border-emerald-200/80' : 'border-t border-slate-100'}`}>
+                        {isOwner ? (
+                            <div className="flex flex-wrap items-center justify-between gap-3 py-4">
+                                <p className={`text-xs font-medium ${isToday ? 'text-emerald-800/80' : 'text-slate-500'}`}>
+                                    {isEditingDay ? 'Editing only this day' : 'Tap once for tools, double click to edit this day'}
+                                </p>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            if (isEditingDay) {
+                                                handleStopMealPlanDayEdit();
+                                            } else {
+                                                handleStartMealPlanDayEdit(dayPlan.id);
+                                            }
+                                        }}
+                                        className={`inline-flex h-11 w-11 items-center justify-center rounded-full transition ${
+                                            isToday ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'bg-slate-950 text-white hover:bg-slate-800'
+                                        }`}
+                                        aria-label={isEditingDay ? `Stop editing ${dayPlan.dayLabel}` : `Edit ${dayPlan.dayLabel}`}
+                                    >
+                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            handleDeleteMealPlanDay(dayPlan.id);
+                                        }}
+                                        className={`inline-flex h-11 w-11 items-center justify-center rounded-full transition ${
+                                            isToday ? 'bg-white text-rose-600 hover:bg-rose-50' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
+                                        }`}
+                                        aria-label={`Delete ${dayPlan.dayLabel}`}
+                                    >
+                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 7h12m-9 0V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12m4-12v12m5-12v12a1 1 0 01-1 1H8a1 1 0 01-1-1V7h10z" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        ) : null}
+
+                        <div className="grid gap-3 md:grid-cols-3">
+                            {mealGroups.map((mealGroup) => {
+                                const isDueNow = isToday && mealGroup.key === activeMealSlot;
+                                return (
+                                    <div
+                                        key={`${dayPlan.id}-${mealGroup.key}`}
+                                        className={`rounded-[1.5rem] p-4 ${
+                                            isDueNow
+                                                ? (isToday ? 'bg-white text-slate-950 shadow-[0_14px_35px_rgba(16,185,129,0.18)]' : 'bg-slate-950 text-white shadow-[0_16px_40px_rgba(15,23,42,0.18)]')
+                                                : (isToday ? 'bg-white/70 text-slate-900' : 'bg-slate-50 text-slate-900')
+                                        }`}
+                                    >
+                                        <div className="flex items-center justify-between gap-2">
+                                            <p className={`text-[11px] font-bold uppercase tracking-[0.22em] ${
+                                                isDueNow
+                                                    ? (isToday ? 'text-emerald-700' : 'text-emerald-300')
+                                                    : (isToday ? 'text-emerald-700/80' : 'text-slate-400')
+                                            }`}>
+                                                {mealGroup.label}
+                                            </p>
+                                            {isDueNow ? (
+                                                <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${
+                                                    isToday ? 'bg-emerald-100 text-emerald-800' : 'bg-emerald-500/15 text-emerald-300'
+                                                }`}>
+                                                    Due now
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                        {isEditingDay ? (
+                                            <input
+                                                type="text"
+                                                value={mealGroup.value}
+                                                onClick={(event) => event.stopPropagation()}
+                                                onChange={(event) => handleMealPlanFieldChange(dayPlan.id, mealGroup.key, event.target.value)}
+                                                className={`mt-3 w-full rounded-2xl px-4 py-3 text-sm font-medium outline-none ${
+                                                    isToday
+                                                        ? 'bg-white text-slate-950 placeholder:text-slate-400 ring-1 ring-emerald-100 focus:ring-2 focus:ring-emerald-200'
+                                                        : 'bg-white text-slate-950 shadow-inner focus:ring-2 focus:ring-emerald-300'
+                                                }`}
+                                                placeholder={`Add ${mealGroup.label.toLowerCase()} plan`}
+                                            />
+                                        ) : (
+                                            <p className={`mt-3 text-sm font-semibold leading-6 ${
+                                                isDueNow ? (isToday ? 'text-slate-950' : 'text-white') : (isToday ? 'text-slate-900' : 'text-slate-900')
+                                            }`}>
+                                                {mealGroup.value || `No ${mealGroup.label.toLowerCase()} set yet.`}
+                                            </p>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <div className={`mt-3 rounded-[1.5rem] p-4 ${isToday ? 'bg-white/70 text-slate-900' : 'bg-slate-50 text-slate-900'}`}>
+                            <p className={`text-[11px] font-bold uppercase tracking-[0.22em] ${isToday ? 'text-emerald-700/80' : 'text-slate-400'}`}>
+                                Notes
+                            </p>
+                            {isEditingDay ? (
+                                <textarea
+                                    value={dayPlan.notes}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onChange={(event) => handleMealPlanFieldChange(dayPlan.id, 'notes', event.target.value)}
+                                    rows={3}
+                                    className={`mt-3 w-full resize-none rounded-2xl px-4 py-3 text-sm outline-none ${
+                                        isToday
+                                            ? 'bg-white text-slate-950 placeholder:text-slate-400 ring-1 ring-emerald-100 focus:ring-2 focus:ring-emerald-200'
+                                            : 'bg-white text-slate-950 shadow-inner focus:ring-2 focus:ring-emerald-300'
+                                    }`}
+                                    placeholder="Add prep notes, reminders, or ingredient swaps."
+                                />
+                            ) : (
+                                <p className={`mt-3 text-sm leading-6 ${isToday ? 'text-slate-600' : 'text-slate-600'}`}>
+                                    {dayPlan.notes || 'No notes added yet.'}
+                                </p>
+                            )}
+                        </div>
+
+                        {isOwner && isEditingDay ? (
+                            <div className="mt-4 flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        handleStopMealPlanDayEdit();
+                                    }}
+                                    className={`inline-flex items-center justify-center rounded-full px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] transition ${
+                                        isToday ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'bg-slate-950 text-white hover:bg-slate-800'
+                                    }`}
+                                >
+                                    Save changes
+                                </button>
+                            </div>
+                        ) : null}
+                    </div>
+                ) : null}
+            </div>
+        );
+    });
 
     const favoriteSections = [
         {
@@ -1015,7 +1244,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 {
                     id: 'streak-summary',
                     title: `${healthyDays} day${healthyDays === 1 ? '' : 's'} in a row`,
-                    subtitle: 'Showing up for your health.',
+                    subtitle: 'Each daily app open adds another coin to the jar.',
                     meta: 'Open',
                     kind: 'Streak',
                     onClick: () => router.push('/health-challenges')
@@ -1785,7 +2014,28 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
     const resetMealPlan = () => {
         setMealPlan(buildInitialMealPlan(profileData));
-        setIsEditingMealPlan(false);
+        setActiveMealPlanCardId(null);
+        setEditingMealPlanDayId(null);
+    };
+
+    const handleToggleMealPlanCard = (dayId: string) => {
+        setActiveMealPlanCardId((current) => current === dayId ? null : dayId);
+        setEditingMealPlanDayId((current) => current === dayId ? null : current);
+    };
+
+    const handleStartMealPlanDayEdit = (dayId: string) => {
+        setActiveMealPlanCardId(dayId);
+        setEditingMealPlanDayId(dayId);
+    };
+
+    const handleStopMealPlanDayEdit = () => {
+        setEditingMealPlanDayId(null);
+    };
+
+    const handleDeleteMealPlanDay = (dayId: string) => {
+        setMealPlan((current) => current.filter((day) => day.id !== dayId));
+        setActiveMealPlanCardId((current) => current === dayId ? null : current);
+        setEditingMealPlanDayId((current) => current === dayId ? null : current);
     };
 
     const handleDeleteWallEntry = (entry: JournalEntry) => {
@@ -1846,19 +2096,49 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     const renderStreakCard = (className = '') => (
         <Link
             href="/health-challenges"
-            className={`flex flex-col items-center justify-center rounded-3xl border border-amber-100 bg-white p-5 text-center shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:border-amber-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] ${className}`}
+            className={`relative flex min-h-[268px] flex-col overflow-hidden rounded-3xl border border-amber-100 bg-[linear-gradient(180deg,#fffdf8_0%,#fff7df_100%)] p-5 text-center shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:border-amber-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] md:min-h-[220px] ${className}`}
         >
-            <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-amber-200 bg-amber-50 shadow-[0_0_0_6px_rgba(251,191,36,0.18)]">
-                <span className="text-[2.85rem] font-extrabold leading-none text-amber-700">{healthyDays}</span>
+            <div className="absolute right-0 top-0 h-24 w-24 rounded-bl-full bg-amber-100/70" />
+            <div className="absolute left-5 top-5 rounded-full bg-white/90 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-amber-700 shadow-sm">
+                Daily jar
             </div>
-            <p className="mt-4 text-sm font-semibold leading-6 text-gray-600">Day Streak of a Healthier You</p>
+            <div className="mt-5 flex flex-1 flex-col items-center justify-center">
+                <div className="relative h-[116px] w-[104px]">
+                    <div className="absolute left-1/2 top-0 h-4 w-11 -translate-x-1/2 rounded-full border-[3px] border-amber-200 bg-white/90 shadow-sm" />
+                    <div className="absolute left-1/2 top-2.5 h-[94px] w-[88px] -translate-x-1/2 overflow-hidden rounded-[30px] border-4 border-amber-200/90 bg-white/55 shadow-[inset_0_10px_24px_rgba(255,255,255,0.75),0_16px_28px_rgba(251,191,36,0.14)] backdrop-blur-sm">
+                        <div className="absolute inset-x-3 bottom-2 h-5 rounded-full bg-amber-200/60 blur-md" />
+                        {streakJarCoins.map((coin) => (
+                            <span
+                                key={coin.id}
+                                className="absolute h-4 w-7 rounded-full border border-amber-300 bg-[radial-gradient(circle_at_30%_30%,#fff6bf_0%,#fbbf24_55%,#d97706_100%)] shadow-[0_4px_10px_rgba(217,119,6,0.28)]"
+                                style={{
+                                    left: `${coin.left}px`,
+                                    bottom: `${coin.bottom}px`,
+                                    transform: `rotate(${coin.rotate}deg) scale(${coin.scale})`
+                                }}
+                            />
+                        ))}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="rounded-full bg-white/88 px-3 py-1 text-[2rem] font-extrabold leading-none text-amber-700 shadow-sm">
+                                {healthyDays}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-3">
+                    <p className="text-[11px] font-semibold leading-5 text-gray-600">
+                        Every visit is an investment to your health
+                    </p>
+                </div>
+            </div>
         </Link>
     );
 
     const renderFoodCard = (className = '') => (
         <div
             onClick={() => setActiveModal('food')}
-            className={`relative min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
+            className={`relative flex min-h-[268px] min-w-0 cursor-pointer flex-col overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group md:min-h-[220px] ${className}`}
         >
             <div className="relative h-[156px] bg-green-50">
                 <>
@@ -1871,7 +2151,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
                 </>
             </div>
-            <div className="flex items-start justify-between gap-4 p-3">
+            <div className="flex flex-1 items-start justify-between gap-4 p-3">
                 <div>
                     <h3 className="text-lg font-bold text-gray-900">Produce</h3>
                     <p className="mt-1 text-sm font-medium text-gray-500">
@@ -1888,7 +2168,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     const renderVideosCard = (className = '') => (
         <div
             onClick={() => setActiveModal('grow')}
-            className={`relative min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
+            className={`relative flex min-h-[268px] min-w-0 cursor-pointer flex-col overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group md:min-h-[220px] ${className}`}
         >
             {featuredVideo ? (
                 <>
@@ -1928,7 +2208,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     );
 
     const renderQuoteCard = (className = '') => (
-        <div className={`relative flex min-h-[220px] flex-col items-center justify-center overflow-hidden rounded-3xl bg-white p-6 text-center group ${className}`}>
+        <div className={`relative flex min-h-[268px] flex-col items-center justify-center overflow-hidden rounded-3xl bg-white p-6 text-center group md:min-h-[220px] ${className}`}>
             {isOwner ? (
                 <button className="absolute right-2 top-2 opacity-0 transition group-hover:opacity-100 text-gray-300 hover:text-gray-500">
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
@@ -1943,7 +2223,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     const renderSupplementsCard = (className = '') => (
         <div
             onClick={() => setActiveModal('supplements')}
-            className={`min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
+            className={`flex min-h-[268px] min-w-0 cursor-pointer flex-col overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group md:min-h-[220px] ${className}`}
         >
             <div className="relative h-[156px] bg-emerald-50">
                 {featuredSupplement ? (
@@ -1965,7 +2245,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     </div>
                 )}
             </div>
-            <div className="flex items-start justify-between gap-4 p-3">
+            <div className="flex flex-1 items-start justify-between gap-4 p-3">
                 <div>
                     <h3 className="text-lg font-bold text-gray-900">Supplements</h3>
                     <p className="mt-1 text-sm font-medium text-gray-500">
@@ -1983,7 +2263,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 setSelectedRecipe(featuredRecipe || null);
                 setActiveModal('recipes');
             }}
-            className={`relative min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
+            className={`relative min-h-[268px] min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group md:min-h-[220px] ${className}`}
         >
             {featuredRecipe ? (
                 <>
@@ -2024,7 +2304,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
     const renderHerbsCard = (className = '') => (
         <div
             onClick={() => setActiveModal('herbs')}
-            className={`min-w-0 cursor-pointer overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group ${className}`}
+            className={`flex min-h-[268px] min-w-0 cursor-pointer flex-col overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group md:min-h-[220px] ${className}`}
         >
             <div className="relative h-[156px] bg-lime-50">
                 {featuredHerb ? (
@@ -2046,7 +2326,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     </div>
                 )}
             </div>
-            <div className="flex items-start justify-between gap-4 p-3">
+            <div className="flex flex-1 items-start justify-between gap-4 p-3">
                 <div>
                     <h3 className="text-lg font-bold text-gray-900">Herbs</h3>
                     <p className="mt-1 text-sm font-medium text-gray-500">
@@ -2198,11 +2478,12 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                 <div className="col-span-2 -mx-4 overflow-x-auto px-4 no-scrollbar md:hidden">
                     <div className="flex items-start gap-4 pb-2">
+                        {renderStreakCard('w-[224px] shrink-0')}
                         {renderVideosCard('w-[224px] shrink-0')}
-                        {renderRecipesCard('w-[288px] shrink-0')}
-                        {renderHerbsCard('w-[212px] shrink-0')}
-                        {renderSupplementsCard('w-[212px] shrink-0')}
-                        {renderFoodCard('w-[244px] shrink-0')}
+                        {renderRecipesCard('w-[224px] shrink-0')}
+                        {renderHerbsCard('w-[224px] shrink-0')}
+                        {renderSupplementsCard('w-[224px] shrink-0')}
+                        {renderFoodCard('w-[224px] shrink-0')}
                     </div>
                 </div>
 
@@ -2311,7 +2592,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                 {/* -- Box 6: Supplements (Row 3, Col 3-4) -- */}
                 <div
                     onClick={() => setActiveModal('supplements')}
-                    className="hidden order-3 min-w-0 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden md:block"
+                    className="hidden order-3 min-h-[220px] min-w-0 cursor-pointer flex-col overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group md:flex"
                 >
                     <div className="relative h-[156px] bg-emerald-50">
                         {featuredSupplement ? (
@@ -2333,7 +2614,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             </div>
                         )}
                     </div>
-                    <div className="flex items-start justify-between gap-4 p-3">
+                    <div className="flex flex-1 items-start justify-between gap-4 p-3">
                         <div>
                             <h3 className="text-lg font-bold text-gray-900">Supplements</h3>
                                 <p className="hidden">
@@ -2349,7 +2630,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                     </div>
                 </div>
 
-                {renderFoodCard('hidden order-4 md:block')}
+                {renderFoodCard('hidden order-4 md:flex')}
 
                 {/* -- Box 7: Recipes (Row 4, Col 1) -- */}
                 <div
@@ -2393,7 +2674,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                 <div
                     onClick={() => setActiveModal('herbs')}
-                    className="hidden order-2 bg-white rounded-3xl p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 transition-all duration-300 cursor-pointer group overflow-hidden md:block"
+                    className="hidden order-2 min-h-[220px] cursor-pointer flex-col overflow-hidden rounded-3xl border border-gray-100 bg-white p-0 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group md:flex"
                 >
                     <div className="relative h-[156px] bg-lime-50">
                         {featuredHerb ? (
@@ -2415,7 +2696,7 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             </div>
                         )}
                     </div>
-                    <div className="flex items-start justify-between gap-4 p-3">
+                    <div className="flex flex-1 items-start justify-between gap-4 p-3">
                         <div>
                             <h3 className="text-lg font-bold text-gray-900">Herbs</h3>
                             <p className="mt-1 text-sm font-medium text-gray-500">
@@ -2680,14 +2961,14 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50 p-3 pt-4 backdrop-blur-sm sm:items-center sm:p-4"
+                        className="fixed inset-x-0 bottom-0 top-[calc(4rem+env(safe-area-inset-top))] z-[70] flex items-start justify-center bg-black/50 p-3 backdrop-blur-sm sm:inset-0 sm:items-center sm:p-4"
                         onClick={() => setActiveModal(null)}
                     >
                         <motion.div
                             initial={{ scale: 0.9, y: 20 }}
                             animate={{ scale: 1, y: 0 }}
                             exit={{ scale: 0.9, y: 20 }}
-                            className="relative w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[90vh]"
+                            className="relative max-h-full w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-2xl sm:max-h-[90vh]"
                             onClick={(e) => e.stopPropagation()}
                         >
                             {/* Header */}
@@ -3392,108 +3673,26 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
 
                                 {activeModal === 'meal_plan' && (
                                     <div className="space-y-6">
-                                        <div className="flex items-center justify-between gap-4 rounded-2xl border border-green-100 bg-green-50/70 p-5">
-                                            <div>
-                                                <p className="text-sm font-semibold text-gray-900">This week at a glance</p>
-                                                <p className="mt-1 text-sm text-gray-600">This is the meal-plan editor for now. It grew out of the old auto-plan flow rather than a dedicated page.</p>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setIsEditingMealPlan((value) => !value)}
-                                                    className={`rounded-full px-4 py-2 text-xs font-bold transition ${
-                                                        isEditingMealPlan
-                                                            ? 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                                                            : 'bg-green-600 text-white hover:bg-green-700'
-                                                    }`}
-                                                >
-                                                    {isEditingMealPlan ? 'Done' : 'Edit'}
-                                                </button>
+                                        <div className="overflow-hidden rounded-[2rem] border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/80 to-amber-50/80 p-6 text-slate-900 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+                                            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                                <div className="max-w-xl">
+                                                    <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-emerald-700">Full Week Plan</p>
+                                                    <p className="mt-3 text-2xl font-semibold tracking-tight">Meals that feel organized, editable, and easier to follow.</p>
+                                                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                                                        Open any day to reveal edit controls, then refine just that part of the week without disturbing the rest.
+                                                    </p>
+                                                </div>
                                                 <button
                                                     type="button"
                                                     onClick={resetMealPlan}
-                                                    className="rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50"
+                                                    className="inline-flex items-center justify-center rounded-full bg-emerald-700 px-4 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-white transition hover:bg-emerald-800"
                                                 >
-                                                    Rest
+                                                    Reset week
                                                 </button>
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-1 gap-4">
-                                            {mealPlan.map((dayPlan, index) => {
-                                                return (
-                                                    <div key={dayPlan.id} className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-                                                        <div className="flex items-center justify-between gap-4">
-                                                            <div>
-                                                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-green-600">{dayPlan.dayLabel}</p>
-                                                                <p className="mt-1 text-sm text-gray-500">{index === 0 ? 'Today' : `${index} day${index > 1 ? 's' : ''} ahead`}</p>
-                                                            </div>
-                                                            {dayPlan.notes && !isEditingMealPlan ? (
-                                                                <span className="rounded-full bg-green-50 px-3 py-1 text-[11px] font-bold text-green-700">
-                                                                    {dayPlan.notes}
-                                                                </span>
-                                                            ) : null}
-                                                        </div>
-
-                                                        <div className="mt-4 grid gap-3 md:grid-cols-3">
-                                                            <div className="rounded-2xl border border-green-100 bg-green-50/70 px-4 py-3">
-                                                                <p className="text-[11px] font-bold uppercase tracking-wide text-green-700">Breakfast</p>
-                                                                {isEditingMealPlan ? (
-                                                                    <input
-                                                                        type="text"
-                                                                        value={dayPlan.breakfast}
-                                                                        onChange={(event) => handleMealPlanFieldChange(dayPlan.id, 'breakfast', event.target.value)}
-                                                                        className="mt-2 w-full rounded-xl border border-green-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-green-400"
-                                                                    />
-                                                                ) : (
-                                                                    <p className="mt-1 text-sm font-semibold text-gray-900">{dayPlan.breakfast}</p>
-                                                                )}
-                                                            </div>
-                                                            <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3">
-                                                                <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700">Lunch</p>
-                                                                {isEditingMealPlan ? (
-                                                                    <input
-                                                                        type="text"
-                                                                        value={dayPlan.lunch}
-                                                                        onChange={(event) => handleMealPlanFieldChange(dayPlan.id, 'lunch', event.target.value)}
-                                                                        className="mt-2 w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-amber-400"
-                                                                    />
-                                                                ) : (
-                                                                    <p className="mt-1 text-sm font-semibold text-gray-900">{dayPlan.lunch}</p>
-                                                                )}
-                                                            </div>
-                                                            <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3">
-                                                                <p className="text-[11px] font-bold uppercase tracking-wide text-sky-700">Dinner</p>
-                                                                {isEditingMealPlan ? (
-                                                                    <input
-                                                                        type="text"
-                                                                        value={dayPlan.dinner}
-                                                                        onChange={(event) => handleMealPlanFieldChange(dayPlan.id, 'dinner', event.target.value)}
-                                                                        className="mt-2 w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-sky-400"
-                                                                    />
-                                                                ) : (
-                                                                    <p className="mt-1 text-sm font-semibold text-gray-900">{dayPlan.dinner}</p>
-                                                                )}
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="mt-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
-                                                            <p className="text-[11px] font-bold uppercase tracking-wide text-gray-600">Notes</p>
-                                                            {isEditingMealPlan ? (
-                                                                <textarea
-                                                                    value={dayPlan.notes}
-                                                                    onChange={(event) => handleMealPlanFieldChange(dayPlan.id, 'notes', event.target.value)}
-                                                                    rows={2}
-                                                                    className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-gray-400 resize-none"
-                                                                />
-                                                            ) : (
-                                                                <p className="mt-1 text-sm text-gray-600">{dayPlan.notes || 'No notes added yet.'}</p>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
+                                        <div className="grid grid-cols-1 gap-4">{mealPlanDayCards}</div>
                                     </div>
                                 )}
 

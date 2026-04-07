@@ -25,6 +25,7 @@ import { buildRelevantMemoryPromptSection } from '../services/userMemory';
 
 const router = express.Router();
 let chatSchemaReady: Promise<void> | null = null;
+const GOOGLE_SOURCE_RESULT_LIMIT = 5;
 
 async function ensureChatConversationSchema() {
     if (!chatSchemaReady) {
@@ -232,6 +233,51 @@ function getFulfillmentFollowUpOptions() {
         { id: 'recipe_ideas', label: 'Recipe Ideas', prompt: 'I want recipe ideas for this.' },
         { id: 'prepared_for_later', label: 'Prepared for Later', prompt: 'I want prepared-for-later or meal prep options.' },
         { id: 'raw_produce', label: 'Raw Produce Nearby', prompt: 'I want raw produce to buy nearby.' }
+    ];
+}
+
+function shouldOfferRecipeConversionFollowUp(message: string, tags: string[], intent: string, responseText: string) {
+    const normalizedMessage = normalizeIntentText(message);
+    const normalizedResponse = String(responseText || '').toLowerCase();
+    const normalizedTags = normalizeChatTags(tags);
+    const mentionsCreate = /\b(create|creating|created)\b/.test(normalizedMessage);
+    const mealSignal =
+        /\b(meal|dish|dinner|lunch|breakfast|snack|bowl|salad|plate)\b/.test(normalizedMessage) ||
+        normalizedTags.includes('cooked') ||
+        normalizedTags.includes('receipes') ||
+        normalizedTags.includes('recipes');
+
+    if (!mentionsCreate || !mealSignal) {
+        return false;
+    }
+
+    if (!['meal_suggestion', 'food_search', 'general', 'recipe_search'].includes(intent)) {
+        return false;
+    }
+
+    if (normalizedMessage.includes('recipe') || normalizedResponse.includes('turn that into a recipe')) {
+        return false;
+    }
+
+    return !/(would you like|do you want).{0,80}recipe/i.test(responseText);
+}
+
+function appendRecipeConversionQuestion(responseText: string, shouldAskQuestion: boolean) {
+    const normalizedResponse = String(responseText || '').trim();
+    if (!normalizedResponse || !shouldAskQuestion) {
+        return normalizedResponse;
+    }
+
+    if (/(would you like|do you want).{0,80}recipe/i.test(normalizedResponse)) {
+        return normalizedResponse;
+    }
+
+    return `${normalizedResponse}\n\nWould you like me to turn one of those into a recipe?`;
+}
+
+function getRecipeConversionFollowUpOptions() {
+    return [
+        { id: 'turn_into_recipe', label: 'Turn into Recipe', prompt: 'Turn that meal idea into a recipe with ingredients and steps.' }
     ];
 }
 
@@ -1598,10 +1644,22 @@ Use this profile directly for personalization. Do not ask for details already pr
         const shouldAskFulfillmentQuestion = userSettings.proactiveFollowUp
             ? shouldForceClarifier || Boolean(detectFulfillmentFollowUp(aiResponse))
             : false;
-        const followUpOptions = null;
+        const shouldAskRecipeConversionQuestion = shouldOfferRecipeConversionFollowUp(
+            effectiveMessage,
+            normalizedTags,
+            intentClassification.intent,
+            aiResponse
+        );
+        let followUpOptions = null;
         aiResponse = emphasizeLeadSuggestion(aiResponse);
         aiResponse = appendFulfillmentQuestion(aiResponse, shouldAskFulfillmentQuestion);
+        aiResponse = appendRecipeConversionQuestion(aiResponse, shouldAskRecipeConversionQuestion);
         aiResponse = appendPersonalizationNudge(aiResponse, personalizationNudge);
+        if (shouldAskRecipeConversionQuestion) {
+            followUpOptions = getRecipeConversionFollowUpOptions();
+        } else if (shouldAskFulfillmentQuestion) {
+            followUpOptions = detectFulfillmentFollowUp(aiResponse) || getFulfillmentFollowUpOptions();
+        }
 
         if (userId && activeConversationId) {
             await pool.query(
@@ -1743,6 +1801,61 @@ router.post('/source-inquiry/premium', authenticateTokenOptional, async (req: Re
     }
 });
 
+router.post('/source-inquiry/google', authenticateTokenOptional, async (req: Request, res: Response) => {
+    const queries = Array.isArray(req.body?.queries)
+        ? req.body.queries.map((query: unknown) => String(query || '').trim()).filter(Boolean)
+        : [];
+    const location = String(req.body?.location || '').trim();
+    const radiusKm = Number.isFinite(Number(req.body?.radiusKm)) ? Number(req.body.radiusKm) : 25;
+    const limit = Number.isFinite(Number(req.body?.limit)) ? Number(req.body.limit) : GOOGLE_SOURCE_RESULT_LIMIT;
+    const user = (req as any).user;
+    const userId = user?.id;
+    const userRole = user?.role || 'consumer';
+
+    if (queries.length === 0) {
+        res.json({ places: [], queries: [] });
+        return;
+    }
+
+    try {
+        const profileData = userId ? await fetchRoleProfileData(userId, userRole) as UserProfile : {};
+        const locale = resolveLocaleFromProfileAndLocation(profileData, location);
+        const grouped = await Promise.all(queries.map(async (query: string) => {
+            try {
+                const places = await searchGooglePlaces(query, location, radiusKm, locale);
+                if (places.length > 0) return places;
+            } catch {
+                // continue collecting from remaining queries
+            }
+            return [];
+        }));
+
+        const deduped = new Map<string, any>();
+        for (const places of grouped) {
+            for (const place of places) {
+                const key = String(place.id || `${place.name}-${place.address}`);
+                if (!deduped.has(key)) deduped.set(key, place);
+            }
+        }
+
+        const hydratedPlaces = await hydratePlacesWithProfileData(Array.from(deduped.values()));
+        const places = hydratedPlaces
+            .sort((a, b) => {
+                const priorityDiff = placeInventoryPriority(b, queries) - placeInventoryPriority(a, queries);
+                if (priorityDiff !== 0) return priorityDiff;
+                if (a.distance_km == null && b.distance_km == null) return 0;
+                if (a.distance_km == null) return 1;
+                if (b.distance_km == null) return -1;
+                return a.distance_km - b.distance_km;
+            })
+            .slice(0, Math.max(1, Math.min(limit, GOOGLE_SOURCE_RESULT_LIMIT)));
+
+        res.json({ places, queries });
+    } catch (error: any) {
+        res.status(500).json({ error: 'Failed to source Google inquiry findings', details: error.message });
+    }
+});
+
 router.post('/source-ingredients/google', authenticateTokenOptional, async (req: Request, res: Response) => {
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
     const location = String(req.body?.location || '').trim();
@@ -1783,7 +1896,7 @@ router.post('/source-ingredients/google', authenticateTokenOptional, async (req:
                 if (b.distance_km == null) return -1;
                 return a.distance_km - b.distance_km;
             })
-            .slice(0, 8);
+            .slice(0, GOOGLE_SOURCE_RESULT_LIMIT);
 
         res.json({ places, queries });
     } catch (error: any) {

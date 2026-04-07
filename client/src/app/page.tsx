@@ -40,12 +40,12 @@ function HomeScreen() {
 
   if (loading) return <div className="min-h-screen bg-white" />;
 
-  // 1. Explicit Landing Request (via Logo or Link)
-  if (tab === 'landing') {
+  // Let the landing screen act as the shared first-question home.
+  if (!tab || tab === 'landing') {
     return <LandingShell />;
   }
 
-  // 2. User is Logged In -> Default to Dashboard (Profile/Home)
+  // Route into the full in-app experience for chat and the rest of the app.
   if (user || tab === 'chat') {
     return (
       <Suspense fallback={<div className="min-h-screen bg-white" />}>
@@ -54,7 +54,6 @@ function HomeScreen() {
     );
   }
 
-  // 3. Guest on Root (No Tab) -> Landing Page
   return <LandingShell />;
 }
 

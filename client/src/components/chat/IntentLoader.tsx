@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { INTENT_META, IntentClassification } from '../../lib/intentClassifier';
+import NaviAvatar from './NaviAvatar';
 
 type IntentLoaderProps = {
     classification: IntentClassification;
@@ -20,9 +21,11 @@ export default function IntentLoader({ classification }: IntentLoaderProps) {
         >
             <div className="max-w-[90%] rounded-2xl rounded-bl-none border border-emerald-100 bg-white px-4 py-3 shadow-sm">
                 <div className="flex items-start gap-3">
-                    <div className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${meta.accentClass}`}>
-                        <div className="h-4 w-4 rounded-full bg-white/90" />
-                    </div>
+                    <NaviAvatar
+                        className={`mt-0.5 relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${meta.accentClass} shadow-[0_8px_20px_rgba(16,185,129,0.14)] ring-1 ring-white/60`}
+                        iconClassName="h-8 w-8 drop-shadow-sm"
+                        dotClassName="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-orange-300 ring-2 ring-white"
+                    />
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                             <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${meta.badgeClass}`}>

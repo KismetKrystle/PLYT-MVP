@@ -8,7 +8,13 @@ import { useEffect } from 'react';
 import { useAuth } from '../../lib/auth';
 
 function FallbackAuthModal() {
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
     const { isLoginModalOpen, closeLoginModal, isAccessWallEnabled } = useAuth();
+    const query = searchParams.toString();
+    const redirectPath = query ? `${pathname || '/'}?${query}` : (pathname || '/');
+    const loginUrl = `/login?redirect=${encodeURIComponent(redirectPath)}`;
+    const signUpUrl = `/signup?redirect=${encodeURIComponent(redirectPath)}`;
 
     if (!isLoginModalOpen) return null;
 
@@ -42,14 +48,14 @@ function FallbackAuthModal() {
                         <div className="mb-8 text-center">
                             <h2 className="mb-2 text-2xl font-bold text-gray-900">Sign In</h2>
                             <p className="text-gray-500">
-                                Access your profile, archive, and saved progress.
+                                Sign in to start a search shaped around your health profile and saved context.
                             </p>
                         </div>
 
                         <div className="space-y-3">
                             <Link
                                 className="flex w-full items-center justify-center rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-green-700"
-                                href="/login"
+                                href={loginUrl}
                                 onClick={closeLoginModal}
                             >
                                 Go to sign in
@@ -57,7 +63,7 @@ function FallbackAuthModal() {
                             {!isAccessWallEnabled ? (
                                 <Link
                                     className="flex w-full items-center justify-center rounded-lg border border-green-600/20 bg-white px-4 py-2.5 text-sm font-medium text-green-700 transition hover:bg-green-50"
-                                    href="/signup"
+                                    href={signUpUrl}
                                     onClick={closeLoginModal}
                                 >
                                     Create account
@@ -66,7 +72,7 @@ function FallbackAuthModal() {
                         </div>
 
                         <p className="mt-6 text-center text-sm text-gray-500">
-                            Your existing Plyant data stays connected after sign-in.
+                            We will keep your draft search ready after sign-in.
                         </p>
                     </motion.div>
                 </div>

@@ -29,13 +29,39 @@ const host = '0.0.0.0';
 
 const allowedOrigins = new Set([
     'http://localhost:3000',
+    'http://127.0.0.1:3000',
     'https://app.plyant.com',
     'https://www.app.plyant.com'
 ]);
 
+function isAllowedOrigin(origin: string) {
+    if (allowedOrigins.has(origin)) {
+        return true;
+    }
+
+    try {
+        const url = new URL(origin);
+        const hostname = url.hostname.toLowerCase();
+        const protocol = url.protocol;
+
+        if (protocol !== 'http:' && protocol !== 'https:') {
+            return false;
+        }
+
+        const isLocalhostHost = hostname === 'localhost' || hostname === '127.0.0.1';
+        if (isLocalhostHost) {
+            return true;
+        }
+    } catch {
+        return false;
+    }
+
+    return false;
+}
+
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.has(origin)) {
+        if (!origin || isAllowedOrigin(origin)) {
             callback(null, true);
             return;
         }

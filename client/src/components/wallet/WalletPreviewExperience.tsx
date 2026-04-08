@@ -195,7 +195,7 @@ export default function WalletPreviewExperience() {
     const { user } = useAuth();
     const { items, updateQuantity, removeFromCart, totalItems, cartTotal } = useCart();
     const router = useRouter();
-    const [currency, setCurrency] = useState<Currency>('IDR');
+    const [currency, setCurrency] = useState<Currency>('USD');
     const [activeTab, setActiveTab] = useState<WalletTab>('overview');
     const [selectedItem, setSelectedItem] = useState<WalletLineItem | null>(null);
 

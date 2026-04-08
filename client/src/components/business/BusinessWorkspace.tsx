@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -15,6 +16,13 @@ import type {
 const inputCls =
     'w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20';
 
+type LocationSuggestion = {
+    placeId: string;
+    description: string;
+    primaryText: string;
+    secondaryText: string;
+};
+
 function csvToList(value: string) {
     return value.split(',').map((item) => item.trim()).filter(Boolean);
 }
@@ -28,6 +36,7 @@ function emptyBusiness(type: BusinessType) {
         business_type: type,
         name: '',
         description: '',
+        business_image_url: '',
         primary_location: '',
         service_region: '',
         product_types: '',
@@ -65,6 +74,10 @@ export default function BusinessWorkspace() {
     const [memberRole, setMemberRole] = useState<BusinessMembershipRole>('member');
     const [csvText, setCsvText] = useState('');
     const [csvPreview, setCsvPreview] = useState<{ errors: string[]; rows: BusinessCsvPreviewRow[] } | null>(null);
+    const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestion[]>([]);
+    const [isLocationSearching, setIsLocationSearching] = useState(false);
+    const [locationStatus, setLocationStatus] = useState<string | null>(null);
+    const [isLocationConfirmed, setIsLocationConfirmed] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [status, setStatus] = useState<string | null>(null);
@@ -75,10 +88,14 @@ export default function BusinessWorkspace() {
     );
 
     const hydrateBusiness = (business: BusinessRecord) => {
+        setIsLocationConfirmed(true);
+        setLocationSuggestions([]);
+        setLocationStatus(null);
         setBusinessForm({
             business_type: business.business_type,
             name: business.name || '',
             description: business.description || '',
+            business_image_url: String(business.profile_data?.business_image_url || '').trim(),
             primary_location: business.primary_location || '',
             service_region: business.service_region || '',
             product_types: Array.isArray(business.profile_data?.product_types) ? business.profile_data.product_types.join(', ') : '',
@@ -86,6 +103,42 @@ export default function BusinessWorkspace() {
             fulfillment_notes: String(business.profile_data?.fulfillment_notes || '').trim()
         });
     };
+
+    useEffect(() => {
+        const query = businessForm.primary_location.trim();
+        if (isLocationConfirmed) return;
+        if (query.length < 2) {
+            setLocationSuggestions([]);
+            setIsLocationSearching(false);
+            setLocationStatus(null);
+            return;
+        }
+
+        const timeoutId = window.setTimeout(async () => {
+            setIsLocationSearching(true);
+            setLocationStatus(null);
+
+            try {
+                const res = await api.get('/consumer-health-profile/location-suggestions/search', {
+                    params: { q: query }
+                });
+                const suggestions = Array.isArray(res.data?.suggestions) ? res.data.suggestions : [];
+                setLocationSuggestions(suggestions);
+                setLocationStatus(
+                    suggestions.length > 0
+                        ? 'Choose a suggested business address, area, or landmark, or keep what you typed.'
+                        : 'No address suggestions found yet. You can still continue with your typed location.'
+                );
+            } catch {
+                setLocationSuggestions([]);
+                setLocationStatus('Address lookup is unavailable right now. You can still continue with your typed location.');
+            } finally {
+                setIsLocationSearching(false);
+            }
+        }, 250);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [businessForm.primary_location, isLocationConfirmed]);
 
     const loadBusinesses = async (preferredId?: string | null) => {
         setIsLoading(true);
@@ -150,6 +203,7 @@ export default function BusinessWorkspace() {
                 primary_location: businessForm.primary_location.trim(),
                 service_region: businessForm.service_region.trim(),
                 profile_data: {
+                    business_image_url: businessForm.business_image_url.trim(),
                     product_types: csvToList(businessForm.product_types),
                     trust_signals: csvToList(businessForm.trust_signals),
                     fulfillment_notes: businessForm.fulfillment_notes.trim()
@@ -285,12 +339,15 @@ export default function BusinessWorkspace() {
                         </div>
                         <button
                             type="button"
-                            onClick={() => {
-                                setActiveBusinessId(null);
-                                setBusinessForm(emptyBusiness(getDefaultType(user?.role)));
-                                setItems([]);
-                                setMembers([]);
-                            }}
+                             onClick={() => {
+                                 setActiveBusinessId(null);
+                                 setBusinessForm(emptyBusiness(getDefaultType(user?.role)));
+                                 setIsLocationConfirmed(false);
+                                 setLocationSuggestions([]);
+                                 setLocationStatus(null);
+                                 setItems([]);
+                                 setMembers([]);
+                             }}
                             className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:border-green-300 hover:text-green-700"
                         >
                             New
@@ -325,7 +382,20 @@ export default function BusinessWorkspace() {
                 </section>
 
                 <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                    <h3 className="text-base font-bold text-gray-900">{activeBusiness ? 'Business Identity' : 'Create Business'}</h3>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <h3 className="text-base font-bold text-gray-900">{activeBusiness ? 'Business Identity' : 'Create Business'}</h3>
+                            <p className="mt-1 text-sm text-gray-500">Shape the public-facing supplier page buyers will scout before purchasing.</p>
+                        </div>
+                        {activeBusinessId ? (
+                            <Link
+                                href={`/business/${activeBusinessId}`}
+                                className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 transition hover:bg-green-100"
+                            >
+                                View Public Profile
+                            </Link>
+                        ) : null}
+                    </div>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                         <select className={inputCls} value={businessForm.business_type} onChange={(event) => setBusinessForm((current) => ({ ...current, business_type: event.target.value as BusinessType }))}>
                             <option value="farmer">Farmer</option>
@@ -333,7 +403,66 @@ export default function BusinessWorkspace() {
                         </select>
                         <input className={inputCls} value={businessForm.name} onChange={(event) => setBusinessForm((current) => ({ ...current, name: event.target.value }))} placeholder="Business name" />
                         <textarea className={`${inputCls} min-h-[100px] resize-y md:col-span-2`} value={businessForm.description} onChange={(event) => setBusinessForm((current) => ({ ...current, description: event.target.value }))} placeholder="Business description" />
-                        <input className={inputCls} value={businessForm.primary_location} onChange={(event) => setBusinessForm((current) => ({ ...current, primary_location: event.target.value }))} placeholder="Primary location" />
+                        <div className="md:col-span-2">
+                            <input
+                                className={inputCls}
+                                value={businessForm.business_image_url}
+                                onChange={(event) => setBusinessForm((current) => ({ ...current, business_image_url: event.target.value }))}
+                                placeholder="Business image URL"
+                            />
+                            <p className="mt-2 text-xs text-gray-500">Use a hosted image link for the public-facing business cover or brand image.</p>
+                        </div>
+                        {businessForm.business_image_url ? (
+                            <div className="md:col-span-2">
+                                <div className="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50">
+                                    <img
+                                        src={businessForm.business_image_url}
+                                        alt={`${businessForm.name || 'Business'} preview`}
+                                        className="h-44 w-full object-cover"
+                                    />
+                                </div>
+                            </div>
+                        ) : null}
+                        <div className="md:col-span-2">
+                            <input
+                                className={inputCls}
+                                value={businessForm.primary_location}
+                                onChange={(event) => {
+                                    setIsLocationConfirmed(false);
+                                    setBusinessForm((current) => ({ ...current, primary_location: event.target.value }));
+                                }}
+                                placeholder="Primary location"
+                            />
+                            <p className="mt-2 text-xs text-gray-500">Start typing a street, area, landmark, city, ZIP code, or postcode to get address predictions.</p>
+                            {isLocationSearching ? (
+                                <p className="mt-2 text-xs text-gray-400">Searching addresses...</p>
+                            ) : locationStatus ? (
+                                <p className="mt-2 text-xs text-gray-400">{locationStatus}</p>
+                            ) : null}
+                            {locationSuggestions.length > 0 ? (
+                                <div className="mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                                    {locationSuggestions.map((suggestion) => (
+                                        <button
+                                            key={`${suggestion.placeId}-${suggestion.description}`}
+                                            type="button"
+                                            onClick={() => {
+                                                setBusinessForm((current) => ({
+                                                    ...current,
+                                                    primary_location: suggestion.description
+                                                }));
+                                                setIsLocationConfirmed(true);
+                                                setLocationSuggestions([]);
+                                                setLocationStatus(null);
+                                            }}
+                                            className="flex w-full flex-col items-start border-b border-gray-100 px-4 py-3 text-left last:border-b-0 hover:bg-gray-50"
+                                        >
+                                            <span className="text-sm font-medium text-gray-800">{suggestion.primaryText}</span>
+                                            <span className="text-xs text-gray-500">{suggestion.secondaryText || suggestion.description}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : null}
+                        </div>
                         <input className={inputCls} value={businessForm.service_region} onChange={(event) => setBusinessForm((current) => ({ ...current, service_region: event.target.value }))} placeholder="Service region" />
                         <input className={inputCls} value={businessForm.product_types} onChange={(event) => setBusinessForm((current) => ({ ...current, product_types: event.target.value }))} placeholder="Product types" />
                         <input className={inputCls} value={businessForm.trust_signals} onChange={(event) => setBusinessForm((current) => ({ ...current, trust_signals: event.target.value }))} placeholder="Trust signals" />

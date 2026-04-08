@@ -13,6 +13,7 @@ import {
 
 interface InventoryItem {
     id: number;
+    business_id?: string | null;
     name: string;
     description: string;
     price_plyt: string;
@@ -41,6 +42,7 @@ function toCommerceItemProfile(item: InventoryItem): CommerceItemProfile {
         image: item.image_url || '/assets/images/store/organic_kale.png',
         supplierName,
         supplierRole,
+        supplierBusinessId: item.business_id ? String(item.business_id) : null,
         supplierLocation: item.supplier_location || (typeof item.distance_km === 'number' ? `${item.distance_km} km away` : 'Nearby market route'),
         description: item.description || 'Fresh market listing surfaced inside the Eat flow.',
         supplierBio: supplierRole === 'Distributor'
@@ -250,7 +252,7 @@ export default function EatPage() {
                 onClose={() => setSelectedItem(null)}
                 supplierActionLabel="Open supplier preview"
                 onSupplierAction={selectedItem ? () => {
-                    const previewRoute = getSupplierPreviewRoute(selectedItem.supplierRole);
+                    const previewRoute = getSupplierPreviewRoute(selectedItem.supplierRole, selectedItem.supplierBusinessId);
                     setSelectedItem(null);
                     router.push(previewRoute);
                 } : undefined}

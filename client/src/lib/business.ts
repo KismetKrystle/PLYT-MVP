@@ -15,6 +15,24 @@ export type BusinessRecord = {
     updated_at?: string;
 };
 
+export type PublicBusinessRecord = {
+    id: string;
+    business_type: BusinessType;
+    name: string;
+    description: string;
+    primary_location: string;
+    service_region: string;
+    business_image_url?: string;
+    product_types?: string[];
+    trust_signals?: string[];
+    fulfillment_notes?: string;
+    sourcing_story?: string;
+    operator_count?: number;
+    inventory_count?: number;
+    created_at?: string;
+    updated_at?: string;
+};
+
 export type BusinessMember = {
     user_id: string;
     name: string;
@@ -45,6 +63,11 @@ export type BusinessInventoryItem = {
     updated_at?: string;
 };
 
+export type PublicBusinessProfileResponse = {
+    business: PublicBusinessRecord;
+    items: BusinessInventoryItem[];
+};
+
 export type BusinessCsvPreviewRow = {
     index: number;
     normalized: {
@@ -65,4 +88,3 @@ export type BusinessCsvPreviewRow = {
     };
     errors: string[];
 };
-

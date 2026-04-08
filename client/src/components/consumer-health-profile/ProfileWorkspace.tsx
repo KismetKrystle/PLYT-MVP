@@ -257,6 +257,63 @@ const PROFILE_MODE_LINKS: Array<{ mode: ProfileMode; label: string; href: string
     { mode: 'expert', label: 'Expert Studio', href: '/?tab=about_you&profile=expert' }
 ];
 
+function hasMeaningfulExpertProfile(data: any) {
+    if (!data || typeof data !== 'object') return false;
+    const expertiseAreas = Array.isArray(data.expertise_areas)
+        ? data.expertise_areas.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+        : [];
+
+    return [
+        String(data.display_name || '').trim(),
+        String(data.credentials || '').trim(),
+        String(data.bio || '').trim()
+    ].some(Boolean) || expertiseAreas.length > 0;
+}
+
+function ModeLinkButton({
+    href,
+    label,
+    active = false,
+    showComingSoon = false
+}: {
+    href: string;
+    label: string;
+    active?: boolean;
+    showComingSoon?: boolean;
+}) {
+    return (
+        <Link
+            href={href}
+            className={`relative inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+                active
+                    ? 'border-green-600 bg-green-600 text-white'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-green-300 hover:text-green-700'
+            }`}
+        >
+            <span>{label}</span>
+            {showComingSoon ? (
+                <>
+                    <span
+                        aria-hidden="true"
+                        className={`absolute -right-1.5 -top-1.5 h-3.5 w-3.5 rounded-full ring-2 ring-white ${
+                            active ? 'bg-amber-300' : 'bg-amber-500'
+                        }`}
+                    />
+                    <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ${
+                            active
+                                ? 'bg-white/20 text-white'
+                                : 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
+                        }`}
+                    >
+                        Soon
+                    </span>
+                </>
+            ) : null}
+        </Link>
+    );
+}
+
 function joinLabels(values: string[], labels: Record<string, string>) {
     return values
         .map((value) => labels[value] || value)
@@ -358,6 +415,10 @@ export default function ProfileWorkspace() {
     const [isSaving, setIsSaving] = useState(false);
     const [status, setStatus] = useState<string | null>(null);
     const [hasProfile, setHasProfile] = useState(false);
+    const [establishedModes, setEstablishedModes] = useState<{ business: boolean; expert: boolean }>({
+        business: false,
+        expert: false
+    });
     const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
     const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestion[]>([]);
     const [isLocationSearching, setIsLocationSearching] = useState(false);
@@ -440,6 +501,34 @@ export default function ProfileWorkspace() {
     };
 
     useEffect(() => {
+        const loadModeAvailability = async () => {
+            if (!user?.id) {
+                setEstablishedModes({ business: false, expert: false });
+                return;
+            }
+
+            const [businessResult, expertResult] = await Promise.allSettled([
+                api.get('/businesses/mine', { params: { autocreate: 'false' } }),
+                api.get(`/expert-profiles/${user.id}`)
+            ]);
+
+            const nextBusinessEstablished = businessResult.status === 'fulfilled'
+                && Array.isArray(businessResult.value.data?.businesses)
+                && businessResult.value.data.businesses.length > 0;
+
+            const nextExpertEstablished = expertResult.status === 'fulfilled'
+                && hasMeaningfulExpertProfile(expertResult.value.data?.profile_data || {});
+
+            setEstablishedModes({
+                business: nextBusinessEstablished,
+                expert: nextExpertEstablished
+            });
+        };
+
+        void loadModeAvailability();
+    }, [user?.id]);
+
+    useEffect(() => {
         const loadProfile = async () => {
             if (!user?.id) return;
             if (mode === 'business') {
@@ -496,6 +585,16 @@ export default function ProfileWorkspace() {
 
         loadProfile();
     }, [mode, route, user?.id]);
+
+    const createdModeLinks = useMemo(
+        () => PROFILE_MODE_LINKS.filter((item) => item.mode !== 'consumer' && establishedModes[item.mode]),
+        [establishedModes]
+    );
+
+    const launchModeLinks = useMemo(
+        () => PROFILE_MODE_LINKS.filter((item) => item.mode !== 'consumer' && !establishedModes[item.mode]),
+        [establishedModes]
+    );
 
     useEffect(() => {
         if (mode !== 'consumer') return;
@@ -795,25 +894,86 @@ export default function ProfileWorkspace() {
 
     return (
         <div className="mx-auto w-full max-w-6xl p-4 md:p-8">
-            <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-                <h2 className="text-2xl font-bold text-gray-900">{heading.title}</h2>
-                <p className="mt-1 text-sm text-gray-600">{heading.subtitle}</p>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-                {PROFILE_MODE_LINKS.map((item) => (
-                    <Link
-                        key={item.mode}
-                        href={item.href}
-                        className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
-                            mode === item.mode
-                                ? 'border-green-600 bg-green-600 text-white'
-                                : 'border-gray-200 bg-white text-gray-700 hover:border-green-300 hover:text-green-700'
-                        }`}
+            {mode === 'consumer' ? (
+                <div className="mb-4">
+                    <button
+                        type="button"
+                        onClick={() => router.push('/?tab=living_library')}
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 shadow-sm transition hover:border-green-500 hover:text-green-700"
+                        aria-label="Back to profile"
+                        title="Back to profile"
                     >
-                        {item.label}
-                    </Link>
-                ))}
+                        <span aria-hidden="true" className="text-lg leading-none">←</span>
+                    </button>
+                </div>
+            ) : null}
+
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm xl:flex-1">
+                    <h2 className="text-2xl font-bold text-gray-900">{heading.title}</h2>
+                    <p className="mt-1 text-sm text-gray-600">{heading.subtitle}</p>
+                    {mode === 'consumer' && createdModeLinks.length > 0 ? (
+                        <div className="mt-5 border-t border-gray-100 pt-4">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-400">Created profile spaces</p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {createdModeLinks.map((item) => (
+                                    <ModeLinkButton
+                                        key={item.mode}
+                                        href={item.href}
+                                        label={item.label}
+                                        active={mode === item.mode}
+                                        showComingSoon={item.mode !== 'consumer'}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
+                    {mode !== 'consumer' ? (
+                        <div className="mt-5 border-t border-gray-100 pt-4">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-400">Profile navigation</p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                <ModeLinkButton
+                                    href="/?tab=about_you&profile=consumer"
+                                    label="About You"
+                                    active={false}
+                                    showComingSoon={false}
+                                />
+                                {createdModeLinks.map((item) => (
+                                    <ModeLinkButton
+                                        key={item.mode}
+                                        href={item.href}
+                                        label={item.label}
+                                        active={mode === item.mode}
+                                        showComingSoon={item.mode !== 'consumer'}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+                {launchModeLinks.length > 0 ? (
+                    <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm xl:max-w-md">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-400">Expand your presence</p>
+                        <div className="mt-3 flex flex-wrap gap-3">
+                            {launchModeLinks.map((item) => {
+                                const isCurrentMode = mode === item.mode;
+                                return (
+                                    <div key={item.mode}>
+                                        <ModeLinkButton
+                                            href={item.href}
+                                            label={isCurrentMode ? `Setting Up ${item.label}` : item.label}
+                                            active={isCurrentMode}
+                                            showComingSoon={true}
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <p className="mt-3 text-xs leading-5 text-gray-500">
+                            Business and expert profiles stay here until they have real profile information, then they move into the main workspace navigation.
+                        </p>
+                    </div>
+                ) : null}
             </div>
 
             {mode === 'expert' ? (
@@ -875,14 +1035,6 @@ export default function ProfileWorkspace() {
 
             {mode === 'consumer' ? (
                 <div className="mt-4 space-y-3">
-                    <button
-                        type="button"
-                        onClick={() => router.push('/?tab=living_library')}
-                        className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:border-green-500 hover:text-green-700"
-                    >
-                        <span aria-hidden="true">←</span>
-                        Back to Profile
-                    </button>
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                     <div className="min-w-[260px] flex-1">
                         {consumerTab === 'report' ? (

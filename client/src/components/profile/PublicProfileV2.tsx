@@ -2454,16 +2454,24 @@ export default function PublicProfileV2({ user, isOwner = true }: ProfileProps) 
                             className="object-cover"
                         />
                     </div>
-                    <div className="relative z-10">
+                    <div className="relative z-10 min-w-0 flex-1">
+                        <div className="mb-3 flex items-center justify-end">
+                            <Link
+                                href="/?tab=about_you&profile=consumer"
+                                onClick={(event) => event.stopPropagation()}
+                                aria-label="Open About You"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-green-200 bg-green-50 text-green-700 transition-colors hover:bg-green-100"
+                            >
+                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                            </Link>
+                        </div>
                         <h1 className="text-2xl font-bold text-gray-900">{profileDisplayName}</h1>
                         <p className="text-gray-500 text-sm mt-1 line-clamp-2">
                             {profileBio}
                         </p>
                         <div className="flex flex-wrap gap-2 mt-3">
-                            <Link href="/?tab=about_you&profile=consumer" className="inline-flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-full hover:bg-green-100 transition-colors">
-                                View About You
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                            </Link>
                             {user?.location_city && (
                                 <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full">
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>

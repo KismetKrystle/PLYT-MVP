@@ -11,6 +11,7 @@ export type CommerceItemProfile = {
     image?: string;
     supplierName: string;
     supplierRole: SupplierRole;
+    supplierBusinessId?: string | null;
     supplierLocation: string;
     description: string;
     supplierBio: string;
@@ -19,7 +20,10 @@ export type CommerceItemProfile = {
     story: string;
 };
 
-export function getSupplierPreviewRoute(role: SupplierRole) {
+export function getSupplierPreviewRoute(role: SupplierRole, businessId?: string | null) {
+    if (businessId && role !== 'Expert') {
+        return `/business/${businessId}`;
+    }
     return role === 'Expert' ? '/?tab=about_you&profile=expert' : '/?tab=about_you&profile=business';
 }
 

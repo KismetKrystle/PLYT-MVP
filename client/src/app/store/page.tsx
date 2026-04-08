@@ -17,6 +17,7 @@ type StoreTab = 'fresh_produce' | 'request_store';
 
 type InventoryItem = {
     id: number | string;
+    business_id?: string | null;
     name: string;
     description?: string | null;
     price_plyt?: number | string | null;
@@ -113,6 +114,7 @@ function toCommerceItemProfile(item: InventoryItem): CommerceItemProfile {
         image: String(item.image_url || '/assets/images/store/organic_kale.png'),
         supplierName,
         supplierRole: role,
+        supplierBusinessId: item.business_id ? String(item.business_id) : null,
         supplierLocation: distance,
         description: String(item.description || 'Fresh listing from the current marketplace inventory.'),
         supplierBio: role === 'Distributor'
@@ -451,7 +453,7 @@ export default function StorePage() {
                 onClose={() => setSelectedItem(null)}
                 supplierActionLabel="Open supplier preview"
                 onSupplierAction={selectedItem ? () => {
-                    const previewRoute = getSupplierPreviewRoute(selectedItem.supplierRole);
+                    const previewRoute = getSupplierPreviewRoute(selectedItem.supplierRole, selectedItem.supplierBusinessId);
                     setSelectedItem(null);
                     router.push(previewRoute);
                 } : undefined}

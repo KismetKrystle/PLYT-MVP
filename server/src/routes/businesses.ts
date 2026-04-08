@@ -107,6 +107,11 @@ function normalizeInventoryPayload(input: Record<string, any>, sourceType: Inven
     };
 }
 
+function toStringList(value: unknown) {
+    if (!Array.isArray(value)) return [] as string[];
+    return value.map((entry) => String(entry || '').trim()).filter(Boolean);
+}
+
 async function requireBusinessAccess(
     req: AuthRequest,
     res: Response,
@@ -129,10 +134,11 @@ async function requireBusinessAccess(
 router.get('/mine', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id as string | number;
+        const shouldAutoCreate = String(req.query.autocreate || '').trim().toLowerCase() === 'true';
         await ensureBusinessSchema();
 
         let businesses = await listUserBusinesses(userId);
-        if (businesses.length === 0) {
+        if (businesses.length === 0 && shouldAutoCreate) {
             await ensureLegacyBusinessForUser(
                 userId,
                 normalizeBusinessType(req.user?.role, 'farmer')
@@ -282,6 +288,103 @@ router.put('/:businessId', authenticateToken, async (req: AuthRequest, res: Resp
         res.status(500).json({ error: 'Failed to update business' });
     } finally {
         client.release();
+    }
+});
+
+router.get('/:businessId/public', async (req: AuthRequest, res: Response) => {
+    try {
+        const businessId = String(req.params.businessId || '').trim();
+        if (!businessId) {
+            res.status(400).json({ error: 'Business id is required' });
+            return;
+        }
+
+        await ensureBusinessSchema();
+
+        const businessResult = await pool.query(
+            `SELECT
+                b.id,
+                b.business_type,
+                b.name,
+                b.description,
+                b.primary_location,
+                b.service_region,
+                b.profile_data,
+                b.created_at,
+                b.updated_at,
+                (
+                    SELECT COUNT(*)::int
+                    FROM business_memberships bm
+                    WHERE bm.business_id = b.id
+                      AND bm.status = 'active'
+                ) AS operator_count,
+                (
+                    SELECT COUNT(*)::int
+                    FROM inventory i
+                    WHERE i.business_id = b.id
+                ) AS inventory_count
+             FROM businesses b
+             WHERE b.id = $1
+             LIMIT 1`,
+            [businessId]
+        );
+
+        if (businessResult.rows.length === 0) {
+            res.status(404).json({ error: 'Business not found' });
+            return;
+        }
+
+        const businessRow = businessResult.rows[0];
+        const profileData = businessRow.profile_data && typeof businessRow.profile_data === 'object'
+            ? businessRow.profile_data
+            : {};
+
+        const inventoryResult = await pool.query(
+            `SELECT
+                id,
+                business_id,
+                name,
+                description,
+                category,
+                price_fiat,
+                quantity,
+                unit,
+                image_url,
+                source_type,
+                external_source,
+                external_item_id,
+                enrichment_data,
+                created_at,
+                updated_at
+             FROM inventory
+             WHERE business_id = $1
+             ORDER BY updated_at DESC, created_at DESC`,
+            [businessId]
+        );
+
+        res.json({
+            business: {
+                id: businessRow.id,
+                business_type: businessRow.business_type,
+                name: businessRow.name,
+                description: businessRow.description,
+                primary_location: businessRow.primary_location,
+                service_region: businessRow.service_region,
+                created_at: businessRow.created_at,
+                updated_at: businessRow.updated_at,
+                operator_count: Number(businessRow.operator_count || 0),
+                inventory_count: Number(businessRow.inventory_count || 0),
+                business_image_url: String(profileData.business_image_url || '').trim(),
+                product_types: toStringList(profileData.product_types),
+                trust_signals: toStringList(profileData.trust_signals),
+                fulfillment_notes: String(profileData.fulfillment_notes || '').trim(),
+                sourcing_story: String(profileData.sourcing_story || '').trim()
+            },
+            items: inventoryResult.rows
+        });
+    } catch (error) {
+        console.error('Get public business profile error:', error);
+        res.status(500).json({ error: 'Failed to fetch public business profile' });
     }
 });
 

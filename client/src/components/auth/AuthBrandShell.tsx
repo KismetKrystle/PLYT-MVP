@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import Logo from '../Logo';
+import { PUBLIC_APP_HOME_PATH } from '../../lib/authPaths';
 
 type AuthBrandShellProps = {
     children: ReactNode;
@@ -18,8 +19,8 @@ export default function AuthBrandShell({
     children,
     title = 'Welcome to Plyant',
     subtitle = 'Food guidance and sourcing that gets more personal the more you use it.',
-    backHref = '/',
-    backLabel = 'Back to home',
+    backHref = PUBLIC_APP_HOME_PATH,
+    backLabel = 'Back to app',
     eyebrowLabel = 'Personal Health-Food Companion',
     backgroundVariant = 'pattern'
 }: AuthBrandShellProps) {

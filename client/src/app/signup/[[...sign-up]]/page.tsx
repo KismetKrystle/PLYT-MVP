@@ -1,6 +1,6 @@
 'use client';
 
-import { ClerkProvider, SignUp } from '@clerk/nextjs';
+import { SignUp } from '@clerk/nextjs';
 import Link from 'next/link';
 import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -8,6 +8,7 @@ import { motion } from 'framer-motion';
 import KYCForm from '../../../components/KYCForm';
 import AuthBrandShell from '../../../components/auth/AuthBrandShell';
 import { useAuth } from '../../../lib/auth';
+import { PUBLIC_APP_HOME_PATH, resolveAuthRedirectPath } from '../../../lib/authPaths';
 
 const hasClerkPublishableKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 const clerkAppearance = {
@@ -22,27 +23,19 @@ const clerkAppearance = {
         footerAction: 'justify-center',
     }
 };
-const clerkLocalization = {
-    signUp: {
-        start: {
-            title: 'Plyant',
-            titleCombined: 'Plyant',
-        },
-    },
-};
-
 function SignupScreen() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const { user, loading, isAccessWallEnabled } = useAuth();
     const mode = searchParams.get('mode');
-    const redirectPath = searchParams.get('redirect') || '/';
+    const redirectPath = resolveAuthRedirectPath(searchParams.get('redirect'));
     const loginUrl = `/login?redirect=${encodeURIComponent(redirectPath)}`;
     const completeUrl = `/auth/complete?mode=kyc&redirect=${encodeURIComponent(redirectPath)}`;
 
     if (!hasClerkPublishableKey && mode !== 'kyc') {
         return (
             <AuthBrandShell
+                backHref={PUBLIC_APP_HOME_PATH}
                 backgroundVariant="banner"
                 eyebrowLabel="Personal Food Search Companion"
                 subtitle="Create your Plyant account so your search, preferences, and future memory can stay connected."
@@ -53,8 +46,8 @@ function SignupScreen() {
                         <p className="mt-3 text-sm leading-6 text-[#6b6d61]">
                             Clerk is not ready yet in this client session. Restart the client dev server so it picks up <code className="rounded bg-[#f4f4f4] px-1 py-0.5">NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code>, then try again.
                     </p>
-                    <Link className="mt-6 inline-flex font-semibold text-[#234f2e] hover:underline" href="/">
-                        Back to home
+                    <Link className="mt-6 inline-flex font-semibold text-[#234f2e] hover:underline" href={PUBLIC_APP_HOME_PATH}>
+                        Back to app
                     </Link>
                 </div>
             </AuthBrandShell>
@@ -136,6 +129,7 @@ function SignupScreen() {
     if (isAccessWallEnabled) {
         return (
             <AuthBrandShell
+                backHref={PUBLIC_APP_HOME_PATH}
                 backgroundVariant="banner"
                 subtitle="We are still in a controlled rollout, but the full Plyant sign-up flow is ready once registration opens."
                 title="Registration Unavailable"
@@ -155,21 +149,20 @@ function SignupScreen() {
 
     return (
         <AuthBrandShell
+            backHref={PUBLIC_APP_HOME_PATH}
             backgroundVariant="banner"
             eyebrowLabel="Personal Food Search Companion"
             subtitle={'Set up your profile and inherit a search engine filtered by what "best serves you."'}
             title="Join Plyant"
         >
-            <ClerkProvider localization={clerkLocalization}>
-                <SignUp
-                    appearance={clerkAppearance}
-                    fallbackRedirectUrl={completeUrl}
-                    forceRedirectUrl={completeUrl}
-                    path="/signup"
-                    routing="path"
-                    signInUrl={loginUrl}
-                />
-            </ClerkProvider>
+            <SignUp
+                appearance={clerkAppearance}
+                fallbackRedirectUrl={completeUrl}
+                forceRedirectUrl={completeUrl}
+                path="/signup"
+                routing="path"
+                signInUrl={loginUrl}
+            />
         </AuthBrandShell>
     );
 }

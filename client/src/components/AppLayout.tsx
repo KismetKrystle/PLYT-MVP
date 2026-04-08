@@ -905,6 +905,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                 <span className="text-gray-400">{renderAboutYouIcon('h-4 w-4')}</span>
                                                 About You
                                             </Link>
+                                            <Link
+                                                href={user ? "/?tab=about_you&profile=expert" : "#"}
+                                                onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
+                                                className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
+                                            >
+                                                <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A10 10 0 1118.88 17.8M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                Expert Studio
+                                            </Link>
+                                            <Link
+                                                href={user ? "/wallet" : "#"}
+                                                onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
+                                                className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
+                                            >
+                                                <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a5 5 0 00-10 0v2m-2 0h14a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2v-7a2 2 0 012-2z" /></svg>
+                                                Wallet Preview
+                                            </Link>
                                         </div>
                                         <div className="py-2 bg-red-50/30">
                                             {user ? (
@@ -959,11 +975,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         </div>
 
                         <div className="flex items-center gap-4 ml-auto">
-                        {false && user && (
+                        {user && (
                             <Link href="/wallet" className="hidden lg:flex items-center gap-2 bg-green-50 px-3 py-1.5 rounded-full border border-green-100 hover:bg-green-100 transition-colors">
                                 <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-[10px] text-white font-bold">P</div>
                                 <div className="flex flex-col leading-none">
-                                    <span className="text-xs font-bold text-gray-900">1,250 PLYT</span>
+                                    <span className="text-xs font-bold text-gray-900">Wallet Preview</span>
                                     <span className="text-[10px] text-green-600">≈ $12.50</span>
                                 </div>
                             </Link>
@@ -1069,6 +1085,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                             >
                                                 <span className="text-gray-400">{renderAboutYouIcon('h-4 w-4')}</span>
                                                 About You
+                                            </Link>
+                                            <Link
+                                                href={user ? "/?tab=about_you&profile=expert" : "#"}
+                                                onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
+                                                className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
+                                            >
+                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A10 10 0 1118.88 17.8M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                Expert Studio
+                                            </Link>
+                                            <Link
+                                                href={user ? "/wallet" : "#"}
+                                                onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
+                                                className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
+                                            >
+                                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a5 5 0 00-10 0v2m-2 0h14a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2v-7a2 2 0 012-2z" /></svg>
+                                                Wallet Preview
                                             </Link>
                                             {/* <Link
                                                 href={user ? "/?tab=health_profiles&profile=consumer" : "#"}

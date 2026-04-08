@@ -1,7 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import api from '../../lib/api';
+import { useCart } from '../../context/CartContext';
+import ItemProfileModal from '../../components/commerce/ItemProfileModal';
+import {
+    type CommerceItemProfile,
+    getSupplierPreviewRoute,
+    inferSupplierRole
+} from '../../lib/commerce';
 
 interface InventoryItem {
     id: number;
@@ -16,12 +24,44 @@ interface InventoryItem {
     distance_km?: number;
 }
 
+function toCommerceItemProfile(item: InventoryItem): CommerceItemProfile {
+    const supplierName = item.farmer_name || 'Marketplace grower';
+    const supplierRole = inferSupplierRole(supplierName);
+
+    return {
+        id: String(item.id),
+        name: item.name,
+        category: 'Produce',
+        price: Number(item.price_plyt || 0) * 15000,
+        quantity: item.quantity || 1,
+        unit: item.unit || 'item',
+        image: item.image_url || '/assets/images/store/organic_kale.png',
+        supplierName,
+        supplierRole,
+        supplierLocation: typeof item.distance_km === 'number' ? `${item.distance_km} km away` : 'Nearby market route',
+        description: item.description || 'Fresh market listing surfaced inside the Eat flow.',
+        supplierBio: supplierRole === 'Distributor'
+            ? 'Presented as a distribution partner coordinating nearby availability for recipe-led shopping.'
+            : 'Presented as a grower profile so recipe exploration can stay connected to supplier context.',
+        trustSignals: [
+            supplierRole === 'Distributor' ? 'Distribution-ready availability' : 'Farmer-linked fresh listing',
+            item.category || 'Fresh market category',
+            item.unit ? `${item.unit} inventory unit` : 'Flexible fulfillment planning'
+        ],
+        fulfillment: 'Recipe-driven basket building, local routing, and wallet checkout will land here as the commerce flow expands.',
+        story: 'This preview shows how the Eat experience can open the same item and supplier profile used in store and wallet views.'
+    };
+}
+
 export default function EatPage() {
+    const router = useRouter();
+    const { addToCart, totalItems } = useCart();
     const [items, setItems] = useState<InventoryItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [chatMessage, setChatMessage] = useState('');
+    const [selectedItem, setSelectedItem] = useState<CommerceItemProfile | null>(null);
     const [messages, setMessages] = useState<{ role: 'user' | 'assistant', text: string }[]>([
-        { role: 'assistant', text: 'Hello! What would you like to cook today? I can suggest recipes based on what\'s fresh.' }
+        { role: 'assistant', text: 'Hello! What would you like to cook today? I can suggest recipes based on what is fresh.' }
     ]);
     const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -29,7 +69,7 @@ export default function EatPage() {
         const fetchInventory = async () => {
             try {
                 const res = await api.get('/inventory/search');
-                setItems(res.data);
+                setItems(Array.isArray(res.data) ? res.data : []);
             } catch (error) {
                 console.error('Failed to fetch inventory', error);
             } finally {
@@ -37,20 +77,18 @@ export default function EatPage() {
             }
         };
 
-        fetchInventory();
+        void fetchInventory();
     }, []);
 
     const handleSendMessage = () => {
         if (!chatMessage.trim()) return;
 
-        // Add user message
         const newMessages = [...messages, { role: 'user' as const, text: chatMessage }];
         setMessages(newMessages);
         setChatMessage('');
 
-        // Simulating AI response
         setTimeout(() => {
-            setMessages(prev => [...prev, { role: 'assistant', text: "That sounds delicious! You can find fresh ingredients for that in the market below." }]);
+            setMessages((prev) => [...prev, { role: 'assistant', text: 'That sounds delicious! You can find fresh ingredients for that in the market below.' }]);
         }, 1000);
     };
 
@@ -60,7 +98,6 @@ export default function EatPage() {
         }
     };
 
-    // Auto-scroll chat
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
@@ -70,100 +107,159 @@ export default function EatPage() {
         return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
     };
 
+    const handleAddToCart = (item: InventoryItem) => {
+        addToCart({
+            id: String(item.id),
+            name: item.name,
+            price: parseFloat(item.price_plyt) * 15000,
+            quantity: 1,
+            image: item.image_url,
+            unit: item.unit || 'item',
+            farm: item.farmer_name || 'Marketplace grower'
+        });
+    };
+
     return (
-        <div className="flex flex-col md:flex-row h-[calc(100vh-4rem)] overflow-hidden">
-            {/* Left Interface: Chat (Taking up more space on Mobile) */}
-            <div className="flex-[2] md:flex-1 border-b md:border-b-0 md:border-r border-gray-200 flex flex-col min-h-[50vh] md:min-h-0 bg-white">
-                <div className="p-4 border-b border-gray-200">
+        <div className="flex h-[calc(100vh-4rem)] flex-col overflow-hidden md:flex-row">
+            <div className="flex min-h-[50vh] flex-[2] flex-col border-b border-gray-200 bg-white md:min-h-0 md:flex-1 md:border-b-0 md:border-r">
+                <div className="border-b border-gray-200 p-4">
                     <h2 className="font-semibold text-gray-800">PLYT Assistant (Eat Mode)</h2>
                 </div>
-                <div className="flex-1 p-4 overflow-y-auto bg-gray-50 flex flex-col gap-3">
+                <div className="flex flex-1 flex-col gap-3 overflow-y-auto bg-gray-50 p-4">
                     {messages.map((msg, idx) => (
-                        <div key={idx} className={`max-w-[85%] p-3 rounded-lg text-sm ${msg.role === 'user' ? 'bg-green-100 self-end text-green-900' : 'bg-white shadow-sm self-start text-gray-800'}`}>
+                        <div key={idx} className={`max-w-[85%] rounded-lg p-3 text-sm ${msg.role === 'user' ? 'self-end bg-green-100 text-green-900' : 'self-start bg-white text-gray-800 shadow-sm'}`}>
                             {msg.text}
                         </div>
                     ))}
                     <div ref={chatEndRef} />
                 </div>
-                <div className="p-3 md:p-4 border-t border-gray-200 bg-white flex gap-2">
+                <div className="flex gap-2 border-t border-gray-200 bg-white p-3 md:p-4">
                     <input
                         type="text"
                         value={chatMessage}
                         onChange={(e) => setChatMessage(e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder="Type a message..."
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                        className="flex-1 rounded-full border border-gray-300 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                     <button
+                        type="button"
                         onClick={handleSendMessage}
-                        className="bg-green-600 text-white p-2 rounded-full hover:bg-green-700 transition flex items-center justify-center w-10 h-10"
+                        className="flex min-w-[4.5rem] items-center justify-center rounded-full bg-green-600 px-3 text-sm font-medium text-white transition hover:bg-green-700"
                     >
-                        ➤
+                        Send
                     </button>
                 </div>
             </div>
 
-            {/* Right Interface: Application Marketplace (Bottom on Mobile, Right on Desktop) */}
-            <div className="flex-1 md:w-[28rem] md:flex-none flex flex-col bg-white overflow-hidden">
-                <div className="p-4 border-b border-gray-200 bg-green-50 flex justify-between items-center">
-                    <h2 className="font-semibold text-green-800">Fresh Market</h2>
-                    <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">Nearby</span>
+            <div className="flex flex-1 flex-col overflow-hidden bg-white md:w-[28rem] md:flex-none">
+                <div className="flex items-center justify-between border-b border-gray-200 bg-green-50 p-4">
+                    <div>
+                        <h2 className="font-semibold text-green-800">Fresh Market</h2>
+                        <p className="mt-1 text-[11px] text-green-700">{totalItems} items in basket</p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => router.push('/wallet')}
+                        className="rounded-full bg-green-100 px-3 py-1.5 text-xs font-semibold text-green-600 transition hover:bg-green-200"
+                    >
+                        Wallet preview
+                    </button>
                 </div>
 
-                {/* Scrollable Container based on Viewport */}
-                <div className="flex-1 overflow-x-auto md:overflow-x-hidden md:overflow-y-auto bg-gray-50 p-4">
+                <div className="flex-1 overflow-x-auto bg-gray-50 p-4 md:overflow-x-hidden md:overflow-y-auto">
                     {loading ? (
-                        <div className="text-gray-500 text-sm p-4 text-center">Loading market...</div>
+                        <div className="p-4 text-center text-sm text-gray-500">Loading market...</div>
                     ) : (
-                        <div className="flex md:flex-col gap-4 min-w-max md:min-w-0">
-                            {/* Horizontal Layout on Mobile (flex-row is default for div), Vertical on Desktop via md:flex-col */}
-                            {items.map((item) => (
-                                <div key={item.id} className="w-64 md:w-full bg-white border border-gray-100 p-3 rounded-xl hover:shadow-md transition flex flex-col md:flex-row gap-3 md:gap-4 flex-shrink-0">
-                                    {/* Image */}
-                                    <div className="w-full h-32 md:w-24 md:h-24 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0 relative">
-                                        {item.image_url ? (
-                                            <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="flex items-center justify-center h-full text-xs text-gray-400">No Image</div>
-                                        )}
-                                    </div>
+                        <div className="flex min-w-max gap-4 md:min-w-0 md:flex-col">
+                            {items.map((item) => {
+                                const commerceItem = toCommerceItemProfile(item);
 
-                                    {/* Content */}
-                                    <div className="flex-1 flex flex-col justify-between">
-                                        <div>
-                                            <div className="flex justify-between items-start">
-                                                <h4 className="font-semibold text-gray-800 leading-tight">{item.name}</h4>
-                                                <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{item.distance_km ? `${item.distance_km}km` : '2km'}</span>
-                                            </div>
-                                            <p className="text-xs text-green-600 font-medium mt-0.5 flex items-center gap-1">
-                                                <span>👤 {item.farmer_name || 'Farmer'}</span>
-                                            </p>
+                                return (
+                                    <div key={item.id} className="flex w-64 flex-shrink-0 flex-col gap-3 rounded-xl border border-gray-100 bg-white p-3 transition hover:shadow-md md:w-full md:flex-row md:gap-4">
+                                        <div className="relative h-32 w-full flex-shrink-0 overflow-hidden rounded-lg bg-gray-200 md:h-24 md:w-24">
+                                            {item.image_url ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" />
+                                            ) : (
+                                                <div className="flex h-full items-center justify-center text-xs text-gray-400">No Image</div>
+                                            )}
                                         </div>
 
-                                        <div className="mt-2">
-                                            <div className="flex justify-between items-end">
-                                                <div>
-                                                    <span className="block font-bold text-green-700 text-sm">{Math.floor(parseFloat(item.price_plyt))} PLYT</span>
-                                                    <span className="block text-[10px] text-gray-400">{formatIdr(item.price_plyt)}</span>
+                                        <div className="flex flex-1 flex-col justify-between">
+                                            <div>
+                                                <div className="flex items-start justify-between">
+                                                    <h4 className="font-semibold leading-tight text-gray-800">{item.name}</h4>
+                                                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
+                                                        {item.distance_km ? `${item.distance_km}km` : '2km'}
+                                                    </span>
                                                 </div>
-                                                <button className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition shadow-sm">
-                                                    Add
-                                                </button>
+                                                <p className="mt-0.5 text-xs font-medium text-green-600">
+                                                    Seller: {item.farmer_name || 'Farmer'}
+                                                </p>
+                                            </div>
+
+                                            <div className="mt-2">
+                                                <div className="flex items-end justify-between gap-3">
+                                                    <div>
+                                                        <span className="block text-sm font-bold text-green-700">{Math.floor(parseFloat(item.price_plyt))} PLYT</span>
+                                                        <span className="block text-[10px] text-gray-400">{formatIdr(item.price_plyt)}</span>
+                                                    </div>
+                                                    <div className="flex flex-col items-end gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSelectedItem(commerceItem)}
+                                                            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 shadow-sm transition hover:border-green-300 hover:text-green-700"
+                                                        >
+                                                            View
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleAddToCart(item)}
+                                                            className="rounded-lg bg-green-600 px-3 py-1.5 text-xs text-white shadow-sm transition hover:bg-green-700"
+                                                        >
+                                                            Add
+                                                        </button>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>
 
-                <div className="p-4 border-t border-gray-200 hidden md:block">
-                    <button className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition">
-                        View Basket (0)
+                <div className="hidden border-t border-gray-200 p-4 md:block">
+                    <button
+                        type="button"
+                        onClick={() => router.push('/wallet')}
+                        className="w-full rounded-lg bg-green-600 py-3 font-medium text-white transition hover:bg-green-700"
+                    >
+                        View Basket ({totalItems})
                     </button>
                 </div>
             </div>
+
+            <ItemProfileModal
+                item={selectedItem}
+                onClose={() => setSelectedItem(null)}
+                supplierActionLabel="Open supplier preview"
+                onSupplierAction={selectedItem ? () => {
+                    const previewRoute = getSupplierPreviewRoute(selectedItem.supplierRole);
+                    setSelectedItem(null);
+                    router.push(previewRoute);
+                } : undefined}
+                primaryActionLabel="Add to basket"
+                onPrimaryAction={selectedItem ? () => {
+                    const matchingItem = items.find((item) => String(item.id) === selectedItem.id);
+                    if (matchingItem) {
+                        handleAddToCart(matchingItem);
+                    }
+                    setSelectedItem(null);
+                } : undefined}
+            />
         </div>
     );
 }

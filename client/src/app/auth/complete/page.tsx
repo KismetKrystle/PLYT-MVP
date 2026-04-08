@@ -7,6 +7,7 @@ import { useAuth } from '../../../lib/auth';
 import { useAuth as useClerkAuth, useUser } from '@clerk/nextjs';
 import api from '../../../lib/api';
 import AuthBrandShell from '../../../components/auth/AuthBrandShell';
+import { PUBLIC_APP_HOME_PATH, resolveAuthRedirectPath } from '../../../lib/authPaths';
 
 const hasClerkPublishableKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
@@ -25,7 +26,7 @@ function AuthCompleteScreen() {
     const isSyncingRef = useRef(false);
     const maxRetryCount = 2;
 
-    const redirectPath = searchParams.get('redirect') || '/';
+    const redirectPath = resolveAuthRedirectPath(searchParams.get('redirect'));
     const mode = searchParams.get('mode');
     const defaultDestination = useMemo(() => {
         if (mode === 'kyc') {
@@ -158,6 +159,7 @@ export default function AuthCompletePage() {
     if (!hasClerkPublishableKey) {
         return (
             <AuthBrandShell
+                backHref={PUBLIC_APP_HOME_PATH}
                 subtitle="Your client session needs Clerk configured before Plyant can complete sign-in."
                 title="Clerk is not configured"
             >

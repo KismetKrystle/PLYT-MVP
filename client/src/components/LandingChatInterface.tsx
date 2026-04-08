@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import MarketTicker from './MarketTicker';
 import Logo from './Logo';
 import { useAuth } from '../lib/auth';
+import { PUBLIC_APP_HOME_PATH } from '../lib/authPaths';
 
 // Preset tags for the subject chips
 const PRESET_TAGS = [
@@ -219,7 +220,7 @@ export default function LandingChatInterface() {
                             Sign In
                         </button>
                         <button
-                            onClick={() => router.push('/signup')}
+                            onClick={() => router.push(`/signup?redirect=${encodeURIComponent(PUBLIC_APP_HOME_PATH)}`)}
                             className="rounded-full bg-green-600 px-3 py-1.5 text-[11px] font-medium text-white shadow-lg shadow-green-600/20 transition-all hover:-translate-y-0.5 hover:bg-green-700 hover:shadow-xl md:px-5 md:py-2 md:text-sm"
                         >
                             Join Network
@@ -229,19 +230,19 @@ export default function LandingChatInterface() {
             </header>
 
             {/* Main Content Area */}
-            <main className={`relative z-10 mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col items-center justify-center space-y-4 overflow-hidden px-3 pb-[max(3.5rem,env(safe-area-inset-bottom))] md:px-4 md:space-y-8 md:pb-20 md:pt-16 ${
+            <main className={`relative z-10 mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col items-center justify-center space-y-4 overflow-x-visible overflow-y-hidden px-3 pb-[max(3.5rem,env(safe-area-inset-bottom))] md:px-4 md:space-y-8 md:pb-20 md:pt-16 ${
                 isMobileHeaderVisible ? 'pt-[calc(9rem+env(safe-area-inset-top))]' : 'pt-24'
             }`}>
 
                 {/* Hero Text */}
-                <div className="mb-0 shrink-0 space-y-2 text-center md:mb-2 md:space-y-4">
+                <div className="mb-0 shrink-0 space-y-2 px-2 text-center overflow-visible md:mb-2 md:space-y-4">
                     <motion.h1
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="text-[2rem] font-extrabold leading-[1.05] tracking-tight text-gray-900 md:text-6xl"
+                        className="inline-block pb-[0.12em] pr-[0.12em] text-[2rem] font-extrabold leading-[1.14] tracking-[-0.02em] text-gray-900 md:text-6xl md:leading-[1.08] md:tracking-tight"
                     >
-                        What's your <br />
-                        <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-600 to-emerald-600">
+                        What’s your <br />
+                        <span className="inline-block pb-[0.12em] pr-[0.12em] bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
                             craving?
                         </span>
                     </motion.h1>
@@ -349,7 +350,7 @@ export default function LandingChatInterface() {
                         <button
                             key={tag}
                             onClick={() => handleTagClick(tag)}
-                            className={`px-3 py-1.5 md:px-4 md:py-2 rounded-full border text-xs md:text-sm font-medium transition-all duration-300 ${selectedTags.includes(tag)
+                            className={`px-3 py-1.5 md:px-4 md:py-2 rounded-xl border text-xs md:text-sm font-medium transition-all duration-300 ${selectedTags.includes(tag)
                                 ? 'bg-green-600 text-white border-green-600'
                                 : 'bg-white text-gray-600 border-gray-200 hover:border-green-400 hover:text-green-600 hover:bg-green-50'
                                 }`}

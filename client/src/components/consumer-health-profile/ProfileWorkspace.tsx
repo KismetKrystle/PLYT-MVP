@@ -250,6 +250,12 @@ function getHeading(mode: ProfileMode) {
     };
 }
 
+const PROFILE_MODE_LINKS: Array<{ mode: ProfileMode; label: string; href: string }> = [
+    { mode: 'consumer', label: 'About You', href: '/?tab=about_you&profile=consumer' },
+    { mode: 'business', label: 'Producer Profile', href: '/?tab=about_you&profile=business' },
+    { mode: 'expert', label: 'Expert Studio', href: '/?tab=about_you&profile=expert' }
+];
+
 function joinLabels(values: string[], labels: Record<string, string>) {
     return values
         .map((value) => labels[value] || value)
@@ -797,6 +803,79 @@ export default function ProfileWorkspace() {
                 <p className="mt-1 text-sm text-gray-600">{heading.subtitle}</p>
             </div>
 
+            <div className="mt-4 flex flex-wrap gap-2">
+                {PROFILE_MODE_LINKS.map((item) => (
+                    <Link
+                        key={item.mode}
+                        href={item.href}
+                        className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+                            mode === item.mode
+                                ? 'border-green-600 bg-green-600 text-white'
+                                : 'border-gray-200 bg-white text-gray-700 hover:border-green-300 hover:text-green-700'
+                        }`}
+                    >
+                        {item.label}
+                    </Link>
+                ))}
+            </div>
+
+            {mode === 'expert' ? (
+                <div className="mt-4 space-y-4">
+                    <section className="overflow-hidden rounded-3xl border border-emerald-100 bg-gradient-to-br from-[#f4fbf5] via-white to-[#eef8f2] p-6 shadow-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div className="max-w-2xl">
+                                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">Coming Soon</p>
+                                <h3 className="mt-2 text-2xl font-bold text-gray-900">Expert Studio Preview</h3>
+                                <p className="mt-2 text-sm leading-6 text-gray-600">
+                                    This is where verified practitioners, coaches, and educators will shape their public expert presence inside PLYT. You can already sketch the profile basics below while the rest of the operating layer is still in preview.
+                                </p>
+                            </div>
+                            <div className="rounded-2xl border border-emerald-200 bg-white/90 px-4 py-3 text-sm text-emerald-900 shadow-sm">
+                                <p className="font-semibold">XRPL tie-in planned</p>
+                                <p className="mt-1 text-emerald-700">Wallet-linked payouts, token-gated assets, and credential-backed expert drops.</p>
+                            </div>
+                        </div>
+                        <div className="mt-5 grid gap-3 md:grid-cols-3">
+                            {[
+                                {
+                                    title: 'Credentialed presence',
+                                    description: 'Display your background, specialties, and proof points in a member-facing expert card.'
+                                },
+                                {
+                                    title: 'Programs and digital drops',
+                                    description: 'Package protocols, recipe systems, guides, and premium content into mintable expert resources.'
+                                },
+                                {
+                                    title: 'Payout and royalty rails',
+                                    description: 'Support creator payouts, affiliate splits, and secondary-sale participation from the same asset layer.'
+                                }
+                            ].map((item) => (
+                                <div key={item.title} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                                    <p className="text-sm font-bold text-gray-900">{item.title}</p>
+                                    <p className="mt-2 text-sm leading-6 text-gray-600">{item.description}</p>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-5 flex flex-wrap gap-3">
+                            <button
+                                type="button"
+                                onClick={() => router.push('/wallet')}
+                                className="rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700"
+                            >
+                                Open Wallet Preview
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => router.push('/?tab=living_library')}
+                                className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:border-green-300 hover:text-green-700"
+                            >
+                                View Living Library
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            ) : null}
+
             {mode === 'consumer' ? (
                 <div className="mt-4 space-y-3">
                     <button
@@ -1282,6 +1361,7 @@ export default function ProfileWorkspace() {
                         <SectionCard
                             title="Business Identity"
                             hint="Help buyers understand who you are and what makes your food offer unique."
+                            className="lg:col-span-6"
                         >
                             <input
                                 className={inputCls}
@@ -1300,6 +1380,7 @@ export default function ProfileWorkspace() {
                         <SectionCard
                             title="Products & Service Area"
                             hint="Define what you offer so the assistant can connect you with relevant demand."
+                            className="lg:col-span-6"
                         >
                             <input
                                 className={inputCls}
@@ -1330,6 +1411,7 @@ export default function ProfileWorkspace() {
                         <SectionCard
                             title="Professional Identity"
                             hint="Let users know your credentials and how you support food/wellness outcomes."
+                            className="lg:col-span-6"
                         >
                             <input
                                 className={inputCls}
@@ -1347,6 +1429,7 @@ export default function ProfileWorkspace() {
                         <SectionCard
                             title="Expertise & Bio"
                             hint="Focus areas help the assistant surface your strongest guidance context."
+                            className="lg:col-span-6"
                         >
                             <input
                                 className={inputCls}

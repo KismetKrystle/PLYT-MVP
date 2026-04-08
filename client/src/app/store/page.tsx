@@ -2,8 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { useCart } from '../../context/CartContext';
+import ItemProfileModal from '../../components/commerce/ItemProfileModal';
+import {
+    type CommerceItemProfile,
+    getSupplierPreviewRoute,
+    inferSupplierRole
+} from '../../lib/commerce';
 
 type StoreTab = 'fresh_produce' | 'request_store';
 
@@ -83,8 +91,43 @@ const TAB_OPTIONS: Array<{ id: StoreTab; label: string }> = [
     { id: 'request_store', label: 'Messages to Admin' }
 ];
 
+function toCommerceItemProfile(item: InventoryItem): CommerceItemProfile {
+    const supplierName = String(item.farmer_name || 'Marketplace grower');
+    const price = Number(item.price_fiat ?? item.price_plyt ?? 0);
+    const quantity = Number(item.quantity ?? 1) || 1;
+    const unit = String(item.unit || 'item');
+    const distance = typeof item.distance_km === 'number' ? `${item.distance_km} km delivery radius` : 'Local marketplace route';
+    const role = inferSupplierRole(supplierName);
+
+    return {
+        id: String(item.id),
+        name: item.name,
+        category: 'Produce',
+        price,
+        quantity,
+        unit,
+        image: String(item.image_url || '/assets/images/store/organic_kale.png'),
+        supplierName,
+        supplierRole: role,
+        supplierLocation: distance,
+        description: String(item.description || 'Fresh listing from the current marketplace inventory.'),
+        supplierBio: role === 'Distributor'
+            ? 'This supplier is presented as a distribution-layer partner coordinating produce from multiple growers into one accessible marketplace flow.'
+            : 'This supplier is presented as a grower-facing partner profile so customers can understand where their produce is coming from before purchase.',
+        trustSignals: [
+            role === 'Distributor' ? 'Distribution-ready inventory routing' : 'Grower-linked marketplace listing',
+            item.category ? `${item.category} category listing` : 'Fresh marketplace inventory',
+            typeof item.distance_km === 'number' ? `${item.distance_km} km away` : 'Local delivery or pickup planning'
+        ],
+        fulfillment: 'Pickup, routed delivery, and wallet-assisted checkout will appear here as supplier operations come online.',
+        story: 'This modal is designed to scale as farmers and distributors plug inventory into PLYT, keeping the item story and supplier profile visible at the moment of purchase.'
+    };
+}
+
 export default function StorePage() {
     const { user, openLoginModal } = useAuth();
+    const { items: cartItems, addToCart, totalItems } = useCart();
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState<StoreTab>('fresh_produce');
     const [category, setCategory] = useState('All');
     const [storeRequest, setStoreRequest] = useState('');
@@ -93,6 +136,7 @@ export default function StorePage() {
     const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
     const [inventoryError, setInventoryError] = useState<string | null>(null);
     const [isLoadingInventory, setIsLoadingInventory] = useState(true);
+    const [selectedItem, setSelectedItem] = useState<CommerceItemProfile | null>(null);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -151,6 +195,26 @@ export default function StorePage() {
             : inventoryItems.filter((item) => String(item.category || '').trim() === category)),
         [category, inventoryItems]
     );
+    const cartQuantities = useMemo(
+        () => new Map(cartItems.map((item) => [item.id, item.quantity])),
+        [cartItems]
+    );
+
+    const handleAddToCart = (product: InventoryItem) => {
+        const unit = String(product.unit || 'item');
+        const supplierName = String(product.farmer_name || 'Marketplace grower');
+        const price = Number(product.price_fiat ?? product.price_plyt ?? 0);
+
+        addToCart({
+            id: String(product.id),
+            name: product.name,
+            price,
+            quantity: 1,
+            image: String(product.image_url || '/assets/images/store/organic_kale.png'),
+            unit,
+            farm: supplierName
+        });
+    };
 
     const handleStoreRequestSubmit = async () => {
         const trimmedRequest = storeRequest.trim();
@@ -192,21 +256,34 @@ export default function StorePage() {
                     </p>
                 </div>
 
-                <div className="inline-flex rounded-full border border-gray-200 bg-white p-1 shadow-sm">
-                    {TAB_OPTIONS.map((tab) => (
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-right">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Basket sync</p>
+                        <p className="mt-1 text-lg font-bold text-gray-900">{totalItems} items</p>
                         <button
-                            key={tab.id}
                             type="button"
-                            onClick={() => setActiveTab(tab.id)}
-                            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                                activeTab === tab.id
-                                    ? 'bg-green-600 text-white shadow'
-                                    : 'text-gray-600 hover:bg-gray-50'
-                            }`}
+                            onClick={() => router.push('/wallet')}
+                            className="mt-2 text-xs font-semibold text-emerald-700 transition hover:text-emerald-900"
                         >
-                            {tab.label}
+                            Open wallet preview
                         </button>
-                    ))}
+                    </div>
+                    <div className="inline-flex rounded-full border border-gray-200 bg-white p-1 shadow-sm">
+                        {TAB_OPTIONS.map((tab) => (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                                    activeTab === tab.id
+                                        ? 'bg-green-600 text-white shadow'
+                                        : 'text-gray-600 hover:bg-gray-50'
+                                }`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 
@@ -256,6 +333,7 @@ export default function StorePage() {
                     ) : (
                         <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4">
                             {filteredProduce.map((product) => {
+                                const commerceItem = toCommerceItemProfile(product);
                                 const imageSrc = String(product.image_url || '/assets/images/store/organic_kale.png');
                                 const price = Number(product.price_fiat ?? product.price_plyt ?? 0);
                                 const seller = String(product.farmer_name || 'Marketplace seller');
@@ -263,6 +341,7 @@ export default function StorePage() {
                                 const quantityLabel = product.quantity != null
                                     ? `${product.quantity}${product.unit ? ` ${product.unit}` : ''} available`
                                     : null;
+                                const inCartQuantity = cartQuantities.get(String(product.id)) || 0;
 
                                 return (
                                     <div key={product.id} className="group overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md">
@@ -287,14 +366,29 @@ export default function StorePage() {
                                                 {quantityLabel ? <p>{quantityLabel}</p> : null}
                                                 {typeof product.distance_km === 'number' ? <p>{product.distance_km} km away</p> : null}
                                             </div>
-                                            <div className="mt-4 flex items-center justify-between">
-                                                <span className="font-bold text-gray-900">Rp {price.toLocaleString()}</span>
-                                                <button
-                                                    type="button"
-                                                    className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-green-700 transition hover:bg-green-600 hover:text-white"
-                                                >
-                                                    +
-                                                </button>
+                                            <div className="mt-4 flex items-center justify-between gap-3">
+                                                <div>
+                                                    <span className="font-bold text-gray-900">Rp {price.toLocaleString()}</span>
+                                                    {inCartQuantity > 0 ? (
+                                                        <p className="mt-1 text-[11px] font-medium text-emerald-700">{inCartQuantity} in basket</p>
+                                                    ) : null}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSelectedItem(commerceItem)}
+                                                        className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:border-green-300 hover:text-green-700"
+                                                    >
+                                                        View profile
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleAddToCart(product)}
+                                                        className="rounded-xl bg-green-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-green-700"
+                                                    >
+                                                        Add to basket
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -347,6 +441,25 @@ export default function StorePage() {
                     </div>
                 </section>
             )}
+
+            <ItemProfileModal
+                item={selectedItem}
+                onClose={() => setSelectedItem(null)}
+                supplierActionLabel="Open supplier preview"
+                onSupplierAction={selectedItem ? () => {
+                    const previewRoute = getSupplierPreviewRoute(selectedItem.supplierRole);
+                    setSelectedItem(null);
+                    router.push(previewRoute);
+                } : undefined}
+                primaryActionLabel="Add to basket"
+                onPrimaryAction={selectedItem ? () => {
+                    const matchingItem = inventoryItems.find((item) => String(item.id) === selectedItem.id);
+                    if (matchingItem) {
+                        handleAddToCart(matchingItem);
+                    }
+                    setSelectedItem(null);
+                } : undefined}
+            />
         </div>
     );
 }

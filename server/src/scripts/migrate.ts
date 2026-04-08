@@ -84,6 +84,79 @@ async function migrate() {
         `);
 
         await pool.query(`
+            CREATE TABLE IF NOT EXISTS businesses (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                business_type VARCHAR(20) NOT NULL DEFAULT 'farmer',
+                name TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                primary_location TEXT DEFAULT '',
+                service_region TEXT DEFAULT '',
+                profile_data JSONB DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+        await pool.query(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';`);
+        await pool.query(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS primary_location TEXT DEFAULT '';`);
+        await pool.query(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS service_region TEXT DEFAULT '';`);
+        await pool.query(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS profile_data JSONB DEFAULT '{}'::jsonb;`);
+        await pool.query(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();`);
+        await pool.query(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();`);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS business_memberships (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+                user_id ${userIdSqlType} NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                role VARCHAR(20) NOT NULL DEFAULT 'member',
+                status VARCHAR(20) NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE (business_id, user_id)
+            );
+        `);
+        await pool.query(`ALTER TABLE business_memberships ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'member';`);
+        await pool.query(`ALTER TABLE business_memberships ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';`);
+        await pool.query(`ALTER TABLE business_memberships ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();`);
+        await pool.query(`ALTER TABLE business_memberships ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_business_memberships_user_id ON business_memberships(user_id, status, updated_at DESC);`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_business_memberships_business_id ON business_memberships(business_id, status, updated_at DESC);`);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS inventory (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                farmer_id ${userIdSqlType} REFERENCES users(id) ON DELETE SET NULL,
+                business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                price_plyt NUMERIC(12, 2) DEFAULT 0,
+                price_fiat NUMERIC(12, 2) DEFAULT 0,
+                image_url TEXT,
+                category TEXT,
+                quantity NUMERIC(12, 2) DEFAULT 0,
+                unit TEXT DEFAULT 'item',
+                source_type VARCHAR(20) NOT NULL DEFAULT 'manual',
+                external_source TEXT,
+                external_item_id TEXT,
+                enrichment_data JSONB DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+        await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS farmer_id ${userIdSqlType} REFERENCES users(id) ON DELETE SET NULL;`);
+        await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS business_id UUID REFERENCES businesses(id) ON DELETE CASCADE;`);
+        await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS price_fiat NUMERIC(12, 2) DEFAULT 0;`);
+        await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS source_type VARCHAR(20) NOT NULL DEFAULT 'manual';`);
+        await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS external_source TEXT;`);
+        await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS external_item_id TEXT;`);
+        await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS enrichment_data JSONB DEFAULT '{}'::jsonb;`);
+        await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();`);
+        await pool.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_inventory_business_id ON inventory(business_id, updated_at DESC);`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_inventory_farmer_id ON inventory(farmer_id, updated_at DESC);`);
+        await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_business_external_item ON inventory (business_id, external_source, external_item_id) WHERE external_item_id IS NOT NULL;`);
+
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS chat_history (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 user_id ${userIdSqlType} REFERENCES users(id) ON DELETE CASCADE,

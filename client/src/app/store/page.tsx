@@ -26,6 +26,9 @@ type InventoryItem = {
     quantity?: number | null;
     unit?: string | null;
     farmer_name?: string | null;
+    supplier_name?: string | null;
+    supplier_type?: string | null;
+    supplier_location?: string | null;
     distance_km?: number | null;
 };
 
@@ -92,12 +95,13 @@ const TAB_OPTIONS: Array<{ id: StoreTab; label: string }> = [
 ];
 
 function toCommerceItemProfile(item: InventoryItem): CommerceItemProfile {
-    const supplierName = String(item.farmer_name || 'Marketplace grower');
+    const supplierName = String(item.supplier_name || item.farmer_name || 'Marketplace grower');
     const price = Number(item.price_fiat ?? item.price_plyt ?? 0);
     const quantity = Number(item.quantity ?? 1) || 1;
     const unit = String(item.unit || 'item');
-    const distance = typeof item.distance_km === 'number' ? `${item.distance_km} km delivery radius` : 'Local marketplace route';
-    const role = inferSupplierRole(supplierName);
+    const distance = String(item.supplier_location || '').trim()
+        || (typeof item.distance_km === 'number' ? `${item.distance_km} km delivery radius` : 'Local marketplace route');
+    const role = inferSupplierRole(String(item.supplier_type || supplierName));
 
     return {
         id: String(item.id),
@@ -202,7 +206,7 @@ export default function StorePage() {
 
     const handleAddToCart = (product: InventoryItem) => {
         const unit = String(product.unit || 'item');
-        const supplierName = String(product.farmer_name || 'Marketplace grower');
+        const supplierName = String(product.supplier_name || product.farmer_name || 'Marketplace grower');
         const price = Number(product.price_fiat ?? product.price_plyt ?? 0);
 
         addToCart({
@@ -336,7 +340,7 @@ export default function StorePage() {
                                 const commerceItem = toCommerceItemProfile(product);
                                 const imageSrc = String(product.image_url || '/assets/images/store/organic_kale.png');
                                 const price = Number(product.price_fiat ?? product.price_plyt ?? 0);
-                                const seller = String(product.farmer_name || 'Marketplace seller');
+                                const seller = String(product.supplier_name || product.farmer_name || 'Marketplace seller');
                                 const description = String(product.description || 'Fresh listing from the current marketplace inventory.');
                                 const quantityLabel = product.quantity != null
                                     ? `${product.quantity}${product.unit ? ` ${product.unit}` : ''} available`

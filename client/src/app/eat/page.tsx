@@ -21,12 +21,15 @@ interface InventoryItem {
     quantity: number;
     unit: string;
     farmer_name?: string;
+    supplier_name?: string;
+    supplier_type?: string;
+    supplier_location?: string;
     distance_km?: number;
 }
 
 function toCommerceItemProfile(item: InventoryItem): CommerceItemProfile {
-    const supplierName = item.farmer_name || 'Marketplace grower';
-    const supplierRole = inferSupplierRole(supplierName);
+    const supplierName = item.supplier_name || item.farmer_name || 'Marketplace grower';
+    const supplierRole = inferSupplierRole(item.supplier_type || supplierName);
 
     return {
         id: String(item.id),
@@ -38,7 +41,7 @@ function toCommerceItemProfile(item: InventoryItem): CommerceItemProfile {
         image: item.image_url || '/assets/images/store/organic_kale.png',
         supplierName,
         supplierRole,
-        supplierLocation: typeof item.distance_km === 'number' ? `${item.distance_km} km away` : 'Nearby market route',
+        supplierLocation: item.supplier_location || (typeof item.distance_km === 'number' ? `${item.distance_km} km away` : 'Nearby market route'),
         description: item.description || 'Fresh market listing surfaced inside the Eat flow.',
         supplierBio: supplierRole === 'Distributor'
             ? 'Presented as a distribution partner coordinating nearby availability for recipe-led shopping.'
@@ -115,7 +118,7 @@ export default function EatPage() {
             quantity: 1,
             image: item.image_url,
             unit: item.unit || 'item',
-            farm: item.farmer_name || 'Marketplace grower'
+            farm: item.supplier_name || item.farmer_name || 'Marketplace grower'
         });
     };
 
@@ -195,7 +198,7 @@ export default function EatPage() {
                                                     </span>
                                                 </div>
                                                 <p className="mt-0.5 text-xs font-medium text-green-600">
-                                                    Seller: {item.farmer_name || 'Farmer'}
+                                                    Seller: {item.supplier_name || item.farmer_name || 'Farmer'}
                                                 </p>
                                             </div>
 

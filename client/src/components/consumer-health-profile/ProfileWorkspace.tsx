@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import BusinessWorkspace from '../business/BusinessWorkspace';
 
 type ProfileMode = 'consumer' | 'business' | 'expert';
 
@@ -234,8 +235,8 @@ function getRoute(mode: ProfileMode) {
 function getHeading(mode: ProfileMode) {
     if (mode === 'business') {
         return {
-            title: 'Farmer / Distributor Profile',
-            subtitle: 'Show what you grow, where you serve, and what products you offer.'
+            title: 'Business Profile',
+            subtitle: 'Manage the supplier business, attached operators, and inventory from one shared profile.'
         };
     }
     if (mode === 'expert') {
@@ -252,7 +253,7 @@ function getHeading(mode: ProfileMode) {
 
 const PROFILE_MODE_LINKS: Array<{ mode: ProfileMode; label: string; href: string }> = [
     { mode: 'consumer', label: 'About You', href: '/?tab=about_you&profile=consumer' },
-    { mode: 'business', label: 'Producer Profile', href: '/?tab=about_you&profile=business' },
+    { mode: 'business', label: 'Business Profile', href: '/?tab=about_you&profile=business' },
     { mode: 'expert', label: 'Expert Studio', href: '/?tab=about_you&profile=expert' }
 ];
 
@@ -441,6 +442,11 @@ export default function ProfileWorkspace() {
     useEffect(() => {
         const loadProfile = async () => {
             if (!user?.id) return;
+            if (mode === 'business') {
+                setIsLoading(false);
+                setStatus(null);
+                return;
+            }
             setIsLoading(true);
             setStatus(null);
             setLastUpdatedAt(null);
@@ -461,15 +467,6 @@ export default function ProfileWorkspace() {
                         })
                     );
                     setNoteDraft('');
-                } else if (mode === 'business') {
-                    const p = data as BusinessProfile;
-                    setBusinessForm({
-                        business_name: p.business_name || '',
-                        description: p.description || '',
-                        location: p.location || '',
-                        product_types: (p.product_types || []).join(', '),
-                        subscription_tier: p.subscription_tier || 'free'
-                    });
                 } else {
                     const p = data as ExpertProfile;
                     setExpertForm({
@@ -1357,53 +1354,9 @@ export default function ProfileWorkspace() {
                 ) : null}
 
                 {mode === 'business' ? (
-                    <>
-                        <SectionCard
-                            title="Business Identity"
-                            hint="Help buyers understand who you are and what makes your food offer unique."
-                            className="lg:col-span-6"
-                        >
-                            <input
-                                className={inputCls}
-                                placeholder="Business or farm name"
-                                value={businessForm.business_name}
-                                onChange={(e) => setBusinessForm({ ...businessForm, business_name: e.target.value })}
-                            />
-                            <textarea
-                                className={inputCls}
-                                rows={3}
-                                placeholder="Short description of your farm/distribution operation"
-                                value={businessForm.description}
-                                onChange={(e) => setBusinessForm({ ...businessForm, description: e.target.value })}
-                            />
-                        </SectionCard>
-                        <SectionCard
-                            title="Products & Service Area"
-                            hint="Define what you offer so the assistant can connect you with relevant demand."
-                            className="lg:col-span-6"
-                        >
-                            <input
-                                className={inputCls}
-                                placeholder="Vegetables, herbs, dairy..."
-                                value={businessForm.product_types}
-                                onChange={(e) => setBusinessForm({ ...businessForm, product_types: e.target.value })}
-                            />
-                            <input
-                                className={inputCls}
-                                placeholder="Location / region served"
-                                value={businessForm.location}
-                                onChange={(e) => setBusinessForm({ ...businessForm, location: e.target.value })}
-                            />
-                            <select
-                                className={inputCls}
-                                value={businessForm.subscription_tier}
-                                onChange={(e) => setBusinessForm({ ...businessForm, subscription_tier: e.target.value })}
-                            >
-                                <option value="free">Free Tier</option>
-                                <option value="paid">Paid Tier</option>
-                            </select>
-                        </SectionCard>
-                    </>
+                    <div className="lg:col-span-12">
+                        <BusinessWorkspace />
+                    </div>
                 ) : null}
 
                 {mode === 'expert' ? (
@@ -1450,7 +1403,7 @@ export default function ProfileWorkspace() {
             </div>
             )}
 
-            {!(mode === 'consumer' && consumerTab === 'report') ? (
+            {mode !== 'business' && !(mode === 'consumer' && consumerTab === 'report') ? (
             <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 {isLoading ? <p className="text-sm text-gray-500">Loading profile...</p> : null}
                 {status ? <p className="text-sm text-gray-700">{status}</p> : null}

@@ -50,6 +50,49 @@ CREATE TABLE IF NOT EXISTS expert_profiles (
   UNIQUE (user_id)
 );
 
+CREATE TABLE IF NOT EXISTS businesses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_type VARCHAR(20) NOT NULL DEFAULT 'farmer',
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  primary_location TEXT DEFAULT '',
+  service_region TEXT DEFAULT '',
+  profile_data JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS business_memberships (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role VARCHAR(20) NOT NULL DEFAULT 'member',
+  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (business_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS inventory (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  farmer_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  price_plyt NUMERIC(12, 2) DEFAULT 0,
+  price_fiat NUMERIC(12, 2) DEFAULT 0,
+  image_url TEXT,
+  category TEXT,
+  quantity NUMERIC(12, 2) DEFAULT 0,
+  unit TEXT DEFAULT 'item',
+  source_type VARCHAR(20) NOT NULL DEFAULT 'manual',
+  external_source TEXT,
+  external_item_id TEXT,
+  enrichment_data JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS chat_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -216,3 +259,8 @@ CREATE INDEX IF NOT EXISTS idx_messages_to_admin_created_at ON messages_to_admin
 CREATE INDEX IF NOT EXISTS idx_messages_to_admin_status ON messages_to_admin(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_memory_events_user_id_created_at ON user_memory_events(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_preference_signals_user_id_type ON user_preference_signals(user_id, signal_type, last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_business_memberships_user_id ON business_memberships(user_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_business_memberships_business_id ON business_memberships(business_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inventory_business_id ON inventory(business_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inventory_farmer_id ON inventory(farmer_id, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_business_external_item ON inventory (business_id, external_source, external_item_id) WHERE external_item_id IS NOT NULL;

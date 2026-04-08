@@ -20,6 +20,7 @@ import consumerHealthProfileRoutes from './routes/consumer-health-profile';
 import farmerProfileRoutes from './routes/farmer-profiles';
 import expertProfileRoutes from './routes/expert-profiles';
 import messagesToAdminRoutes from './routes/messages-to-admin';
+import businessRoutes from './routes/businesses';
 import { softAuthenticateToken } from './middleware/softAuth';
 import { checkGatekeeper } from './middleware/gatekeeper';
 
@@ -86,6 +87,7 @@ app.use('/users', usersRoutes);
 app.use('/consumer-health-profile', consumerHealthProfileRoutes);
 app.use('/farmer-profiles', farmerProfileRoutes);
 app.use('/expert-profiles', expertProfileRoutes);
+app.use('/businesses', businessRoutes);
 app.use('/session', sessionRoutes);
 app.use('/assistant', assistantRoutes);
 app.use('/inventory', inventoryRoutes);

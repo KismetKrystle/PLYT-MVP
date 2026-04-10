@@ -10,6 +10,7 @@ type ItemProfileModalProps = {
     onClose: () => void;
     supplierActionLabel?: string;
     onSupplierAction?: () => void;
+    supplierActionDisabled?: boolean;
     primaryActionLabel?: string;
     onPrimaryAction?: () => void;
     primaryActionDisabled?: boolean;
@@ -33,6 +34,7 @@ export default function ItemProfileModal({
     onClose,
     supplierActionLabel = 'View supplier preview',
     onSupplierAction,
+    supplierActionDisabled = false,
     primaryActionLabel = 'Primary action',
     onPrimaryAction,
     primaryActionDisabled = false
@@ -122,7 +124,12 @@ export default function ItemProfileModal({
                                         <button
                                             type="button"
                                             onClick={onSupplierAction}
-                                            className="rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700"
+                                            disabled={supplierActionDisabled}
+                                            className={`rounded-xl px-4 py-2.5 text-sm font-semibold ${
+                                                supplierActionDisabled
+                                                    ? 'cursor-not-allowed border border-gray-200 bg-white text-gray-400'
+                                                    : 'bg-green-600 text-white transition hover:bg-green-700'
+                                            }`}
                                         >
                                             {supplierActionLabel}
                                         </button>

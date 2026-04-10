@@ -26,6 +26,8 @@ import { buildRelevantMemoryPromptSection } from '../services/userMemory';
 const router = express.Router();
 let chatSchemaReady: Promise<void> | null = null;
 const GOOGLE_SOURCE_RESULT_LIMIT = 5;
+type ChatFallbackReason = 'config_missing' | 'provider_error' | 'generation_failed';
+type LocationResolutionReason = 'resolved' | 'missing' | 'geocode_failed';
 
 async function ensureChatConversationSchema() {
     if (!chatSchemaReady) {
@@ -757,34 +759,147 @@ Rules:
     };
 }
 
+function extractRecipeCuisineThemes(recipeTitle: string) {
+    const normalizedTitle = normalizeSearchPhraseCandidate(recipeTitle).toLowerCase();
+    if (!normalizedTitle) return [];
+
+    const matches = new Set<string>();
+    const cuisinePatterns: Array<{ pattern: RegExp; label: string }> = [
+        { pattern: /\bitalian\b|\bpasta\b|\brisotto\b|\bgnocchi\b/, label: 'italian' },
+        { pattern: /\bmexican\b|\btaco\b|\bburrito\b|\bquesadilla\b/, label: 'mexican' },
+        { pattern: /\bindian\b|\bcurry\b|\bmasala\b|\btikka\b/, label: 'indian' },
+        { pattern: /\bthai\b|\bpad thai\b|\bgreen curry\b|\bred curry\b/, label: 'thai' },
+        { pattern: /\bjapanese\b|\bramen\b|\budon\b|\bteriyaki\b/, label: 'japanese' },
+        { pattern: /\bkorean\b|\bbibimbap\b|\bkimchi\b/, label: 'korean' },
+        { pattern: /\bchinese\b|\bstir fry\b|\bdumpling\b|\bnoodle\b/, label: 'chinese' },
+        { pattern: /\bvietnamese\b|\bpho\b|\bbanh mi\b/, label: 'vietnamese' },
+        { pattern: /\bmediterranean\b|\bgreek\b|\bhummus\b|\bfalafel\b/, label: 'mediterranean' },
+        { pattern: /\bfrench\b|\bratatouille\b|\bquiche\b/, label: 'french' }
+    ];
+
+    cuisinePatterns.forEach(({ pattern, label }) => {
+        if (pattern.test(normalizedTitle)) matches.add(label);
+    });
+
+    return Array.from(matches).slice(0, 2);
+}
+
+function buildIngredientCategoryQueries(ingredientNames: string[]) {
+    const hints = new Set<string>();
+    const combined = ingredientNames.join(' ');
+
+    if (/(tomato|lettuce|spinach|kale|carrot|broccoli|cabbage|pepper|onion|garlic|cucumber|zucchini|eggplant|potato|mushroom|greens?|vegetable)/.test(combined)) {
+        hints.add('produce market');
+        hints.add('vegetable market');
+    }
+    if (/(apple|banana|berry|berries|mango|papaya|pineapple|orange|lemon|lime|avocado|fruit)/.test(combined)) {
+        hints.add('fruit market');
+        hints.add('produce market');
+    }
+    if (/(basil|parsley|cilantro|coriander|mint|rosemary|thyme|oregano|dill|sage|turmeric|cumin|paprika|spice|herb|peppercorn|cinnamon)/.test(combined)) {
+        hints.add('herb and spice shop');
+        hints.add('grocery herbs and spices');
+    }
+    if (/(rice|pasta|flour|beans|lentils|chickpeas|oats|bread|stock|broth|sauce|oil|vinegar|pantry)/.test(combined)) {
+        hints.add('grocery store');
+        hints.add('dry goods');
+    }
+    if (/(chicken|beef|steak|fish|salmon|shrimp|prawn|tofu|tempeh|egg|eggs|protein)/.test(combined)) {
+        hints.add('fresh market');
+        hints.add('grocery store');
+    }
+    if (/(milk|cheese|yogurt|butter|cream|mozzarella|parmesan|feta|dairy)/.test(combined)) {
+        hints.add('grocery store');
+        hints.add('dairy grocery');
+    }
+
+    return Array.from(hints).slice(0, 4);
+}
+
+function buildCuratedGoogleIngredientQueries(cuisineThemes: string[], categoryQueries: string[]) {
+    const queries = new Set<string>();
+
+    queries.add('market');
+    queries.add('produce');
+    queries.add('grocery');
+    queries.add('grocery store');
+    queries.add('produce market');
+    queries.add('farmers market');
+    queries.add('supermarket');
+    queries.add('fresh market');
+
+    categoryQueries.forEach((query) => queries.add(query));
+
+    if (categoryQueries.some((query) => /(produce|vegetable|fruit)/.test(query))) {
+        queries.add('greengrocer');
+        queries.add('vegetable shop');
+        queries.add('fruit shop');
+    }
+
+    if (categoryQueries.some((query) => /(herb|spice)/.test(query))) {
+        queries.add('health food store');
+        queries.add('organic store');
+    }
+
+    if (categoryQueries.some((query) => /(pantry|grocery|dairy)/.test(query))) {
+        queries.add('food store');
+        queries.add('farm shop');
+    }
+
+    cuisineThemes.forEach((theme) => {
+        queries.add(`${theme} market`);
+        queries.add(`${theme} grocery`);
+        queries.add(`${theme} ingredients`);
+        if (theme === 'italian' || theme === 'mediterranean') {
+            queries.add(`${theme} deli`);
+        }
+    });
+
+    return Array.from(queries).slice(0, 12);
+}
+
 function buildIngredientSourceQueries(
     items: Array<{ name?: string; display?: string }>,
-    mode: 'premium' | 'google'
+    mode: 'premium' | 'google',
+    recipeTitle = ''
 ) {
     const ingredientNames = Array.from(
         new Set(
             items
-                .map((item) => String(item?.name || item?.display || '').trim().toLowerCase())
+                .map((item) => normalizeSearchPhraseCandidate(String(item?.name || item?.display || '').trim().toLowerCase()))
                 .filter(Boolean)
         )
     ).slice(0, 6);
 
-    if (ingredientNames.length === 0) {
-        return mode === 'google' ? ['grocery store', 'farmers market'] : [];
-    }
+    const cuisineThemes = extractRecipeCuisineThemes(recipeTitle);
+    const categoryQueries = buildIngredientCategoryQueries(ingredientNames);
 
-    if (mode === 'premium') {
-        return ingredientNames;
+    if (ingredientNames.length === 0 && cuisineThemes.length === 0) {
+        return mode === 'google' ? ['grocery store', 'produce market', 'farmers market'] : ['grocery store', 'produce market'];
     }
 
     const queries = new Set<string>();
-    ingredientNames.slice(0, 4).forEach((name) => {
-        queries.add(`${name} grocery`);
-        queries.add(`${name} market`);
+    cuisineThemes.forEach((theme) => {
+        queries.add(`${theme} grocery`);
+        queries.add(`${theme} market`);
+        queries.add(`${theme} ingredients`);
     });
+    categoryQueries.forEach((query) => queries.add(query));
+
+    if (mode === 'premium') {
+        ingredientNames.slice(0, 3).forEach((name) => {
+            queries.add(name);
+            queries.add(`${name} grocery`);
+        });
+    } else {
+        buildCuratedGoogleIngredientQueries(cuisineThemes, categoryQueries).forEach((query) => queries.add(query));
+    }
+
     queries.add('grocery store');
+    queries.add('produce market');
     queries.add('farmers market');
-    return Array.from(queries).slice(0, 8);
+
+    return Array.from(queries).slice(0, mode === 'google' ? 12 : 8);
 }
 
 function buildDietModifiers(profileData: any) {
@@ -1056,19 +1171,103 @@ function buildSmartFallbackChatResponse(message: string, profileData: any, locat
     return 'I am having a moment — please try again and I will be right with you.';
 }
 
+function getConfiguredGeminiModels() {
+    const configuredModel = String(process.env.GEMINI_MODEL || '').trim();
+    return Array.from(new Set([
+        configuredModel,
+        'gemini-2.5-flash-lite',
+        'gemini-2.5-flash',
+        'gemini-2.0-flash'
+    ].filter(Boolean)));
+}
+
+function normalizeProviderStatus(value: unknown) {
+    const normalized = String(value || '')
+        .trim()
+        .replace(/[^A-Za-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .toUpperCase();
+
+    return normalized || undefined;
+}
+
+function classifyGeminiFailure(error: any): {
+    fallbackReason: ChatFallbackReason;
+    providerStatus?: string;
+    failureClass: string;
+} {
+    const status = Number(error?.status || error?.response?.status);
+    const providerStatus = normalizeProviderStatus(
+        error?.providerStatus ||
+        error?.response?.data?.error?.status ||
+        error?.response?.data?.status
+    );
+    const message = String(
+        error?.message ||
+        error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        ''
+    ).toLowerCase();
+
+    if (
+        status === 401 ||
+        status === 403 ||
+        /api key|permission|unauthorized|forbidden|access denied|credential/.test(message)
+    ) {
+        return {
+            fallbackReason: 'provider_error',
+            providerStatus: providerStatus || 'AUTH_ERROR',
+            failureClass: 'auth'
+        };
+    }
+
+    if (
+        status === 404 ||
+        /model .*not found|unsupported model|not found for api version|unknown model/.test(message)
+    ) {
+        return {
+            fallbackReason: 'provider_error',
+            providerStatus: providerStatus || 'MODEL_UNAVAILABLE',
+            failureClass: 'model_access'
+        };
+    }
+
+    if (
+        status === 429 ||
+        /quota|rate limit|resource exhausted|too many requests/.test(message)
+    ) {
+        return {
+            fallbackReason: 'provider_error',
+            providerStatus: providerStatus || 'QUOTA_EXCEEDED',
+            failureClass: 'quota'
+        };
+    }
+
+    if (
+        status >= 500 ||
+        /timeout|timed out|network|socket|dns|fetch failed|service unavailable|unavailable|deadline exceeded|econn|enotfound/.test(message)
+    ) {
+        return {
+            fallbackReason: 'provider_error',
+            providerStatus: providerStatus || 'REQUEST_FAILED',
+            failureClass: 'network'
+        };
+    }
+
+    return {
+        fallbackReason: 'generation_failed',
+        providerStatus,
+        failureClass: 'unknown'
+    };
+}
+
 async function generateWithFallbackModels(
     genAI: GoogleGenerativeAI,
     message: string,
     systemInstruction: string,
     history: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>
 ) {
-    const configuredModel = (process.env.GEMINI_MODEL || '').trim();
-    const candidates = Array.from(new Set([
-        configuredModel,
-        'gemini-2.5-flash-lite',
-        'gemini-2.5-flash',
-        'gemini-2.0-flash'
-    ].filter(Boolean)));
+    const candidates = getConfiguredGeminiModels();
 
     const tried: string[] = [];
     let lastError: any = null;
@@ -1087,6 +1286,14 @@ async function generateWithFallbackModels(
 
     const err = new Error(lastError?.message || 'Failed to generate AI response');
     (err as any).triedModels = tried;
+    (err as any).failedModel = tried[tried.length - 1] || undefined;
+    (err as any).status = lastError?.status || lastError?.response?.status;
+    (err as any).code = lastError?.code;
+    (err as any).providerStatus = normalizeProviderStatus(
+        lastError?.providerStatus ||
+        lastError?.response?.data?.error?.status ||
+        lastError?.response?.data?.status
+    );
     throw err;
 }
 
@@ -1101,19 +1308,47 @@ function parseCoordinates(location?: string) {
     return { lat, lng };
 }
 
-async function resolveLocationCoordinates(location?: string, locale?: LocaleCode) {
+async function resolveLocationCoordinatesWithReason(location?: string, locale?: LocaleCode) {
     const parsed = parseCoordinates(location);
-    if (parsed) return parsed;
+    if (parsed) {
+        return {
+            coords: parsed,
+            reason: 'resolved' as LocationResolutionReason,
+            providerStatus: undefined
+        };
+    }
+
+    const normalizedLocation = String(location || '').trim();
+    if (!normalizedLocation) {
+        return {
+            coords: null,
+            reason: 'missing' as LocationResolutionReason,
+            providerStatus: undefined
+        };
+    }
 
     const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
-    if (!key || !String(location || '').trim()) {
-        return null;
+    if (!key) {
+        return {
+            coords: null,
+            reason: 'geocode_failed' as LocationResolutionReason,
+            providerStatus: 'MISSING_KEY'
+        };
     }
 
     try {
-        return await geocodeLocation(String(location).trim(), key, locale);
-    } catch {
-        return null;
+        const coords = await geocodeLocation(normalizedLocation, key, locale);
+        return {
+            coords,
+            reason: coords ? 'resolved' as LocationResolutionReason : 'geocode_failed' as LocationResolutionReason,
+            providerStatus: coords ? undefined : 'ZERO_RESULTS'
+        };
+    } catch (error: any) {
+        return {
+            coords: null,
+            reason: 'geocode_failed' as LocationResolutionReason,
+            providerStatus: normalizeProviderStatus(error?.response?.data?.status || error?.code) || 'REQUEST_FAILED'
+        };
     }
 }
 
@@ -1141,6 +1376,60 @@ async function geocodeLocation(location: string, key: string, locale?: LocaleCod
     return { lat, lng };
 }
 
+function extractAddressComponent(parts: any[], allowedTypes: string[]) {
+    const match = parts.find((part) => Array.isArray(part?.types) && part.types.some((type: string) => allowedTypes.includes(type)));
+    return String(match?.long_name || '').trim();
+}
+
+function formatReverseGeocodeLabel(result: any) {
+    const components = Array.isArray(result?.address_components) ? result.address_components : [];
+    const locality = extractAddressComponent(components, ['sublocality_level_1', 'sublocality', 'neighborhood']);
+    const city = extractAddressComponent(components, ['locality', 'postal_town', 'administrative_area_level_2']);
+    const region = extractAddressComponent(components, ['administrative_area_level_1']);
+
+    const preferred = [locality, city, region].filter(Boolean);
+    if (preferred.length > 0) {
+        return preferred.slice(0, 3).join(', ');
+    }
+
+    return String(result?.formatted_address || '').trim();
+}
+
+async function reverseGeocodeCoordinates(coords: { lat: number; lng: number }, key: string, locale?: LocaleCode) {
+    const region = getGoogleMapsRegion(locale);
+    const response = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
+        params: {
+            latlng: `${coords.lat},${coords.lng}`,
+            key,
+            ...(region ? { region } : {})
+        }
+    });
+
+    const results = Array.isArray(response.data?.results) ? response.data.results : [];
+    for (const result of results) {
+        const label = formatReverseGeocodeLabel(result);
+        if (label) return label;
+    }
+
+    return '';
+}
+
+async function resolveReadableLocationLabel(location?: string, locale?: LocaleCode) {
+    const parsed = parseCoordinates(location);
+    if (!parsed) {
+        return String(location || '').trim();
+    }
+
+    const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    if (!key) return '';
+
+    try {
+        return await reverseGeocodeCoordinates(parsed, key, locale);
+    } catch {
+        return '';
+    }
+}
+
 function toRadians(value: number) {
     return (value * Math.PI) / 180;
 }
@@ -1164,30 +1453,55 @@ async function searchGooglePlaces(query: string, location?: string, maxRadiusKm?
     if (!key) return [];
 
     const region = getGoogleMapsRegion(locale);
-    const origin = parseCoordinates(location) || (location?.trim() ? await geocodeLocation(location, key, locale) : null);
+    const resolvedOrigin = await resolveLocationCoordinatesWithReason(location, locale);
+    if (!resolvedOrigin.coords) return [];
+    const origin = resolvedOrigin.coords;
     const desiredMaxRadiusKm = Number.isFinite(maxRadiusKm) ? Math.max(1, Number(maxRadiusKm)) : 80;
     const desiredMaxRadiusMeters = Math.round(desiredMaxRadiusKm * 1000);
     const radiusSteps = [5000, 12000, 25000, 50000, 80000].filter((radius) => radius <= desiredMaxRadiusMeters);
     const effectiveRadiusSteps = radiusSteps.length > 0 ? radiusSteps : [desiredMaxRadiusMeters];
     const collected = new Map<string, any>();
 
-    for (const radius of effectiveRadiusSteps) {
-        const textSearch = await axios.get('https://maps.googleapis.com/maps/api/place/textsearch/json', {
+    try {
+        const nearbySearch = await axios.get('https://maps.googleapis.com/maps/api/place/nearbysearch/json', {
             params: {
-                query,
-                ...(origin ? { location: `${origin.lat},${origin.lng}`, radius } : {}),
-                ...(region ? { region } : {}),
+                keyword: query,
+                location: `${origin.lat},${origin.lng}`,
+                rankby: 'distance',
                 key
             }
         });
 
-        const results = Array.isArray(textSearch.data?.results) ? textSearch.data.results : [];
-        for (const result of results) {
+        const nearbyResults = Array.isArray(nearbySearch.data?.results) ? nearbySearch.data.results : [];
+        for (const result of nearbyResults) {
             if (!result?.place_id || collected.has(result.place_id)) continue;
             collected.set(result.place_id, result);
+            if (collected.size >= 12) break;
         }
+    } catch {
+        // fall through to text search fallback
+    }
 
-        if (!origin || collected.size >= 10) break;
+    if (collected.size < 6) {
+        for (const radius of effectiveRadiusSteps) {
+            const textSearch = await axios.get('https://maps.googleapis.com/maps/api/place/textsearch/json', {
+                params: {
+                    query,
+                    location: `${origin.lat},${origin.lng}`,
+                    radius,
+                    ...(region ? { region } : {}),
+                    key
+                }
+            });
+
+            const results = Array.isArray(textSearch.data?.results) ? textSearch.data.results : [];
+            for (const result of results) {
+                if (!result?.place_id || collected.has(result.place_id)) continue;
+                collected.set(result.place_id, result);
+            }
+
+            if (collected.size >= 10) break;
+        }
     }
 
     const shortlisted = Array.from(collected.values()).slice(0, 14);
@@ -1209,7 +1523,7 @@ async function searchGooglePlaces(query: string, location?: string, maxRadiusKm?
         const placeCoords = Number.isFinite(detail?.geometry?.location?.lat) && Number.isFinite(detail?.geometry?.location?.lng)
             ? { lat: detail.geometry.location.lat, lng: detail.geometry.location.lng }
             : null;
-        const km = origin && placeCoords ? distanceKm(origin, placeCoords) : null;
+        const km = placeCoords ? distanceKm(origin, placeCoords) : null;
 
         return {
             id: result.place_id,
@@ -1233,7 +1547,7 @@ async function searchGooglePlaces(query: string, location?: string, maxRadiusKm?
     }));
 
     const filtered = enriched.filter((place) => {
-        if (!origin || place.distance_km == null) return true;
+        if (place.distance_km == null) return true;
         return place.distance_km <= desiredMaxRadiusKm + 1;
     });
 
@@ -1258,19 +1572,23 @@ async function buildPlaceRecommendationReply(
         return '';
     }
 
-    const topPlaces = places.slice(0, 12).map((place: any, index: number) => ({
-        rank: index + 1,
-        name: place.name,
-        address: place.address,
-        distance_km: place.distance_km,
-        rating: place.rating,
-        reviewsCount: place.reviewsCount,
-        website: place.website || '',
-        mapsUrl: place.mapsUrl,
-        place_kind: place.place_kind || '',
-        menu_context: typeof place.menu_context === 'string' ? place.menu_context : '',
-        raw_inventory_context: typeof place.raw_inventory_context === 'string' ? place.raw_inventory_context : ''
-    }));
+    const topPlaces = places
+        .slice(0, 12)
+        .map((place: any, index: number) => ({ place, index }))
+        .sort((a, b) => placeRecommendationScore(b.place, b.index) - placeRecommendationScore(a.place, a.index))
+        .map(({ place }, index: number) => ({
+            rank: index + 1,
+            name: place.name,
+            address: place.address,
+            distance_km: place.distance_km,
+            rating: place.rating,
+            reviewsCount: place.reviewsCount,
+            website: place.website || '',
+            mapsUrl: place.mapsUrl,
+            place_kind: place.place_kind || '',
+            menu_context: typeof place.menu_context === 'string' ? place.menu_context : '',
+            raw_inventory_context: typeof place.raw_inventory_context === 'string' ? place.raw_inventory_context : ''
+        }));
 
     const promptFields = getPromptProfileFields(profileData, userRole);
     const allergySection = promptFields.allergies.length > 0
@@ -1308,7 +1626,8 @@ async function buildPlaceRecommendationReply(
 - Prefer exact item suggestions from menu_context over generic place-only suggestions when possible.
 - Do not invent places that are not in the list.
 - Keep the response concise: usually 2 short paragraphs plus a short bullet list at most.
-- If distance is available, prefer nearer places when quality seems comparable.`
+- If distance is available, default to the closest strong-fit options first.
+- Only let a farther place outrank a closer one when the fit is materially better, not just slightly better.`
         ]
     });
 
@@ -1450,12 +1769,7 @@ Answer the user's follow-up using this exact list. Do not mention any place name
 }
 
 router.post('/', authenticateTokenOptional, async (req: Request, res: Response) => {
-    if (!process.env.GEMINI_API_KEY) {
-        res.status(500).json({ error: 'AI Error', details: 'Gemini API key missing' });
-        return;
-    }
-
-    const { message, location, visiblePlaces, conversationId, tags } = req.body || {};
+    const { message, location, locationLabel, visiblePlaces, conversationId, tags } = req.body || {};
     const user = (req as any).user;
     const userId = user?.id;
     const userRole = user?.role || 'consumer';
@@ -1482,7 +1796,12 @@ router.post('/', authenticateTokenOptional, async (req: Request, res: Response) 
         const intentClassification = classifyIntent(effectiveMessage, normalizedTags);
         const promptFields = getPromptProfileFields(profileData, userRole);
         const userSettings = getUserSettings(profileData, userRole);
-        const locationLinkRule = buildLocationLinkRule(profileData, location);
+        const resolvedLocale = resolveLocaleFromProfileAndLocation(profileData, location);
+        const effectiveLocationLabel =
+            String(locationLabel || '').trim() ||
+            await resolveReadableLocationLabel(String(location || '').trim(), resolvedLocale) ||
+            String(location || '').trim();
+        const locationLinkRule = buildLocationLinkRule(profileData, effectiveLocationLabel || location);
         let memorySection = '';
         if (userId) {
             try {
@@ -1592,11 +1911,14 @@ Use this profile directly for personalization. Do not ask for details already pr
             })
             : null;
         const searchQueries = isSuggestionFollowUp ? [] : (findSearchPlan?.searchQueries || []);
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const geminiApiKey = String(process.env.GEMINI_API_KEY || '').trim();
+        const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
         let aiResponse = '';
         let modelName = 'fallback-local';
         let triedModels: string[] = [];
         let usedFallback = false;
+        let fallbackReason: ChatFallbackReason | undefined;
+        let providerStatus: string | undefined;
         const preserveForHealth = Boolean(userId) && shouldPreserveConversationForHealth(intentClassification.intent, mergedProfile);
         let responseSearchQueries = searchQueries;
 
@@ -1604,22 +1926,37 @@ Use this profile directly for personalization. Do not ask for details already pr
             aiResponse = await buildSuggestionAwareReply(effectiveMessage, currentVisiblePlaces, profileData, userRole, userId);
             modelName = 'suggestion-aware';
         } else {
-            try {
-                const completion = await generateWithFallbackModels(genAI, effectiveMessage, systemInstruction, cleanHistory);
-                aiResponse = completion.text;
-                modelName = completion.modelName;
-                triedModels = completion.tried;
-            } catch (generationError: any) {
-                console.error('LLM CALL FAILED:', {
-                    message: generationError?.message,
-                    code: generationError?.code,
-                    status: generationError?.status,
-                    stack: generationError?.stack?.split('\n')[0]
-                });
-                console.warn('AI generation failed, using local fallback reply:', generationError?.message || generationError);
-                aiResponse = buildSmartFallbackChatResponse(effectiveMessage, profileData, location);
-                triedModels = generationError?.triedModels || [];
+            if (!genAI) {
+                aiResponse = buildSmartFallbackChatResponse(effectiveMessage, profileData, effectiveLocationLabel || location);
                 usedFallback = true;
+                fallbackReason = 'config_missing';
+                providerStatus = 'MISSING_KEY';
+                console.warn('AI generation skipped because GEMINI_API_KEY is missing. Using local fallback reply.');
+            } else {
+                try {
+                    const completion = await generateWithFallbackModels(genAI, effectiveMessage, systemInstruction, cleanHistory);
+                    aiResponse = completion.text;
+                    modelName = completion.modelName;
+                    triedModels = completion.tried;
+                } catch (generationError: any) {
+                    const failure = classifyGeminiFailure(generationError);
+                    console.error('LLM CALL FAILED:', {
+                        message: generationError?.message,
+                        code: generationError?.code,
+                        status: generationError?.status,
+                        providerStatus: generationError?.providerStatus || failure.providerStatus,
+                        triedModels: generationError?.triedModels || [],
+                        failedModel: generationError?.failedModel,
+                        failureClass: failure.failureClass,
+                        stack: generationError?.stack?.split('\n')[0]
+                    });
+                    console.warn('AI generation failed, using local fallback reply:', generationError?.message || generationError);
+                    aiResponse = buildSmartFallbackChatResponse(effectiveMessage, profileData, effectiveLocationLabel || location);
+                    triedModels = generationError?.triedModels || [];
+                    usedFallback = true;
+                    fallbackReason = failure.fallbackReason;
+                    providerStatus = failure.providerStatus;
+                }
             }
 
             if (
@@ -1688,6 +2025,8 @@ Use this profile directly for personalization. Do not ask for details already pr
             reply: aiResponse,
             response: aiResponse,
             usedFallback,
+            fallbackReason,
+            providerStatus,
             conversationId: activeConversationId || null,
             intent: intentClassification.intent,
             intentConfidence: intentClassification.confidence,
@@ -1698,7 +2037,8 @@ Use this profile directly for personalization. Do not ask for details already pr
             model: modelName,
             followUpOptions,
             searchQueries: responseSearchQueries,
-            tried_models: triedModels
+            tried_models: triedModels,
+            locationLabel: effectiveLocationLabel || undefined
         });
     } catch (error: any) {
         console.error('Chat error:', error);
@@ -1772,7 +2112,8 @@ router.post('/extract-grocery-list', authenticateTokenOptional, async (req: Requ
 
 router.post('/source-ingredients/premium', authenticateTokenOptional, async (req: Request, res: Response) => {
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
-    const queries = buildIngredientSourceQueries(items, 'premium');
+    const recipeTitle = String(req.body?.recipeTitle || '').trim();
+    const queries = buildIngredientSourceQueries(items, 'premium', recipeTitle);
 
     try {
         const places = await searchManagedPlaceProfiles(queries, 8);
@@ -1820,6 +2161,17 @@ router.post('/source-inquiry/google', authenticateTokenOptional, async (req: Req
     try {
         const profileData = userId ? await fetchRoleProfileData(userId, userRole) as UserProfile : {};
         const locale = resolveLocaleFromProfileAndLocation(profileData, location);
+        const resolvedLocation = await resolveLocationCoordinatesWithReason(location, locale);
+        if (!resolvedLocation.coords) {
+            res.json({
+                places: [],
+                queries,
+                locationResolved: false,
+                locationReason: resolvedLocation.reason,
+                providerStatus: resolvedLocation.providerStatus
+            });
+            return;
+        }
         const grouped = await Promise.all(queries.map(async (query: string) => {
             try {
                 const places = await searchGooglePlaces(query, location, radiusKm, locale);
@@ -1840,17 +2192,16 @@ router.post('/source-inquiry/google', authenticateTokenOptional, async (req: Req
 
         const hydratedPlaces = await hydratePlacesWithProfileData(Array.from(deduped.values()));
         const places = hydratedPlaces
-            .sort((a, b) => {
-                const priorityDiff = placeInventoryPriority(b, queries) - placeInventoryPriority(a, queries);
-                if (priorityDiff !== 0) return priorityDiff;
-                if (a.distance_km == null && b.distance_km == null) return 0;
-                if (a.distance_km == null) return 1;
-                if (b.distance_km == null) return -1;
-                return a.distance_km - b.distance_km;
-            })
+            .sort((a, b) => comparePlacesByIntentAndDistance(a, b, queries))
             .slice(0, Math.max(1, Math.min(limit, GOOGLE_SOURCE_RESULT_LIMIT)));
 
-        res.json({ places, queries });
+        res.json({
+            places,
+            queries,
+            locationResolved: true,
+            locationReason: 'resolved',
+            providerStatus: resolvedLocation.providerStatus
+        });
     } catch (error: any) {
         res.status(500).json({ error: 'Failed to source Google inquiry findings', details: error.message });
     }
@@ -1858,9 +2209,13 @@ router.post('/source-inquiry/google', authenticateTokenOptional, async (req: Req
 
 router.post('/source-ingredients/google', authenticateTokenOptional, async (req: Request, res: Response) => {
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    const recipeTitle = String(req.body?.recipeTitle || '').trim();
     const location = String(req.body?.location || '').trim();
     const radiusKm = Number.isFinite(Number(req.body?.radiusKm)) ? Number(req.body.radiusKm) : 25;
-    const queries = buildIngredientSourceQueries(items, 'google');
+    const queries = buildIngredientSourceQueries(items, 'google', recipeTitle);
+    const user = (req as any).user;
+    const userId = user?.id;
+    const userRole = user?.role || 'consumer';
 
     if (queries.length === 0) {
         res.json({ places: [], queries: [] });
@@ -1868,9 +2223,22 @@ router.post('/source-ingredients/google', authenticateTokenOptional, async (req:
     }
 
     try {
+        const profileData = userId ? await fetchRoleProfileData(userId, userRole) as UserProfile : {};
+        const locale = resolveLocaleFromProfileAndLocation(profileData, location);
+        const resolvedLocation = await resolveLocationCoordinatesWithReason(location, locale);
+        if (!resolvedLocation.coords) {
+            res.json({
+                places: [],
+                queries,
+                locationResolved: false,
+                locationReason: resolvedLocation.reason,
+                providerStatus: resolvedLocation.providerStatus
+            });
+            return;
+        }
         const grouped = await Promise.all(queries.map(async (query) => {
             try {
-                const places = await searchGooglePlaces(query, location, radiusKm);
+                const places = await searchGooglePlaces(query, location, radiusKm, locale);
                 if (places.length > 0) return places;
             } catch {
                 // continue collecting from remaining queries
@@ -1888,17 +2256,16 @@ router.post('/source-ingredients/google', authenticateTokenOptional, async (req:
 
         const hydratedPlaces = await hydratePlacesWithProfileData(Array.from(deduped.values()));
         const places = hydratedPlaces
-            .sort((a, b) => {
-                const priorityDiff = placeInventoryPriority(b, queries) - placeInventoryPriority(a, queries);
-                if (priorityDiff !== 0) return priorityDiff;
-                if (a.distance_km == null && b.distance_km == null) return 0;
-                if (a.distance_km == null) return 1;
-                if (b.distance_km == null) return -1;
-                return a.distance_km - b.distance_km;
-            })
+            .sort((a, b) => comparePlacesByIntentAndDistance(a, b, queries))
             .slice(0, GOOGLE_SOURCE_RESULT_LIMIT);
 
-        res.json({ places, queries });
+        res.json({
+            places,
+            queries,
+            locationResolved: true,
+            locationReason: 'resolved',
+            providerStatus: resolvedLocation.providerStatus
+        });
     } catch (error: any) {
         res.status(500).json({ error: 'Failed to source Google places', details: error.message });
     }
@@ -1981,6 +2348,57 @@ function placeInventoryPriority(place: any, queries: string[]) {
     return score;
 }
 
+function placeDistancePriority(place: any, queries: string[]) {
+    const distanceKmValue = Number(place?.distance_km);
+    if (!Number.isFinite(distanceKmValue)) return 0;
+
+    const inventoryIntent = queryHasInventoryIntent(queries);
+    if (distanceKmValue <= 1.5) return inventoryIntent ? 28 : 20;
+    if (distanceKmValue <= 3) return inventoryIntent ? 20 : 14;
+    if (distanceKmValue <= 5) return inventoryIntent ? 14 : 10;
+    if (distanceKmValue <= 8) return inventoryIntent ? 8 : 6;
+    if (distanceKmValue <= 12) return inventoryIntent ? 3 : 2;
+    if (distanceKmValue <= 20) return 0;
+    if (distanceKmValue <= 30) return inventoryIntent ? -8 : -5;
+    return inventoryIntent ? -14 : -10;
+}
+
+function comparePlacesByIntentAndDistance(a: any, b: any, queries: string[]) {
+    const scoreA = placeInventoryPriority(a, queries) + placeDistancePriority(a, queries);
+    const scoreB = placeInventoryPriority(b, queries) + placeDistancePriority(b, queries);
+    if (scoreA !== scoreB) return scoreB - scoreA;
+
+    if (a.distance_km == null && b.distance_km == null) return 0;
+    if (a.distance_km == null) return 1;
+    if (b.distance_km == null) return -1;
+    return a.distance_km - b.distance_km;
+}
+
+function placeRecommendationScore(place: any, originalIndex: number) {
+    const distanceKmValue = Number(place?.distance_km);
+    const rating = Number(place?.rating);
+    const reviewsCount = Number(place?.reviewsCount);
+
+    let score = Math.max(0, 18 - (originalIndex * 2));
+    score += Number(place?.search_priority || 0);
+
+    if (Number.isFinite(distanceKmValue)) {
+        if (distanceKmValue <= 1.5) score += 18;
+        else if (distanceKmValue <= 3) score += 14;
+        else if (distanceKmValue <= 5) score += 10;
+        else if (distanceKmValue <= 8) score += 6;
+        else if (distanceKmValue <= 12) score += 2;
+        else if (distanceKmValue > 20) score -= 6;
+    }
+
+    if (Number.isFinite(rating)) score += Math.max(0, rating - 3.8) * 4;
+    if (Number.isFinite(reviewsCount)) score += Math.min(6, Math.log10(Math.max(1, reviewsCount)));
+    if (String(place?.raw_inventory_context || '').trim()) score += 6;
+    if (String(place?.menu_context || '').trim()) score += 3;
+
+    return score;
+}
+
 router.post('/places', authenticateTokenOptional, async (req: Request, res: Response) => {
     const { queries, location, radiusKm, limit } = req.body || {};
     const user = (req as any).user;
@@ -2004,7 +2422,8 @@ router.post('/places', authenticateTokenOptional, async (req: Request, res: Resp
             : 16;
         const profileData = userId ? await fetchRoleProfileData(userId, userRole) as UserProfile : {};
         const locale = resolveLocaleFromProfileAndLocation(profileData, location);
-        const userLocation = await resolveLocationCoordinates(location, locale);
+        const resolvedLocation = await resolveLocationCoordinatesWithReason(location, locale);
+        const userLocation = resolvedLocation.coords;
         const results = await searchPlacesForTerms({
             searchTerms: uniqueQueries,
             userLocation,
@@ -2019,7 +2438,10 @@ router.post('/places', authenticateTokenOptional, async (req: Request, res: Resp
             googleResults: results.googleResults,
             fallbackMessage: results.fallbackMessage,
             locale,
-            enriched: keyConfigured
+            enriched: keyConfigured,
+            locationResolved: Boolean(userLocation),
+            locationReason: resolvedLocation.reason,
+            providerStatus: resolvedLocation.providerStatus
         });
     } catch (error: any) {
         res.status(500).json({ error: 'Failed to fetch places', details: error.message });
@@ -2072,6 +2494,27 @@ router.post('/recommend-places', authenticateTokenOptional, async (req: Request,
         res.json({ response });
     } catch (error: any) {
         res.status(500).json({ error: 'Failed to recommend places', details: error.message });
+    }
+});
+
+router.post('/location-label', authenticateTokenOptional, async (req: Request, res: Response) => {
+    const location = String(req.body?.location || '').trim();
+    const user = (req as any).user;
+    const userId = user?.id;
+    const userRole = user?.role || 'consumer';
+
+    if (!location) {
+        res.json({ label: '' });
+        return;
+    }
+
+    try {
+        const profileData = userId ? await fetchRoleProfileData(userId, userRole) as UserProfile : {};
+        const locale = resolveLocaleFromProfileAndLocation(profileData, location);
+        const label = await resolveReadableLocationLabel(location, locale);
+        res.json({ label });
+    } catch (error: any) {
+        res.status(500).json({ error: 'Failed to resolve location label', details: error.message });
     }
 });
 

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import BusinessWorkspace from '../business/BusinessWorkspace';
+import { PROFILE_PREVIEW_BADGE, PROFILE_PREVIEW_HINT, PROFILE_PREVIEWS_ENABLED } from '../../lib/featureFlags';
 
 type ProfileMode = 'consumer' | 'business' | 'expert';
 
@@ -274,42 +275,68 @@ function ModeLinkButton({
     href,
     label,
     active = false,
-    showComingSoon = false
+    showComingSoon = false,
+    disabled = false,
+    disabledLabel
 }: {
     href: string;
     label: string;
     active?: boolean;
     showComingSoon?: boolean;
+    disabled?: boolean;
+    disabledLabel?: string;
 }) {
-    return (
-        <Link
-            href={href}
-            className={`relative inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition ${
-                active
-                    ? 'border-green-600 bg-green-600 text-white'
-                    : 'border-gray-200 bg-white text-gray-700 hover:border-green-300 hover:text-green-700'
-            }`}
-        >
+    const badgeText = disabled ? disabledLabel : showComingSoon ? 'Soon' : null;
+    const activeClass = disabled
+        ? 'border-amber-200 bg-amber-50 text-amber-900'
+        : 'border-green-600 bg-green-600 text-white';
+    const idleClass = disabled
+        ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-500'
+        : 'border-gray-200 bg-white text-gray-700 hover:border-green-300 hover:text-green-700';
+    const badgeClass = disabled
+        ? 'bg-white text-amber-700 ring-1 ring-amber-200'
+        : active
+            ? 'bg-white/20 text-white'
+            : 'bg-amber-50 text-amber-700 ring-1 ring-amber-200';
+    const content = (
+        <>
             <span>{label}</span>
-            {showComingSoon ? (
+            {badgeText ? (
                 <>
                     <span
                         aria-hidden="true"
                         className={`absolute -right-1.5 -top-1.5 h-3.5 w-3.5 rounded-full ring-2 ring-white ${
-                            active ? 'bg-amber-300' : 'bg-amber-500'
+                            disabled ? 'bg-amber-400' : active ? 'bg-amber-300' : 'bg-amber-500'
                         }`}
                     />
-                    <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ${
-                            active
-                                ? 'bg-white/20 text-white'
-                                : 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
-                        }`}
-                    >
-                        Soon
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ${badgeClass}`}>
+                        {badgeText}
                     </span>
                 </>
             ) : null}
+        </>
+    );
+
+    if (disabled) {
+        return (
+            <button
+                type="button"
+                disabled
+                className={`relative inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition ${active ? activeClass : idleClass}`}
+            >
+                {content}
+            </button>
+        );
+    }
+
+    return (
+        <Link
+            href={href}
+            className={`relative inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+                active ? activeClass : idleClass
+            }`}
+        >
+            {content}
         </Link>
     );
 }
@@ -410,6 +437,7 @@ export default function ProfileWorkspace() {
     const mode = getMode(searchParams.get('profile'));
     const route = useMemo(() => getRoute(mode), [mode]);
     const heading = getHeading(mode);
+    const isLockedProfileMode = !PROFILE_PREVIEWS_ENABLED && mode !== 'consumer';
 
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -531,6 +559,11 @@ export default function ProfileWorkspace() {
     useEffect(() => {
         const loadProfile = async () => {
             if (!user?.id) return;
+            if (isLockedProfileMode) {
+                setIsLoading(false);
+                setStatus(PROFILE_PREVIEW_HINT);
+                return;
+            }
             if (mode === 'business') {
                 setIsLoading(false);
                 setStatus(null);
@@ -584,7 +617,7 @@ export default function ProfileWorkspace() {
         };
 
         loadProfile();
-    }, [mode, route, user?.id]);
+    }, [isLockedProfileMode, mode, route, user?.id]);
 
     const createdModeLinks = useMemo(
         () => PROFILE_MODE_LINKS.filter((item) => item.mode !== 'consumer' && establishedModes[item.mode]),
@@ -923,6 +956,8 @@ export default function ProfileWorkspace() {
                                         label={item.label}
                                         active={mode === item.mode}
                                         showComingSoon={item.mode !== 'consumer'}
+                                        disabled={!PROFILE_PREVIEWS_ENABLED && item.mode !== 'consumer'}
+                                        disabledLabel={PROFILE_PREVIEW_BADGE}
                                     />
                                 ))}
                             </div>
@@ -945,6 +980,8 @@ export default function ProfileWorkspace() {
                                         label={item.label}
                                         active={mode === item.mode}
                                         showComingSoon={item.mode !== 'consumer'}
+                                        disabled={!PROFILE_PREVIEWS_ENABLED && item.mode !== 'consumer'}
+                                        disabledLabel={PROFILE_PREVIEW_BADGE}
                                     />
                                 ))}
                             </div>
@@ -964,6 +1001,8 @@ export default function ProfileWorkspace() {
                                             label={isCurrentMode ? `Setting Up ${item.label}` : item.label}
                                             active={isCurrentMode}
                                             showComingSoon={true}
+                                            disabled={!PROFILE_PREVIEWS_ENABLED && item.mode !== 'consumer'}
+                                            disabledLabel={PROFILE_PREVIEW_BADGE}
                                         />
                                     </div>
                                 );
@@ -976,7 +1015,48 @@ export default function ProfileWorkspace() {
                 ) : null}
             </div>
 
-            {mode === 'expert' ? (
+            {isLockedProfileMode ? (
+                <div className="mt-4 space-y-4">
+                    <section className="overflow-hidden rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-6 shadow-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div className="max-w-2xl">
+                                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-700">{PROFILE_PREVIEW_BADGE}</p>
+                                <h3 className="mt-2 text-2xl font-bold text-gray-900">
+                                    {mode === 'business' ? 'Business Profile stays local for now' : 'Expert Studio stays local for now'}
+                                </h3>
+                                <p className="mt-2 text-sm leading-6 text-gray-600">
+                                    {mode === 'business'
+                                        ? 'This supplier workspace is still being shaped, so the deployed experience keeps the entry visible without opening the full builder yet.'
+                                        : 'This expert workspace is still being refined, so the deployed experience keeps the entry visible without opening the full studio yet.'}
+                                </p>
+                                <p className="mt-3 text-sm leading-6 text-gray-600">{PROFILE_PREVIEW_HINT}</p>
+                            </div>
+                            <div className="rounded-2xl border border-amber-200 bg-white/90 px-4 py-3 text-sm text-amber-900 shadow-sm">
+                                <p className="font-semibold">Local-only preview</p>
+                                <p className="mt-1 text-amber-700">Use your local environment when you want to keep building and editing this experience.</p>
+                            </div>
+                        </div>
+                        <div className="mt-5 flex flex-wrap gap-3">
+                            <button
+                                type="button"
+                                onClick={() => router.push('/?tab=about_you&profile=consumer')}
+                                className="rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700"
+                            >
+                                Open About You
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => router.push('/wallet')}
+                                className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:border-green-300 hover:text-green-700"
+                            >
+                                Open Wallet Preview
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            ) : null}
+
+            {mode === 'expert' && !isLockedProfileMode ? (
                 <div className="mt-4 space-y-4">
                     <section className="overflow-hidden rounded-3xl border border-emerald-100 bg-gradient-to-br from-[#f4fbf5] via-white to-[#eef8f2] p-6 shadow-sm">
                         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1505,13 +1585,13 @@ export default function ProfileWorkspace() {
                     </>
                 ) : null}
 
-                {mode === 'business' ? (
+                {mode === 'business' && !isLockedProfileMode ? (
                     <div className="lg:col-span-12">
                         <BusinessWorkspace />
                     </div>
                 ) : null}
 
-                {mode === 'expert' ? (
+                {mode === 'expert' && !isLockedProfileMode ? (
                     <>
                         <SectionCard
                             title="Professional Identity"
@@ -1555,7 +1635,7 @@ export default function ProfileWorkspace() {
             </div>
             )}
 
-            {mode !== 'business' && !(mode === 'consumer' && consumerTab === 'report') ? (
+            {mode !== 'business' && !isLockedProfileMode && !(mode === 'consumer' && consumerTab === 'report') ? (
             <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 {isLoading ? <p className="text-sm text-gray-500">Loading profile...</p> : null}
                 {status ? <p className="text-sm text-gray-700">{status}</p> : null}

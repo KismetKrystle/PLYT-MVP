@@ -11,6 +11,7 @@ import RightSidebar from './RightSidebar';
 import api from '../lib/api';
 
 import { formatCurrency, Currency } from '../lib/currency';
+import { PROFILE_PREVIEW_BADGE, PROFILE_PREVIEWS_ENABLED } from '../lib/featureFlags';
 import OnboardingTour from './onboarding/OnboardingTour';
 
 type ChatConversationSummary = {
@@ -115,6 +116,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M18.5 5.5h.01M20.5 8.5h.01M3.5 8.5h.01" />
         </svg>
     );
+
+    const handleExpertStudioClick = (event: MouseEvent<HTMLElement>) => {
+        if (handleProtectedNavigation(event)) return true;
+        if (!PROFILE_PREVIEWS_ENABLED) {
+            event.preventDefault();
+            setIsProfileOpen(false);
+            return true;
+        }
+        return false;
+    };
 
     const requestSignIn = () => {
         setLeftSidebarOpen(false);
@@ -907,11 +918,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                             </Link>
                                             <Link
                                                 href={user ? "/?tab=about_you&profile=expert" : "#"}
-                                                onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
-                                                className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
+                                                onClick={(e) => {
+                                                    if (handleExpertStudioClick(e)) return;
+                                                    setIsProfileOpen(false);
+                                                }}
+                                                className={`flex items-center gap-3 px-5 py-2.5 transition-colors ${
+                                                    PROFILE_PREVIEWS_ENABLED
+                                                        ? 'text-gray-700 hover:bg-gray-50 hover:text-green-600'
+                                                        : 'cursor-not-allowed text-gray-500'
+                                                }`}
+                                                aria-disabled={!PROFILE_PREVIEWS_ENABLED}
                                             >
                                                 <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A10 10 0 1118.88 17.8M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                                 Expert Studio
+                                                {!PROFILE_PREVIEWS_ENABLED ? (
+                                                    <span className="ml-auto rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                                                        {PROFILE_PREVIEW_BADGE}
+                                                    </span>
+                                                ) : null}
                                             </Link>
                                             <Link
                                                 href={user ? "/wallet" : "#"}
@@ -1088,11 +1112,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                             </Link>
                                             <Link
                                                 href={user ? "/?tab=about_you&profile=expert" : "#"}
-                                                onClick={user ? () => setIsProfileOpen(false) : (e) => { e.preventDefault(); openLoginModal(); setIsProfileOpen(false); }}
-                                                className="flex items-center gap-3 px-5 py-2.5 text-gray-700 hover:bg-gray-50 hover:text-green-600 transition-colors"
+                                                onClick={(e) => {
+                                                    if (handleExpertStudioClick(e)) return;
+                                                    setIsProfileOpen(false);
+                                                }}
+                                                className={`flex items-center gap-3 px-5 py-2.5 transition-colors ${
+                                                    PROFILE_PREVIEWS_ENABLED
+                                                        ? 'text-gray-700 hover:bg-gray-50 hover:text-green-600'
+                                                        : 'cursor-not-allowed text-gray-500'
+                                                }`}
+                                                aria-disabled={!PROFILE_PREVIEWS_ENABLED}
                                             >
                                                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A10 10 0 1118.88 17.8M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                                 Expert Studio
+                                                {!PROFILE_PREVIEWS_ENABLED ? (
+                                                    <span className="ml-auto rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                                                        {PROFILE_PREVIEW_BADGE}
+                                                    </span>
+                                                ) : null}
                                             </Link>
                                             <Link
                                                 href={user ? "/wallet" : "#"}

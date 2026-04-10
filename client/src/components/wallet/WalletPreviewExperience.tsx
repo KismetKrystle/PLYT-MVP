@@ -13,6 +13,7 @@ import {
     type SupplierRole,
     getSupplierPreviewRoute
 } from '../../lib/commerce';
+import { PROFILE_PREVIEWS_ENABLED } from '../../lib/featureFlags';
 
 type WalletTab = 'overview' | 'basket' | 'purchases' | 'assets' | 'methods';
 type WalletLineItem = CommerceItemProfile;
@@ -214,7 +215,7 @@ export default function WalletPreviewExperience() {
     const purchaseVolume = PURCHASE_HISTORY.reduce((sum, purchase) => sum + purchase.total, 0);
     const balancePLYT = 1250;
     const balanceUSD = 12.5;
-    const previewWalletAddress = user?.wallet_address || 'rPLYTPreviewWalletComingSoon';
+    const previewWalletAddress = user?.wallet_address || 'rP1yaNt6W9uQ4mH8cK3sV2dL7xF5bR9tN';
     const isPreviewMode = true;
 
     const formatAmount = (value: number) =>
@@ -260,9 +261,13 @@ export default function WalletPreviewExperience() {
                         </p>
                     </div>
                     <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Preview wallet</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            {user?.wallet_address ? 'Connected wallet' : 'Demo XRPL wallet'}
+                        </p>
                         <p className="mt-1 font-mono text-sm text-gray-800">{previewWalletAddress}</p>
-                        <p className="mt-2 text-xs text-gray-500">Network lane: XRPL testnet/dev narrative</p>
+                        <p className="mt-2 text-xs text-gray-500">
+                            {user?.wallet_address ? 'Network lane: XRPL testnet/dev narrative' : 'Preview identity for wallet demos until live connection is enabled'}
+                        </p>
                     </div>
                 </div>
             </section>
@@ -653,6 +658,7 @@ export default function WalletPreviewExperience() {
                 currency={currency}
                 onClose={() => setSelectedItem(null)}
                 supplierActionLabel="Open preview route"
+                supplierActionDisabled={!PROFILE_PREVIEWS_ENABLED}
                 onSupplierAction={selectedItem ? () => {
                     const previewProfileRoute = getSupplierPreviewRoute(selectedItem.supplierRole);
                     setSelectedItem(null);

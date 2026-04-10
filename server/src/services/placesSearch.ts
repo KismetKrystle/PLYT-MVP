@@ -101,20 +101,38 @@ async function searchGooglePlacesByTerms(params: {
     locale: LocaleCode;
 }) {
     const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
-    if (!key) return [];
+    if (!key || !params.userLocation) return [];
 
     const region = params.locale.toLowerCase();
     const collected = new Map<string, any>();
 
     for (const searchTerm of params.searchTerms) {
         try {
+            const nearbySearch = await axios.get('https://maps.googleapis.com/maps/api/place/nearbysearch/json', {
+                params: {
+                    keyword: searchTerm,
+                    location: `${params.userLocation.lat},${params.userLocation.lng}`,
+                    rankby: 'distance',
+                    key
+                }
+            });
+
+            const nearbyResults = Array.isArray(nearbySearch.data?.results) ? nearbySearch.data.results : [];
+            for (const result of nearbyResults) {
+                if (!result?.place_id || collected.has(result.place_id)) continue;
+                collected.set(result.place_id, result);
+                if (collected.size >= 20) break;
+            }
+
+            if (collected.size >= 20) {
+                continue;
+            }
+
             const textSearch = await axios.get('https://maps.googleapis.com/maps/api/place/textsearch/json', {
                 params: {
                     query: searchTerm,
-                    ...(params.userLocation ? {
-                        location: `${params.userLocation.lat},${params.userLocation.lng}`,
-                        radius: params.radiusMeters
-                    } : {}),
+                    location: `${params.userLocation.lat},${params.userLocation.lng}`,
+                    radius: params.radiusMeters,
                     region,
                     key
                 }

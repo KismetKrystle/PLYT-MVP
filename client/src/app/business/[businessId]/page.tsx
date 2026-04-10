@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import api from '../../../lib/api';
 import { useCart } from '../../../context/CartContext';
 import type { BusinessInventoryItem, PublicBusinessProfileResponse } from '../../../lib/business';
+import { PROFILE_PREVIEW_BADGE, PROFILE_PREVIEW_HINT, PROFILE_PREVIEWS_ENABLED } from '../../../lib/featureFlags';
 
 function formatUsd(value: number | string | null | undefined) {
     const amount = Number(value || 0);
@@ -74,6 +75,29 @@ export default function PublicBusinessProfilePage() {
             farm: business.name
         });
     };
+
+    if (!PROFILE_PREVIEWS_ENABLED) {
+        return (
+            <div className="mx-auto max-w-4xl px-4 py-12">
+                <div className="rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 px-6 py-8 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-700">{PROFILE_PREVIEW_BADGE}</p>
+                    <h1 className="mt-3 text-3xl font-bold text-gray-900">Business profiles stay local for now</h1>
+                    <p className="mt-3 text-sm leading-6 text-gray-600">
+                        This public supplier page is still being refined, so deployed users can see the entry points without opening the full preview.
+                    </p>
+                    <p className="mt-3 text-sm leading-6 text-gray-600">{PROFILE_PREVIEW_HINT}</p>
+                    <div className="mt-6 flex flex-wrap gap-3">
+                        <Link href="/store" className="inline-flex rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700">
+                            Back to store
+                        </Link>
+                        <Link href="/wallet" className="inline-flex rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:border-green-300 hover:text-green-700">
+                            Open wallet preview
+                        </Link>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     if (isLoading) {
         return <div className="mx-auto max-w-6xl px-4 py-10 text-sm text-gray-500">Loading public business profile...</div>;

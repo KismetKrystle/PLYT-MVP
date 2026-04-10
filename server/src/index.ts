@@ -106,6 +106,8 @@ app.get('/health', (req: Request, res: Response) => {
         env: {
             JWT_SECRET: !!process.env.JWT_SECRET,
             GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+            GEMINI_MODEL: !!String(process.env.GEMINI_MODEL || '').trim(),
+            GOOGLE_MAPS_API_KEY: !!(process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY),
             DATABASE_URL: !!process.env.DATABASE_URL,
             ACCESS_WALL_ENABLED: process.env.ACCESS_WALL_ENABLED === 'true'
         },

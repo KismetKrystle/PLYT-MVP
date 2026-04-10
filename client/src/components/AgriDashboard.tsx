@@ -61,6 +61,10 @@ interface GroceryBundle {
     googleRequested: boolean;
 }
 
+type SearchLocationSource = 'manual' | 'device' | 'home' | 'unknown';
+type ChatFallbackReason = 'config_missing' | 'provider_error' | 'generation_failed';
+type LocationReason = 'resolved' | 'missing' | 'geocode_failed';
+
 type ChatMessage = {
     role: 'user' | 'assistant';
     content: string;
@@ -69,6 +73,8 @@ type ChatMessage = {
     image?: string;
     followUpOptions?: QuickReplyOption[] | null;
     usedFallback?: boolean;
+    fallbackReason?: ChatFallbackReason;
+    providerStatus?: string;
     incompleteProfile?: boolean;
     intent?: IntentName;
     intentConfidence?: IntentConfidence;
@@ -356,6 +362,9 @@ type LastPlaceSearch = {
     message: string;
     queries: string[];
     location: string;
+    locationResolved?: boolean;
+    locationReason?: LocationReason;
+    restored?: boolean;
 };
 
 type SavedSuggestionState = {
@@ -366,6 +375,24 @@ type SavedSuggestionState = {
     searchAreaLabel: string;
     locationSourceLabel: string;
     showPreview: boolean;
+    locationReason?: LocationReason;
+    locationContextRestored?: boolean;
+};
+
+type ResolvedSearchLocation = {
+    location: string;
+    areaLabel: string;
+    source: SearchLocationSource;
+    locationResolved: boolean;
+    locationReason: LocationReason;
+};
+
+type GoogleInquiryResult = {
+    queries: string[];
+    places: PlaceSuggestion[];
+    locationResolved: boolean;
+    locationReason: LocationReason;
+    providerStatus?: string;
 };
 
 type QuickReplyOption = {
@@ -410,7 +437,6 @@ const INITIAL_VISIBLE_PLACE_COUNT = 6;
 const PLACE_PANEL_INCREMENT = 6;
 const DEFAULT_CHAT_GREETING = 'Hello! I can help you find fresh food, nearby places, recipes, and practical nutrition guidance. What are you looking for?';
 const GOOGLE_SEARCH_RESULT_LIMIT = 5;
-const AUTO_GOOGLE_FALLBACK_QUERY_LIMIT = 2;
 const AUTH_MODAL_LINKS = new Set(['/login', '/signup', 'plyt://auth-modal']);
 const SIGN_IN_REQUIRED_MESSAGE = 'Sign in or create your profile before searching so Navi can tailor results to your health context and preferences.';
 const DEFAULT_LIBRARY_CATEGORIES = [
@@ -486,6 +512,21 @@ function normalizeSearchLocationText(location?: string) {
     return value;
 }
 
+function getFallbackNotice(message: Pick<ChatMessage, 'usedFallback' | 'fallbackReason' | 'providerStatus'>) {
+    if (!message.usedFallback) return '';
+    if (message.fallbackReason === 'config_missing' || message.fallbackReason === 'provider_error') {
+        return 'AI provider unavailable right now. Please try again in a moment.';
+    }
+
+    return 'AI response generation failed just now. Please try again in a moment.';
+}
+
+function getLocationReasonLabel(locationReason?: LocationReason) {
+    if (locationReason === 'geocode_failed') return 'geocode_failed';
+    if (locationReason === 'missing') return 'missing';
+    return 'resolved';
+}
+
 export default function AgriDashboard() {
     const searchParams = useSearchParams();
     const historyId = searchParams.get('historyId');
@@ -518,6 +559,8 @@ export default function AgriDashboard() {
     const [visiblePlaceCount, setVisiblePlaceCount] = useState(INITIAL_VISIBLE_PLACE_COUNT);
     const [searchAreaLabel, setSearchAreaLabel] = useState('Current location');
     const [locationSourceLabel, setLocationSourceLabel] = useState('device');
+    const [locationReason, setLocationReason] = useState<LocationReason>('resolved');
+    const [isLocationContextRestored, setIsLocationContextRestored] = useState(false);
 
     const homeLocation = (user?.location_address || user?.location_city || '').trim();
 
@@ -563,6 +606,7 @@ export default function AgriDashboard() {
     const showSearchDebug =
         process.env.NODE_ENV !== 'production' ||
         process.env.NEXT_PUBLIC_SHOW_SEARCH_DEBUG === 'true';
+    const isMainChatTab = activeTab === 'chat';
     const [groceryBundlesByKey, setGroceryBundlesByKey] = useState<Record<string, GroceryBundle>>({});
     const [activeGroceryBundleKey, setActiveGroceryBundleKey] = useState<string | null>(null);
     const [pendingGroceryBundleKey, setPendingGroceryBundleKey] = useState<string | null>(null);
@@ -573,6 +617,7 @@ export default function AgriDashboard() {
     const [canHoverInfoPopover, setCanHoverInfoPopover] = useState(false);
     const [isStandaloneGoogleRequested, setIsStandaloneGoogleRequested] = useState(false);
     const [lastPlaceSearch, setLastPlaceSearch] = useState<LastPlaceSearch | null>(null);
+    const locationLabelCacheRef = useRef<Record<string, string>>({});
     const [isRefreshingSuggestions, setIsRefreshingSuggestions] = useState(false);
     const [isSuggestionSettingsOpen, setIsSuggestionSettingsOpen] = useState(false);
     const [skipAutoRestore, setSkipAutoRestore] = useState(false);
@@ -746,6 +791,24 @@ export default function AgriDashboard() {
         setSuggestedPlaces(normalizeSuggestedPlaces(incoming));
     };
 
+    const applyResolvedSearchContext = (resolvedSearch: ResolvedSearchLocation, restored = false) => {
+        setSearchAreaLabel(resolvedSearch.areaLabel);
+        setLocationSourceLabel(resolvedSearch.source);
+        setLocationReason(resolvedSearch.locationReason);
+        setIsLocationContextRestored(restored);
+    };
+
+    const applyGoogleLocationResolution = (result: Pick<GoogleInquiryResult, 'locationResolved' | 'locationReason'>) => {
+        if (result.locationResolved) {
+            setLocationReason('resolved');
+            return;
+        }
+
+        setLocationReason(result.locationReason);
+        setSearchAreaLabel('Location unavailable');
+        setLocationSourceLabel('unknown');
+    };
+
     const buildGroceryBundleKey = (messageIndex: number) => `${currentConversationId || 'draft'}:${messageIndex}`;
 
     const getGroceryBundleMessageIndex = (bundleKey?: string | null) => {
@@ -778,11 +841,12 @@ export default function AgriDashboard() {
     const fetchPremiumFindingsForBundle = async (
         key: string,
         items: GroceryListItem[],
-        resolvedSearch: { location: string; areaLabel: string; source: 'manual' | 'device' | 'home' | 'unknown' },
+        resolvedSearch: ResolvedSearchLocation,
         bundleTitle = 'Recipe'
     ) => {
         const response = await api.post('/chat/source-ingredients/premium', {
-            items
+            items,
+            recipeTitle: bundleTitle
         });
         const places = Array.isArray(response.data?.places) ? response.data.places as PlaceSuggestion[] : [];
         const queries = Array.isArray(response.data?.queries) ? response.data.queries.map((query: unknown) => String(query || '')).filter(Boolean) : [];
@@ -798,12 +862,14 @@ export default function AgriDashboard() {
                 sourceLabel: resolvedSearch.source
             };
         });
-        setSearchAreaLabel(resolvedSearch.areaLabel);
-        setLocationSourceLabel(resolvedSearch.source);
+        applyResolvedSearchContext(resolvedSearch);
         setLastPlaceSearch({
             message: `${bundleTitle} ingredients`,
             queries,
-            location: resolvedSearch.location
+            location: resolvedSearch.location,
+            locationResolved: resolvedSearch.locationResolved,
+            locationReason: resolvedSearch.locationReason,
+            restored: false
         });
         setShowPreview(true);
     };
@@ -817,21 +883,45 @@ export default function AgriDashboard() {
         setIsPanelOpen(true);
 
         try {
-            const resolvedSearch = bundle.location
+            const resolvedSearch = !isLocationContextRestored && bundle.location
                 ? {
                     location: bundle.location,
                     areaLabel: bundle.areaLabel || searchAreaLabel,
-                    source: (bundle.sourceLabel as 'manual' | 'device' | 'home' | 'unknown') || 'device'
+                    source: (bundle.sourceLabel as SearchLocationSource) || 'device',
+                    locationResolved: true,
+                    locationReason: 'resolved' as LocationReason
                 }
                 : await resolveSearchLocation();
 
+            if (!resolvedSearch.locationResolved) {
+                applyResolvedSearchContext(resolvedSearch);
+                setGoogleInquiryPlaces([]);
+                setGoogleInquiryQueries([]);
+                setLastPlaceSearch({
+                    message: `${bundle.title} ingredients`,
+                    queries: [],
+                    location: '',
+                    locationResolved: false,
+                    locationReason: resolvedSearch.locationReason,
+                    restored: false
+                });
+                setShowPreview(true);
+                return;
+            }
+
             const response = await api.post('/chat/source-ingredients/google', {
                 items: bundle.items,
+                recipeTitle: bundle.title,
                 location: resolvedSearch.location,
                 radiusKm: radiusOverride ?? searchRadiusKm
             });
             const places = Array.isArray(response.data?.places) ? response.data.places as PlaceSuggestion[] : [];
             const queries = Array.isArray(response.data?.queries) ? response.data.queries.map((query: unknown) => String(query || '')).filter(Boolean) : [];
+            const nextLocationResolved = response.data?.locationResolved !== false;
+            const nextLocationReason: LocationReason =
+                response.data?.locationReason === 'missing' || response.data?.locationReason === 'geocode_failed'
+                    ? response.data.locationReason
+                    : 'resolved';
 
             updateGroceryBundle(key, (current) => {
                 if (!current) return current;
@@ -847,12 +937,18 @@ export default function AgriDashboard() {
                 return nextBundle;
             });
 
-            setSearchAreaLabel(resolvedSearch.areaLabel);
-            setLocationSourceLabel(resolvedSearch.source);
+            applyResolvedSearchContext({
+                ...resolvedSearch,
+                locationResolved: nextLocationResolved,
+                locationReason: nextLocationReason
+            });
             setLastPlaceSearch({
                 message: `${bundle.title} ingredients`,
                 queries,
-                location: resolvedSearch.location
+                location: resolvedSearch.location,
+                locationResolved: nextLocationResolved,
+                locationReason: nextLocationReason,
+                restored: false
             });
             setShowPreview(true);
         } catch (error) {
@@ -867,9 +963,26 @@ export default function AgriDashboard() {
 
         setIsRefreshingSuggestions(true);
         try {
+            const resolvedSearch: ResolvedSearchLocation = lastPlaceSearch.restored ? await resolveSearchLocation() : {
+                location: lastPlaceSearch.location,
+                areaLabel: searchAreaLabel,
+                source: locationSourceLabel as SearchLocationSource,
+                locationResolved: lastPlaceSearch.locationResolved !== false,
+                locationReason: lastPlaceSearch.locationReason === 'missing' || lastPlaceSearch.locationReason === 'geocode_failed'
+                    ? lastPlaceSearch.locationReason
+                    : 'resolved'
+            };
+            applyResolvedSearchContext(resolvedSearch);
             setGoogleInquiryPlaces([]);
-            const result = await fetchGoogleInquiryPlaces(lastPlaceSearch.queries, lastPlaceSearch.location, searchRadiusKm);
-            applyGoogleInquiryResults(result.queries, result.places);
+            const result = await fetchGoogleInquiryPlaces(lastPlaceSearch.queries, resolvedSearch.location, searchRadiusKm);
+            applyGoogleInquiryResults(result);
+            setLastPlaceSearch((current) => current ? {
+                ...current,
+                location: resolvedSearch.location,
+                locationResolved: result.locationResolved,
+                locationReason: result.locationReason,
+                restored: false
+            } : current);
         } catch (error) {
             console.warn('Unable to search Google for the current inquiry.', error);
         } finally {
@@ -885,12 +998,20 @@ export default function AgriDashboard() {
             setActiveGroceryBundleKey(bundleKey);
             setIsGroceryListModalOpen(true);
             setSuggestionPanelSubject(existingBundle.title);
-            setSearchAreaLabel(existingBundle.areaLabel || searchAreaLabel);
-            setLocationSourceLabel(existingBundle.sourceLabel || locationSourceLabel);
+            applyResolvedSearchContext({
+                location: existingBundle.location,
+                areaLabel: existingBundle.areaLabel || searchAreaLabel,
+                source: (existingBundle.sourceLabel as SearchLocationSource) || (locationSourceLabel as SearchLocationSource),
+                locationResolved: Boolean(existingBundle.location),
+                locationReason: existingBundle.location ? 'resolved' : locationReason
+            }, isLocationContextRestored);
             setLastPlaceSearch({
                 message: `${existingBundle.title} ingredients`,
                 queries: existingBundle.googleRequested && existingBundle.googleQueries.length > 0 ? existingBundle.googleQueries : existingBundle.premiumQueries,
-                location: existingBundle.location
+                location: existingBundle.location,
+                locationResolved: Boolean(existingBundle.location),
+                locationReason: existingBundle.location ? 'resolved' : locationReason,
+                restored: isLocationContextRestored
             });
             setShowPreview(true);
             setIsPanelOpen(true);
@@ -934,12 +1055,14 @@ export default function AgriDashboard() {
 
             updateGroceryBundle(bundleKey, () => nextBundle);
             setSuggestionPanelSubject(title);
-            setSearchAreaLabel(resolvedSearch.areaLabel);
-            setLocationSourceLabel(resolvedSearch.source);
+            applyResolvedSearchContext(resolvedSearch);
             setLastPlaceSearch({
                 message: `${title} ingredients`,
                 queries: [],
-                location: resolvedSearch.location
+                location: resolvedSearch.location,
+                locationResolved: resolvedSearch.locationResolved,
+                locationReason: resolvedSearch.locationReason,
+                restored: false
             });
             setShowPreview(true);
 
@@ -1017,11 +1140,13 @@ export default function AgriDashboard() {
     const buildSuggestionState = (): SavedSuggestionState => ({
         suggestedPlaces: normalizeSuggestedPlaces(suggestedPlaces),
         suggestedProducts,
-        lastPlaceSearch,
+        lastPlaceSearch: lastPlaceSearch ? { ...lastPlaceSearch, restored: false } : null,
         searchRadiusKm,
         searchAreaLabel,
         locationSourceLabel,
-        showPreview
+        showPreview,
+        locationReason,
+        locationContextRestored: false
     });
 
     const applySuggestionState = (state?: Partial<SavedSuggestionState> | null) => {
@@ -1031,14 +1156,21 @@ export default function AgriDashboard() {
         const nextProducts = Array.isArray(state?.suggestedProducts)
             ? (state?.suggestedProducts as ProduceItem[])
             : [];
-        const nextLastPlaceSearch =
+        const nextLastPlaceSearch: LastPlaceSearch | null =
             state?.lastPlaceSearch &&
             typeof state.lastPlaceSearch === 'object' &&
             Array.isArray(state.lastPlaceSearch.queries)
                 ? {
                     message: String(state.lastPlaceSearch.message || ''),
                     queries: state.lastPlaceSearch.queries.map((query) => String(query || '')).filter(Boolean),
-                    location: String(state.lastPlaceSearch.location || '')
+                    location: String(state.lastPlaceSearch.location || ''),
+                    locationResolved: typeof state.lastPlaceSearch.locationResolved === 'boolean'
+                        ? state.lastPlaceSearch.locationResolved
+                        : Boolean(String(state.lastPlaceSearch.location || '').trim()),
+                    locationReason: state.lastPlaceSearch.locationReason === 'missing' || state.lastPlaceSearch.locationReason === 'geocode_failed'
+                        ? state.lastPlaceSearch.locationReason
+                        : (String(state.lastPlaceSearch.location || '').trim() ? 'resolved' : 'missing'),
+                    restored: true
                 }
                 : null;
         const nextRadiusKm = Number.isFinite(Number(state?.searchRadiusKm))
@@ -1051,16 +1183,19 @@ export default function AgriDashboard() {
         setSuggestedProducts(nextProducts);
         setLastPlaceSearch(nextLastPlaceSearch);
         setSearchRadiusKm(nextRadiusKm);
-        setSearchAreaLabel(
-            typeof state?.searchAreaLabel === 'string' && state.searchAreaLabel.trim()
+        applyResolvedSearchContext({
+            location: nextLastPlaceSearch?.location || '',
+            areaLabel: typeof state?.searchAreaLabel === 'string' && state.searchAreaLabel.trim()
                 ? state.searchAreaLabel
-                : 'Current location'
-        );
-        setLocationSourceLabel(
-            typeof state?.locationSourceLabel === 'string' && state.locationSourceLabel.trim()
-                ? state.locationSourceLabel
-                : 'device'
-        );
+                : 'Current location',
+            source: typeof state?.locationSourceLabel === 'string' && state.locationSourceLabel.trim()
+                ? state.locationSourceLabel as SearchLocationSource
+                : 'device',
+            locationResolved: nextLastPlaceSearch?.locationResolved !== false,
+            locationReason: state?.locationReason === 'missing' || state?.locationReason === 'geocode_failed'
+                ? state.locationReason
+                : 'resolved'
+        }, Boolean(nextLastPlaceSearch));
         setGoogleInquiryPlaces([]);
         setGoogleInquiryQueries([]);
         setIsStandaloneGoogleRequested(false);
@@ -1112,12 +1247,23 @@ export default function AgriDashboard() {
         location: string,
         radiusKm: number,
         queryLimit?: number
-    ) => {
+    ): Promise<GoogleInquiryResult> => {
         const normalizedQueries = normalizeSearchQueries(queries, queryLimit);
         if (normalizedQueries.length === 0) {
             return {
                 queries: [] as string[],
-                places: [] as PlaceSuggestion[]
+                places: [] as PlaceSuggestion[],
+                locationResolved: true,
+                locationReason: 'resolved'
+            };
+        }
+
+        if (!String(location || '').trim()) {
+            return {
+                queries: normalizedQueries,
+                places: [] as PlaceSuggestion[],
+                locationResolved: false,
+                locationReason: 'missing'
             };
         }
 
@@ -1133,14 +1279,20 @@ export default function AgriDashboard() {
 
         return {
             queries: normalizedQueries,
-            places
+            places,
+            locationResolved: response.data?.locationResolved !== false,
+            locationReason: response.data?.locationReason === 'missing' || response.data?.locationReason === 'geocode_failed'
+                ? response.data.locationReason
+                : 'resolved',
+            providerStatus: typeof response.data?.providerStatus === 'string' ? response.data.providerStatus : undefined
         };
     };
 
-    const applyGoogleInquiryResults = (queries: string[], places: PlaceSuggestion[]) => {
-        setIsStandaloneGoogleRequested(true);
-        setGoogleInquiryQueries(queries);
-        setGoogleInquiryPlaces(places);
+    const applyGoogleInquiryResults = (result: GoogleInquiryResult) => {
+        setIsStandaloneGoogleRequested(result.locationResolved);
+        setGoogleInquiryQueries(result.queries);
+        setGoogleInquiryPlaces(result.places);
+        applyGoogleLocationResolution(result);
         setVisiblePlaceCount(INITIAL_VISIBLE_PLACE_COUNT);
         setShowPreview(true);
         setIsPanelOpen(true);
@@ -1192,19 +1344,36 @@ export default function AgriDashboard() {
         }
     };
 
-    const resolveSearchLocation = async (manualLocation?: string) => {
+    const resolveSearchLocation = async (manualLocation?: string): Promise<ResolvedSearchLocation> => {
         const requestedLocation = (manualLocation || '').trim();
         if (requestedLocation) {
             const normalizedLocation = normalizeSearchLocationText(requestedLocation);
-            return { location: normalizedLocation, areaLabel: requestedLocation, source: 'manual' as const };
+            return {
+                location: normalizedLocation,
+                areaLabel: requestedLocation,
+                source: 'manual',
+                locationResolved: true,
+                locationReason: 'resolved'
+            };
         }
 
         if (typeof navigator === 'undefined' || !navigator.geolocation) {
             const normalizedHomeLocation = normalizeSearchLocationText(homeLocation);
+            if (normalizedHomeLocation) {
+                return {
+                    location: normalizedHomeLocation,
+                    areaLabel: homeLocation || 'Saved home area',
+                    source: 'home',
+                    locationResolved: true,
+                    locationReason: 'resolved'
+                };
+            }
             return {
-                location: normalizedHomeLocation,
-                areaLabel: homeLocation || 'Saved home area unavailable',
-                source: homeLocation ? 'home' as const : 'unknown' as const
+                location: '',
+                areaLabel: 'Location unavailable',
+                source: 'unknown',
+                locationResolved: false,
+                locationReason: 'missing'
             };
         }
 
@@ -1216,18 +1385,44 @@ export default function AgriDashboard() {
                     { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 }
                 );
             });
+            const coordinateLocation = `Lat: ${pos.coords.latitude}, Lng: ${pos.coords.longitude}`;
+            let areaLabel = locationLabelCacheRef.current[coordinateLocation] || '';
+            if (!areaLabel) {
+                try {
+                    const response = await api.post('/chat/location-label', { location: coordinateLocation });
+                    areaLabel = String(response.data?.label || '').trim();
+                    if (areaLabel) {
+                        locationLabelCacheRef.current[coordinateLocation] = areaLabel;
+                    }
+                } catch {
+                    // Keep the coordinate-backed location even if the readable label lookup fails.
+                }
+            }
             return {
-                location: `Lat: ${pos.coords.latitude}, Lng: ${pos.coords.longitude}`,
-                areaLabel: 'Current location',
-                source: 'device' as const
+                location: coordinateLocation,
+                areaLabel: areaLabel || 'Current location',
+                source: 'device',
+                locationResolved: true,
+                locationReason: 'resolved'
             };
         } catch (e) {
             console.warn(`Geolocation unavailable, falling back to saved home area: ${describeGeolocationError(e)}.`);
             const normalizedHomeLocation = normalizeSearchLocationText(homeLocation);
+            if (normalizedHomeLocation) {
+                return {
+                    location: normalizedHomeLocation,
+                    areaLabel: homeLocation || 'Saved home area',
+                    source: 'home',
+                    locationResolved: true,
+                    locationReason: 'resolved'
+                };
+            }
             return {
-                location: normalizedHomeLocation,
-                areaLabel: homeLocation || 'Saved home area unavailable',
-                source: homeLocation ? 'home' as const : 'unknown' as const
+                location: '',
+                areaLabel: 'Location unavailable',
+                source: 'unknown',
+                locationResolved: false,
+                locationReason: 'missing'
             };
         }
     };
@@ -1259,6 +1454,8 @@ export default function AgriDashboard() {
             setGoogleInquiryQueries([]);
             setSuggestedProducts([]);
             setShowPreview(false);
+            setLocationReason('resolved');
+            setIsLocationContextRestored(false);
             setPrompt('');
             setSelectedAssistantMessageIndex(null);
             setChatSaveStatus('');
@@ -1314,54 +1511,26 @@ export default function AgriDashboard() {
             const conversationIdForRequest = shouldStartFreshChat ? null : currentConversationId;
             const resolvedSearch = await resolveSearchLocation(overrideLocation);
             const finalLocation = resolvedSearch.location;
-            setSearchAreaLabel(resolvedSearch.areaLabel);
-            setLocationSourceLabel(resolvedSearch.source);
+            applyResolvedSearchContext(resolvedSearch);
             const chatPromise = api.post('/chat', {
                 message: messageText,
                 conversationId: conversationIdForRequest,
                 tags: normalizedTags,
                 scope: overrideScope || 'local',
                 location: finalLocation,
+                locationLabel: resolvedSearch.areaLabel,
                 visiblePlaces: shouldStartFreshChat ? [] : suggestedPlaces.slice(0, 12)
             });
-            const searchContextPromise = api.post('/chat/search-context', {
-                message: messageText,
-                tags: normalizedTags,
-                location: finalLocation
-            });
-
-            let parallelPlaceQueries: string[] = [];
-            let parallelPremiumPlaces: any[] = [];
-            let placeFetchFailed = false;
-
-            const placeSearchPromise = (async () => {
-                try {
-                    const searchContextRes = await searchContextPromise;
-                    const queries = Array.isArray(searchContextRes.data?.searchQueries)
-                        ? searchContextRes.data.searchQueries
-                        : [];
-                    parallelPlaceQueries = queries;
-
-                    if (queries.length === 0) {
-                        return;
-                    }
-
-                    setLastPlaceSearch({
-                        message: messageText,
-                        queries,
-                        location: finalLocation
-                    });
-
-                    parallelPremiumPlaces = await fetchPremiumInquiryPlaces(queries, 16);
-                } catch {
-                    placeFetchFailed = true;
-                }
-            })();
 
             const res = await chatPromise;
 
             const aiResponse = res.data.reply || res.data.response;
             const usedFallback = Boolean(res.data?.usedFallback);
+            const fallbackReason: ChatFallbackReason | undefined =
+                res.data?.fallbackReason === 'config_missing' || res.data?.fallbackReason === 'provider_error' || res.data?.fallbackReason === 'generation_failed'
+                    ? res.data.fallbackReason
+                    : undefined;
+            const providerStatus = typeof res.data?.providerStatus === 'string' ? res.data.providerStatus : undefined;
             const incompleteProfile = Boolean(res.data?.incomplete_profile);
             const newConvId = res.data.conversationId ? String(res.data.conversationId) : null;
             const responseIntent = normalizeIntentName(res.data?.intent) || predictedIntent.intent;
@@ -1386,6 +1555,8 @@ export default function AgriDashboard() {
                         content: aiResponse,
                         followUpOptions: null,
                         usedFallback: false,
+                        fallbackReason,
+                        providerStatus,
                         incompleteProfile: true,
                         intent: responseIntent,
                         intentConfidence: responseIntentConfidence,
@@ -1395,45 +1566,30 @@ export default function AgriDashboard() {
                 return;
             }
 
-            await placeSearchPromise;
-
-            const searchQueries = parallelPlaceQueries.length > 0
-                ? parallelPlaceQueries
-                : Array.isArray(res.data?.searchQueries) && res.data.searchQueries.length > 0
-                    ? res.data.searchQueries
-                    : extractGoogleMapsQueries(aiResponse);
+            const searchQueries = Array.isArray(res.data?.searchQueries)
+                ? res.data.searchQueries.map((query: unknown) => String(query || '').trim()).filter(Boolean)
+                : [];
             const placeQueries = searchQueries;
             setSuggestionPanelMode(inferSuggestionPanelModeFromContext(messageText, responseIntent, placeQueries));
             if (placeQueries.length > 0) {
-                const usesCompanionPlaces = parallelPlaceQueries.length === 0;
-
-                if (parallelPlaceQueries.length === 0) {
-                    setLastPlaceSearch({
-                        message: messageText,
-                        queries: placeQueries,
-                        location: finalLocation
-                    });
-                }
+                setLastPlaceSearch({
+                    message: messageText,
+                    queries: placeQueries,
+                    location: finalLocation,
+                    locationResolved: resolvedSearch.locationResolved,
+                    locationReason: resolvedSearch.locationReason,
+                    restored: false
+                });
                 try {
-                    const sameAsParallelQueries =
-                        parallelPlaceQueries.length > 0 &&
-                        parallelPlaceQueries.length === placeQueries.length &&
-                        parallelPlaceQueries.every((query, index) => query === placeQueries[index]);
-
-                    const places =
-                        sameAsParallelQueries && !placeFetchFailed
-                            ? parallelPremiumPlaces
-                            : await fetchPremiumInquiryPlaces(placeQueries, 16);
+                    const places = await fetchPremiumInquiryPlaces(placeQueries, 16);
 
                     if (places.length > 0) {
                         try {
-                            const syncedResponse = usesCompanionPlaces
-                                ? appendCompanionPlacesNote(aiResponse, places)
-                                : (await api.post('/chat/recommend-places', {
-                                    message: messageText,
-                                    places,
-                                    conversationId: newConvId || currentConversationId
-                                })).data?.response || aiResponse;
+                            const syncedResponse = (await api.post('/chat/recommend-places', {
+                                message: messageText,
+                                places,
+                                conversationId: newConvId || currentConversationId
+                            })).data?.response || appendCompanionPlacesNote(aiResponse, places);
                             setChatHistory(prev => ({
                                 ...prev,
                                 [targetTab]: [...prev[targetTab], {
@@ -1441,6 +1597,8 @@ export default function AgriDashboard() {
                                     content: syncedResponse,
                                     followUpOptions: null,
                                     usedFallback: false,
+                                    fallbackReason,
+                                    providerStatus,
                                     intent: responseIntent,
                                     intentConfidence: responseIntentConfidence,
                                     mixedIntent: responseMixedIntent
@@ -1451,9 +1609,11 @@ export default function AgriDashboard() {
                                 ...prev,
                                 [targetTab]: [...prev[targetTab], {
                                     role: 'assistant',
-                                    content: aiResponse,
+                                    content: appendCompanionPlacesNote(aiResponse, places),
                                     followUpOptions: Array.isArray(res.data?.followUpOptions) ? res.data.followUpOptions : null,
                                     usedFallback,
+                                    fallbackReason,
+                                    providerStatus,
                                     intent: responseIntent,
                                     intentConfidence: responseIntentConfidence,
                                     mixedIntent: responseMixedIntent
@@ -1462,18 +1622,10 @@ export default function AgriDashboard() {
                         }
                     } else {
                         replaceSuggestedPlaces([]);
+                        setGoogleInquiryPlaces([]);
+                        setGoogleInquiryQueries([]);
+                        setIsStandaloneGoogleRequested(false);
                         setShowPreview(true);
-                        try {
-                            const googleFallback = await fetchGoogleInquiryPlaces(
-                                placeQueries,
-                                finalLocation,
-                                searchRadiusKm,
-                                AUTO_GOOGLE_FALLBACK_QUERY_LIMIT
-                            );
-                            applyGoogleInquiryResults(googleFallback.queries, googleFallback.places);
-                        } catch (googleError) {
-                            console.warn('Unable to auto-search Google after empty premium findings.', googleError);
-                        }
                         setChatHistory(prev => ({
                             ...prev,
                             [targetTab]: [...prev[targetTab], {
@@ -1481,6 +1633,8 @@ export default function AgriDashboard() {
                                 content: aiResponse,
                                 followUpOptions: Array.isArray(res.data?.followUpOptions) ? res.data.followUpOptions : null,
                                 usedFallback,
+                                fallbackReason,
+                                providerStatus,
                                 intent: responseIntent,
                                 intentConfidence: responseIntentConfidence,
                                 mixedIntent: responseMixedIntent
@@ -1498,6 +1652,8 @@ export default function AgriDashboard() {
                             content: aiResponse,
                             followUpOptions: Array.isArray(res.data?.followUpOptions) ? res.data.followUpOptions : null,
                             usedFallback,
+                            fallbackReason,
+                            providerStatus,
                             intent: responseIntent,
                             intentConfidence: responseIntentConfidence,
                             mixedIntent: responseMixedIntent
@@ -1514,6 +1670,8 @@ export default function AgriDashboard() {
                     content: aiResponse,
                     followUpOptions: Array.isArray(res.data?.followUpOptions) ? res.data.followUpOptions : null,
                     usedFallback,
+                    fallbackReason,
+                    providerStatus,
                     intent: responseIntent,
                     intentConfidence: responseIntentConfidence,
                     mixedIntent: responseMixedIntent
@@ -1617,6 +1775,8 @@ export default function AgriDashboard() {
         searchRadiusKm,
         searchAreaLabel,
         locationSourceLabel,
+        locationReason,
+        isLocationContextRestored,
         showPreview
     ]);
 
@@ -1937,28 +2097,18 @@ export default function AgriDashboard() {
         }
     };
 
-    const extractGoogleMapsQueries = (text: string) => {
-        const queries: string[] = [];
-        const re = /https?:\/\/(?:www\.)?google\.com\/maps\/search\/\?api=1&query=([^\s)]+)/gi;
-        let match: RegExpExecArray | null = null;
-        while ((match = re.exec(text)) !== null) {
-            const encoded = match[1] || '';
-            const decoded = decodeURIComponent(encoded).replace(/\+/g, ' ').trim();
-            if (decoded) queries.push(decoded);
-        }
-        return Array.from(new Set(queries));
-    };
-
     const handleRadiusChange = async (nextRadiusKm: number) => {
         setSearchRadiusKm(nextRadiusKm);
 
         if (activeGroceryBundleKey && groceryBundlesByKey[activeGroceryBundleKey] && nextRadiusKm > searchRadiusKm) {
             const bundle = groceryBundlesByKey[activeGroceryBundleKey];
-            const resolvedSearch = bundle.location
+            const resolvedSearch = !isLocationContextRestored && bundle.location
                 ? {
                     location: bundle.location,
                     areaLabel: bundle.areaLabel || searchAreaLabel,
-                    source: (bundle.sourceLabel as 'manual' | 'device' | 'home' | 'unknown') || 'device'
+                    source: (bundle.sourceLabel as SearchLocationSource) || 'device',
+                    locationResolved: true,
+                    locationReason: 'resolved' as LocationReason
                 }
                 : await resolveSearchLocation();
 
@@ -1986,12 +2136,29 @@ export default function AgriDashboard() {
 
         setIsLoading(true);
         try {
+            const resolvedSearch: ResolvedSearchLocation = lastPlaceSearch.restored ? await resolveSearchLocation() : {
+                location: lastPlaceSearch.location,
+                areaLabel: searchAreaLabel,
+                source: locationSourceLabel as SearchLocationSource,
+                locationResolved: lastPlaceSearch.locationResolved !== false,
+                locationReason: lastPlaceSearch.locationReason === 'missing' || lastPlaceSearch.locationReason === 'geocode_failed'
+                    ? lastPlaceSearch.locationReason
+                    : 'resolved'
+            };
+            applyResolvedSearchContext(resolvedSearch);
             const result = await fetchGoogleInquiryPlaces(
                 googleInquiryQueries.length > 0 ? googleInquiryQueries : lastPlaceSearch.queries,
-                lastPlaceSearch.location,
+                resolvedSearch.location,
                 nextRadiusKm
             );
-            applyGoogleInquiryResults(result.queries, result.places);
+            applyGoogleInquiryResults(result);
+            setLastPlaceSearch((current) => current ? {
+                ...current,
+                location: resolvedSearch.location,
+                locationResolved: result.locationResolved,
+                locationReason: result.locationReason,
+                restored: false
+            } : current);
             setChatHistory((prev) => {
                 const chatMessages = prev.chat;
                 if (chatMessages.length === 0) return prev;
@@ -2029,11 +2196,13 @@ export default function AgriDashboard() {
         try {
             if (activeGroceryBundleKey && groceryBundlesByKey[activeGroceryBundleKey]) {
                 const bundle = groceryBundlesByKey[activeGroceryBundleKey];
-                const resolvedSearch = bundle.location
+                const resolvedSearch = !isLocationContextRestored && bundle.location
                     ? {
                         location: bundle.location,
                         areaLabel: bundle.areaLabel || searchAreaLabel,
-                        source: (bundle.sourceLabel as 'manual' | 'device' | 'home' | 'unknown') || 'device'
+                        source: (bundle.sourceLabel as SearchLocationSource) || 'device',
+                        locationResolved: true,
+                        locationReason: 'resolved' as LocationReason
                     }
                     : await resolveSearchLocation();
 
@@ -2045,12 +2214,29 @@ export default function AgriDashboard() {
             }
 
             if (isStandaloneGoogleRequested) {
+                const resolvedSearch: ResolvedSearchLocation = lastPlaceSearch.restored ? await resolveSearchLocation() : {
+                    location: lastPlaceSearch.location,
+                    areaLabel: searchAreaLabel,
+                    source: locationSourceLabel as SearchLocationSource,
+                    locationResolved: lastPlaceSearch.locationResolved !== false,
+                    locationReason: lastPlaceSearch.locationReason === 'missing' || lastPlaceSearch.locationReason === 'geocode_failed'
+                        ? lastPlaceSearch.locationReason
+                        : 'resolved'
+                };
+                applyResolvedSearchContext(resolvedSearch);
                 const result = await fetchGoogleInquiryPlaces(
                     googleInquiryQueries.length > 0 ? googleInquiryQueries : lastPlaceSearch.queries,
-                    lastPlaceSearch.location,
+                    resolvedSearch.location,
                     searchRadiusKm
                 );
-                applyGoogleInquiryResults(result.queries, result.places);
+                applyGoogleInquiryResults(result);
+                setLastPlaceSearch((current) => current ? {
+                    ...current,
+                    location: resolvedSearch.location,
+                    locationResolved: result.locationResolved,
+                    locationReason: result.locationReason,
+                    restored: false
+                } : current);
                 return;
             }
 
@@ -2243,6 +2429,8 @@ export default function AgriDashboard() {
         setSuggestedPlaces([]);
         setSuggestedProducts([]);
         setShowPreview(false);
+        setLocationReason('resolved');
+        setIsLocationContextRestored(false);
         setPrompt('');
         setSelectedAssistantMessageIndex(null);
         setChatSaveStatus('');
@@ -2409,7 +2597,7 @@ export default function AgriDashboard() {
                                                 </div>
                                             ) : null}
                                         </div>
-                                        <div className="p-4 md:p-6 space-y-4">
+                                        <div className={`p-4 md:p-6 space-y-4 ${isMainChatTab ? 'pb-36 md:pb-44' : ''}`}>
                                             {(chatHistory['chat'] || []).map((msg, idx, messages) => (
                                         <motion.div
                                             key={idx}
@@ -2481,9 +2669,7 @@ export default function AgriDashboard() {
                                                     <p className="leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
                                                 )}
                                                 {msg.role === 'assistant' && msg.usedFallback ? (
-                                                    <p className="mt-2 text-xs text-gray-400">
-                                                        ⚠ Navi is having trouble connecting. Please try again in a moment.
-                                                    </p>
+                                                    <p className="mt-2 text-xs text-gray-400">{getFallbackNotice(msg)}</p>
                                                 ) : null}
                                                 {msg.role === 'assistant' && msg.incompleteProfile ? (
                                                     <div className="mt-3">
@@ -2635,18 +2821,29 @@ export default function AgriDashboard() {
                                              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gray-400">
                                                  Search settings
                                              </p>
-                                             <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                                                 <span className="rounded-full bg-gray-100 px-2.5 py-1 font-semibold text-gray-700">
-                                                     Based near: {searchAreaLabel}
-                                                 </span>
-                                                 <span className="rounded-full bg-green-50 px-2.5 py-1 font-semibold text-green-700">
-                                                     Radius: {searchRadiusKm} km
-                                                 </span>
-                                                 <span className="rounded-full bg-blue-50 px-2.5 py-1 font-semibold text-blue-700 capitalize">
-                                                     Source: {locationSourceLabel}
-                                                 </span>
-                                             </div>
-                                          <div className="flex items-center gap-2">
+                                              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                                                  <span className="rounded-full bg-gray-100 px-2.5 py-1 font-semibold text-gray-700">
+                                                      Based near: {searchAreaLabel}
+                                                  </span>
+                                                  <span className="rounded-full bg-green-50 px-2.5 py-1 font-semibold text-green-700">
+                                                      Radius: {searchRadiusKm} km
+                                                  </span>
+                                                  <span className="rounded-full bg-blue-50 px-2.5 py-1 font-semibold text-blue-700 capitalize">
+                                                      Source: {locationSourceLabel}
+                                                  </span>
+                                                  <span className={`rounded-full px-2.5 py-1 font-semibold ${isLocationContextRestored ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                                                      Context: {isLocationContextRestored ? 'restored' : 'live'}
+                                                  </span>
+                                                  <span className={`rounded-full px-2.5 py-1 font-semibold ${locationReason === 'resolved' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                                                      Location: {getLocationReasonLabel(locationReason)}
+                                                  </span>
+                                              </div>
+                                              {locationReason !== 'resolved' ? (
+                                                  <p className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+                                                      Location unavailable. Enable device location or keep a saved home area so nearby Google results stay local.
+                                                  </p>
+                                              ) : null}
+                                           <div className="flex items-center gap-2">
                                               <label htmlFor="search-radius" className="text-[11px] font-medium text-gray-500">
                                                   Search distance
                                               </label>
@@ -2666,14 +2863,20 @@ export default function AgriDashboard() {
                                           </div>
                                           {showSearchDebug && lastPlaceSearch ? (
                                               <div className="mt-3 rounded-2xl border border-dashed border-amber-300 bg-amber-50/80 p-3 text-[11px] text-amber-900">
-                                                  <div className="flex flex-wrap items-center gap-2">
-                                                      <span className="rounded-full bg-white/80 px-2 py-0.5 font-semibold">
-                                                          Searching near: {searchAreaLabel || lastPlaceSearch.location || 'Unknown area'}
-                                                      </span>
-                                                      <span className="rounded-full bg-white/80 px-2 py-0.5 font-semibold capitalize">
-                                                          Source: {locationSourceLabel || 'unknown'}
-                                                      </span>
-                                                  </div>
+                                                   <div className="flex flex-wrap items-center gap-2">
+                                                       <span className="rounded-full bg-white/80 px-2 py-0.5 font-semibold">
+                                                           Searching near: {searchAreaLabel || lastPlaceSearch.location || 'Unknown area'}
+                                                       </span>
+                                                       <span className="rounded-full bg-white/80 px-2 py-0.5 font-semibold capitalize">
+                                                           Source: {locationSourceLabel || 'unknown'}
+                                                       </span>
+                                                       <span className="rounded-full bg-white/80 px-2 py-0.5 font-semibold capitalize">
+                                                           Context: {lastPlaceSearch.restored ? 'restored' : 'live'}
+                                                       </span>
+                                                       <span className="rounded-full bg-white/80 px-2 py-0.5 font-semibold">
+                                                           Location: {getLocationReasonLabel(lastPlaceSearch.locationReason)}
+                                                       </span>
+                                                   </div>
                                                   <p className="mt-2 font-semibold text-amber-950">Queries used</p>
                                                   <div className="mt-2 flex flex-wrap gap-2">
                                                       {lastPlaceSearch.queries.map((query) => (
@@ -3878,8 +4081,13 @@ export default function AgriDashboard() {
                     {/* Main Chat Input Area (Hidden in Learn Mode, Visible in Home/Find/Pick) */}
                     {
                         activeTab !== 'learn' && activeTab !== 'about_you' && activeTab !== 'living_library' && activeTab !== 'home' && (
-                            <div className="shrink-0 z-10 p-4 md:p-6 bg-white border-t border-gray-100 transition-all duration-500">
-                                <div className="mx-auto max-w-3xl transition-all duration-500 relative shadow-xl bg-white border border-gray-200 rounded-3xl">
+                            <div
+                                className={`${isMainChatTab
+                                    ? 'fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/92 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur md:px-6 md:pb-[calc(env(safe-area-inset-bottom)+1rem)]'
+                                    : 'shrink-0 z-10 p-4 md:p-6 bg-white border-t border-gray-100 transition-all duration-500'}`
+                                }
+                            >
+                                <div className={`mx-auto max-w-3xl transition-all duration-500 relative shadow-xl bg-white border border-gray-200 rounded-3xl ${isMainChatTab ? 'ring-1 ring-white/80' : ''}`}>
                                     <textarea
                                         value={prompt}
                                         onChange={(e) => setPrompt(e.target.value)}

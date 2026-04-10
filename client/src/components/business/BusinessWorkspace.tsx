@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { PROFILE_PREVIEW_BADGE, PROFILE_PREVIEW_HINT, PROFILE_PREVIEWS_ENABLED } from '../../lib/featureFlags';
 import type {
     BusinessCsvPreviewRow,
     BusinessInventoryItem,
@@ -388,14 +389,34 @@ export default function BusinessWorkspace() {
                             <p className="mt-1 text-sm text-gray-500">Shape the public-facing supplier page buyers will scout before purchasing.</p>
                         </div>
                         {activeBusinessId ? (
-                            <Link
-                                href={`/business/${activeBusinessId}`}
-                                className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 transition hover:bg-green-100"
-                            >
-                                View Public Profile
-                            </Link>
+                            PROFILE_PREVIEWS_ENABLED ? (
+                                <Link
+                                    href={`/business/${activeBusinessId}`}
+                                    className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 transition hover:bg-green-100"
+                                >
+                                    View Public Profile
+                                </Link>
+                            ) : (
+                                <div className="text-right">
+                                    <button
+                                        type="button"
+                                        disabled
+                                        className="cursor-not-allowed rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500"
+                                    >
+                                        View Public Profile
+                                    </button>
+                                    <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">
+                                        {PROFILE_PREVIEW_BADGE}
+                                    </p>
+                                </div>
+                            )
                         ) : null}
                     </div>
+                    {!PROFILE_PREVIEWS_ENABLED ? (
+                        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
+                            <span className="font-semibold">{PROFILE_PREVIEW_BADGE}:</span> {PROFILE_PREVIEW_HINT}
+                        </div>
+                    ) : null}
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                         <select className={inputCls} value={businessForm.business_type} onChange={(event) => setBusinessForm((current) => ({ ...current, business_type: event.target.value as BusinessType }))}>
                             <option value="farmer">Farmer</option>

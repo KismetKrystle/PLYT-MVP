@@ -15,12 +15,13 @@ async function diagnose() {
 
     const genAI = new GoogleGenerativeAI(apiKey);
 
-    const testModels = [
-        'gemini-1.5-flash',
-        'gemini-1.5-flash-latest',
-        'gemini-1.5-pro',
-        'gemini-1.0-pro'
-    ];
+    const configuredModel = String(process.env.GEMINI_MODEL || '').trim();
+    const testModels = Array.from(new Set([
+        configuredModel,
+        'gemini-2.5-flash-lite',
+        'gemini-2.5-flash',
+        'gemini-2.0-flash'
+    ].filter(Boolean)));
 
     for (const modelName of testModels) {
         console.log(`\n--- Testing ${modelName} ---`);
@@ -29,7 +30,11 @@ async function diagnose() {
             const result = await model.generateContent('Hi');
             console.log(`[DEFAULT] Success with ${modelName}:`, result.response.text());
         } catch (e: any) {
-            console.error(`[DEFAULT] Failed with ${modelName}:`, e.message);
+            console.error(`[DEFAULT] Failed with ${modelName}:`, {
+                message: e?.message,
+                status: e?.status || e?.response?.status,
+                code: e?.code
+            });
         }
 
         try {
@@ -37,7 +42,11 @@ async function diagnose() {
             const resultV1 = await modelV1.generateContent('Hi');
             console.log(`[V1] Success with ${modelName}:`, resultV1.response.text());
         } catch (e: any) {
-            console.error(`[V1] Failed with ${modelName}:`, e.message);
+            console.error(`[V1] Failed with ${modelName}:`, {
+                message: e?.message,
+                status: e?.status || e?.response?.status,
+                code: e?.code
+            });
         }
     }
 }

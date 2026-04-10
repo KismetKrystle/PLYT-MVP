@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth as useClerkAuth, useClerk, useUser } from '@clerk/nextjs';
+import axios from 'axios';
 import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import api from '../../lib/api';
@@ -15,6 +16,7 @@ export default function ClerkSessionBridge() {
     const isSyncingRef = useRef(false);
     const handledSignOutRequestIdRef = useRef(0);
     const isProcessingSignOutRef = useRef(false);
+    const hasLoggedNetworkIssueRef = useRef(false);
 
     useEffect(() => {
         if (clerkSignOutRequestId <= handledSignOutRequestIdRef.current) {
@@ -83,7 +85,14 @@ export default function ClerkSessionBridge() {
                     localStorage.setItem('clerk_user_id', clerkUser.id);
                 }
             } catch (error) {
-                console.error('Clerk session bridge failed:', error);
+                if (axios.isAxiosError(error) && !error.response && (error.code === 'ERR_NETWORK' || error.message === 'Network Error')) {
+                    if (!hasLoggedNetworkIssueRef.current) {
+                        hasLoggedNetworkIssueRef.current = true;
+                        console.warn(`Clerk session bridge could not reach the API at ${api.defaults.baseURL || 'the configured backend URL'}. Check that the backend is running and that NEXT_PUBLIC_API_URL matches it.`);
+                    }
+                } else {
+                    console.error('Clerk session bridge failed:', error);
+                }
             } finally {
                 isSyncingRef.current = false;
             }

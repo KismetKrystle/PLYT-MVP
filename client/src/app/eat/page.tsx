@@ -10,6 +10,7 @@ import {
     getSupplierPreviewRoute,
     inferSupplierRole
 } from '../../lib/commerce';
+import { PROFILE_PREVIEWS_ENABLED } from '../../lib/featureFlags';
 
 interface InventoryItem {
     id: number;
@@ -251,6 +252,7 @@ export default function EatPage() {
                 item={selectedItem}
                 onClose={() => setSelectedItem(null)}
                 supplierActionLabel="Open supplier preview"
+                supplierActionDisabled={!PROFILE_PREVIEWS_ENABLED}
                 onSupplierAction={selectedItem ? () => {
                     const previewRoute = getSupplierPreviewRoute(selectedItem.supplierRole, selectedItem.supplierBusinessId);
                     setSelectedItem(null);

@@ -31,9 +31,6 @@ export default function IntentLoader({ classification }: IntentLoaderProps) {
                             <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${meta.badgeClass}`}>
                                 {meta.label}
                             </span>
-                            <span className="text-[11px] font-medium capitalize text-gray-400">
-                                {classification.confidence} confidence
-                            </span>
                             {mixedMeta ? (
                                 <span className="text-[11px] text-gray-400">
                                     Mixed with {mixedMeta.label.toLowerCase()}
